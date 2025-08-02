@@ -1,0 +1,17 @@
+# Files and directories to ignore
+build/
+bin/
+results/
+.dev/
+tags
+matrix/example1000x1000.mtx
+matrix/example100x100.mtx
+matrix/example3x3.mtx
+matrix/example4x4.mtx
+matrix/example5x5.mtx
+*.o
+*.log
+*.out
+*.tmp
+*.swp
+*.mtx
