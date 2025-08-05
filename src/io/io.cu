@@ -149,7 +149,13 @@ void read_matrix_general(MatrixData* mat, const char* filename, int* rows, int* 
 
 	// Read entries
 	for (i = 0; i < *nnz; i++) {
-		fscanf(file, "%d %d %le", &entries[i].row, &entries[i].col, &entries[i].value);
+		int items_read = fscanf(file, "%d %d %le", &entries[i].row, &entries[i].col, &entries[i].value);
+		if (items_read != 3) {
+			fprintf(stderr, "Error reading matrix entry %d (expected 3 items, got %d)\n", i, items_read);
+			free(entries);
+			fclose(file);
+			return;
+		}
 		// Adjust indices (if necessary, because indices start from 1 in Matrix Market format)
 		entries[i].row--; // Adjust for 0-based indexing
 		entries[i].col--; // Adjust for 0-based indexing
@@ -214,7 +220,13 @@ void read_matrix_symtogen(MatrixData* mat, const char* filename, int* rows, int*
 	// Read entries
 	int nb_value_on_diag = 0;
 	for (i = 0; i < *nnz; i++) {
-		fscanf(file, "%d %d %le", &entries[i].row, &entries[i].col, &entries[i].value);
+		int items_read = fscanf(file, "%d %d %le", &entries[i].row, &entries[i].col, &entries[i].value);
+		if (items_read != 3) {
+			fprintf(stderr, "Error reading symmetric matrix entry %d (expected 3 items, got %d)\n", i, items_read);
+			free(entries);
+			fclose(file);
+			return;
+		}
 		if(i < 1)
 		{
 			fprintf(stderr, "%d %d %le\n", entries[i].row, entries[i].col, entries[i].value);
