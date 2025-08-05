@@ -316,10 +316,36 @@ int stencil5_run(const double* x, double* y) {
  */
 void stencil5_free() {
 	printf("[STENCIL5] Cleaning up\n");
+	
+	// Free GPU memory  
 	CUDA_CHECK(cudaFree(d_values));
 	CUDA_CHECK(cudaFree(d_indices));
 	CUDA_CHECK(cudaFree(dX));
 	CUDA_CHECK(cudaFree(dY));
+	
+	// Free host ELLPACK arrays
+	if (ellpack_matrix.indices) {
+		free(ellpack_matrix.indices);
+		ellpack_matrix.indices = NULL;
+	}
+	if (ellpack_matrix.values) {
+		free(ellpack_matrix.values);
+		ellpack_matrix.values = NULL;
+	}
+	
+	// Free host CSR arrays used to build ELLPACK
+	if (csr_mat.row_ptr) {
+		free(csr_mat.row_ptr);
+		csr_mat.row_ptr = NULL;
+	}
+	if (csr_mat.col_indices) {
+		free(csr_mat.col_indices);
+		csr_mat.col_indices = NULL;
+	}
+	if (csr_mat.values) {
+		free(csr_mat.values);
+		csr_mat.values = NULL;
+	}
 }
 
 /**

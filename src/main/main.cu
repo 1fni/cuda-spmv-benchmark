@@ -109,9 +109,14 @@ int main(int argc, char* argv[]) {
         op->free();
     }
 
-    // Free host memory for vectors
+    // Free host memory for vectors and matrix data
     free(x);
     free(y);
+    
+    // Free matrix entries allocated in load_matrix_market
+    if (mat.entries) {
+        free(mat.entries);
+    }
 
     return EXIT_SUCCESS;
 }
