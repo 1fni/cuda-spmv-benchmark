@@ -120,11 +120,17 @@ void read_matrix_general(MatrixData* mat, const char* filename, int* rows, int* 
 	}
 
 	char buffer[MAX_LINE_LENGTH]; // Buffer to store each line
+	int grid_size = -1; // Valeur par défaut si pas trouvé
 	while (fgets(buffer, MAX_LINE_LENGTH, file) != NULL) {
 		if (buffer[0] != '%') { 
 			// Process the line here (or skip it)
 			sscanf(buffer, "%d %d %d", rows, cols, nnz);
 			break; // Stop when three digits are found
+		} else {
+			// Chercher le commentaire STENCIL_GRID_SIZE
+			if (strstr(buffer, "STENCIL_GRID_SIZE") != NULL) {
+				sscanf(buffer, "%% STENCIL_GRID_SIZE %d", &grid_size);
+			}
 		}
 	}
 
@@ -139,6 +145,7 @@ void read_matrix_general(MatrixData* mat, const char* filename, int* rows, int* 
 	mat->rows = *rows;
 	mat->cols= *cols;
 	mat->nnz = *nnz;
+	mat->grid_size = grid_size; // Stocker le grid_size extrait
 
 	// Read entries
 	for (i = 0; i < *nnz; i++) {
@@ -313,6 +320,7 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 
 	// Write Matrix Market header
 	fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
+	fprintf(f, "%% STENCIL_GRID_SIZE %d\n", n);  // Commentaire avec n original
 	fprintf(f, "%d %d %d\n", grid_size, grid_size, nnz);
 
 	// Write values

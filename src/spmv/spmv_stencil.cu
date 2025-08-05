@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include "spmv.h"
+#include "io.h"
 
 ELLPACKMatrix ellpack_matrix; ///< Global ELLPACK matrix structure used by stencil operator
 
@@ -44,35 +45,60 @@ static const double beta = 0.0;     ///< Beta coefficient for SpMV operation (y 
  * @param alpha Scalar multiplier for matrix-vector product
  * @param beta Scalar multiplier for existing result vector (not used in current implementation)
  */
-__global__ void ellpack_matvec_optimized_diffusion_pattern_middle_and_else(const double * data, const int* col_indices, const double * vec, double * result, int num_rows, int max_nonzero_per_row, const double alpha,  const double beta) {
+__global__ void ellpack_matvec_optimized_diffusion_pattern_middle_and_else(const double * data, const int* col_indices, const double * vec, double * result, int num_rows, int max_nonzero_per_row, const double alpha,  const double beta, int grid_size) {
 	int row = blockIdx.x * blockDim.x + threadIdx.x;
+	if(row < num_rows){
 
-	if ((row < num_rows - num_rows) && (row > num_rows- 1) && (row % num_rows!= 0) && (row % (num_rows- 1) != 0)) {//milieu
-		double sum = 0.0f;
-		int offset = row * max_nonzero_per_row;
-		sum += data[offset] * vec[row - num_rows];
-		sum += data[offset + 1] * vec[row - 1];
-		sum += data[offset + 2] * vec[row];
-		sum += data[offset + 3] * vec[row + 1];
-		sum += data[offset + 4] * vec[row + num_rows];
-		result[row] = alpha*sum;
-	}
-	else if((row == 0) || (row == num_rows- 1) || (row == num_rows - num_rows) || ((row == num_rows - 1)) || ((row < num_rows- 1) && (row > 0)) || ((row > (num_rows - num_rows)) && (row < (num_rows - 1))) || ((row != 0) && (row != (num_rows - num_rows)) && ((row % num_rows) == 0)) || ((row != (num_rows- 1)) && (row != (num_rows - 1)) && ((row % (num_rows- 1)) == 0)) ) {//others, edge and corners
-		double sum = 0.0f;
-		int offset = row * max_nonzero_per_row;
+		// Separate the interior (middle) stencil convolution from borders/corners:
+		// on sufficiently large grids the interior pattern represents by far the heaviest workload,
+		// and handling it separately minimizes warp divergence.
+		// Further splitting the minor patterns (corners/boundaries) yields negligible benefit.
+		// Follow logic with grid flatten and represent by x vector
+		// Where the sparse matrice stores the convolution pattern value 
+
+		// Applies the 5-point stencil to interior rows of a structured grid, performing coalesced memory accesses.
+		// The interior (middle) stencil convolution is isolated from borders and corners because on sufficiently
+		// large grids it represents by far the heaviest workload; handling it separately minimizes warp divergence
+		// on the critical path. Further subdividing the minor border/corner patterns yields negligible performance benefit.
+		
+		// Convert 1D row index to 2D grid coordinates
+		int i = row / grid_size;  // row in 2D grid
+		int j = row % grid_size;  // column in 2D grid
+		
+		// Check if interior point (not on boundaries)
+		if (i > 0 && i < grid_size-1 && j > 0 && j < grid_size-1) {
+																//if ((row < num_rows - num_rows) && (row > num_rows- 1) && (row % num_rows!= 0) && (row % (num_rows- 1) != 0)) {//milieu
+																//if ((row < num_rows - size_arcfile) && (row > size_arcfile - 1) && (row % size_arcfile != 0) && (row % (size_arcfile - 1) != 0)) {//milieu
+			double sum = 0.0f;
+			int offset = row * max_nonzero_per_row;
+			sum += data[offset] * vec[row - grid_size];  // North neighbor
+			sum += data[offset + 1] * vec[row - 1];      // West neighbor
+			sum += data[offset + 2] * vec[row];          // Center point
+			sum += data[offset + 3] * vec[row + 1];      // East neighbor
+			sum += data[offset + 4] * vec[row + grid_size]; // South neighbor
+			result[row] = alpha*sum;
+			//printf("row %d %lf %lf, %lf %lf, %lf %lf, %lf %lf, %lf %lf\n", row, data[offset] , vec[row - size_grid],data[offset+1] , vec[row - 1],data[offset+2] , vec[row],data[offset+3] , vec[row + 1],data[offset+4] , vec[row + size_grid]);
+		}
+		else{
+			//else if((row == 0) || (row == num_rows- 1) || (row == num_rows - num_rows) || ((row == num_rows - 1)) || ((row < num_rows- 1) && (row > 0)) || ((row > (num_rows - num_rows)) && (row < (num_rows - 1))) || ((row != 0) && (row != (num_rows - num_rows)) && ((row % num_rows) == 0)) || ((row != (num_rows- 1)) && (row != (num_rows - 1)) && ((row % (num_rows- 1)) == 0)) ) {//others, edge and corners
+			//else if((row == 0) || (row == size_arcfile - 1) || (row == num_rows - size_arcfile) || ((row == num_rows - 1)) || ((row < size_arcfile - 1) && (row > 0)) || ((row > (num_rows - size_arcfile)) && (row < (num_rows - 1))) || ((row != 0) && (row != (num_rows - size_arcfile)) && ((row % size_arcfile) == 0)) || ((row != (size_arcfile - 1)) && (row != (num_rows - 1)) && ((row % (size_arcfile - 1)) == 0)) ) {//others, edge and corners
+			//printf("elserow %d\n", row);
+			double sum = 0.0f;
+			int offset = row * max_nonzero_per_row;
 
 #pragma unroll
-		for (int i = 0; i < max_nonzero_per_row; ++i) {
-			int col = col_indices[row * max_nonzero_per_row + i];
-			if (col >= 0) {  // Vérifie si l'indice de colonne est valide
-				sum += data[offset + i] * vec[col];
+			for (int i = 0; i < max_nonzero_per_row; ++i) {
+				int col = col_indices[row * max_nonzero_per_row + i];
+				if (col >= 0) {  // Vérifie si l'indice de colonne est valide
+					sum += data[offset + i] * vec[col];
+				}
 			}
-		}
 
-		// Stocke le résultat final
-		result[row] = alpha*sum;
-	}
-}
+			// Stocke le résultat final
+			result[row] = alpha*sum;
+		}
+		}
+		}
 
 /**
  * @brief Generic CUDA kernel for ELLPACK SpMV computation.
@@ -133,11 +159,22 @@ int build_ellpack_from_csr_struct(CSRMatrix *csr_matrix){
 	ellpack_matrix.nb_rows = csr_matrix->nb_rows;
 	ellpack_matrix.nb_cols = csr_matrix->nb_cols;
 	ellpack_matrix.nb_nonzeros = csr_matrix->nb_nonzeros;
+	// grid_size will be assigned in stencil5_init
 
 	int total_ell_elements = csr_matrix->nb_rows * ellpack_matrix.ell_width;
 	ellpack_matrix.indices = (int *)calloc(total_ell_elements, sizeof(int));
 	ellpack_matrix.values = (double *)calloc(total_ell_elements, sizeof(double));
 
+	// Debug: afficher la structure CSR avant conversion
+	//printf("CSR Matrix debug:\n");
+	//for (int i = 0; i < csr_matrix->nb_rows; ++i) {
+	//	printf("Row %d CSR: ", i);
+	//	for (int j = csr_matrix->row_ptr[i]; j < csr_matrix->row_ptr[i + 1]; ++j) {
+	//		printf("(col:%d val:%lf) ", csr_matrix->col_indices[j], csr_matrix->values[j]);
+	//	}
+	//	printf("\n");
+	//}
+	
 	//populate ELLPACK format
 	for (int i = 0; i < csr_matrix->nb_rows; ++i) {
 		int ell_index = 0;
@@ -151,12 +188,13 @@ int build_ellpack_from_csr_struct(CSRMatrix *csr_matrix){
 			}
 		}
 	}
+	// Debug: afficher la conversion pour toutes les lignes
 	//for (int i = 0; i < ellpack_matrix.nb_rows; i++) {
+	//	printf("Row %d ELLPACK: ", i);
 	//	for (int j = 0; j < ellpack_matrix.ell_width; j++) {
-	//		printf("value %lf, col index %d", ellpack_matrix.values[ellpack_matrix.ell_width*i + j], ellpack_matrix.indices[ellpack_matrix.ell_width*i + j]);
-	//		puts("");
+	//		printf("(col:%d val:%lf) ", ellpack_matrix.indices[ellpack_matrix.ell_width*i + j], ellpack_matrix.values[ellpack_matrix.ell_width*i + j]);
 	//	}
-	//	puts("");
+	//	printf("\n");
 	//}
 	return 0;
 }
@@ -173,9 +211,12 @@ int build_ellpack_from_csr_struct(CSRMatrix *csr_matrix){
  */
 int stencil5_init(MatrixData* mat) {
 
-	//build CSR from from MatrixData* mat then convert in ELLPACK
+	//build CSR from MatrixData* mat then convert in ELLPACK
 	build_csr_struct(mat);
 	build_ellpack_from_csr_struct(&csr_mat);
+	
+	// Store grid_size from MatrixData for stencil operations
+	ellpack_matrix.grid_size = mat->grid_size;
 
 	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
 	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
@@ -190,6 +231,29 @@ int stencil5_init(MatrixData* mat) {
 	// Transfert H2D
 	CUDA_CHECK(cudaMemcpy(d_values, ellpack_matrix.values, size_values, cudaMemcpyHostToDevice));
 	CUDA_CHECK(cudaMemcpy(d_indices, ellpack_matrix.indices, size_indices, cudaMemcpyHostToDevice));
+	
+	// Synchronisation pour s'assurer que le transfert est terminé
+	CUDA_CHECK(cudaDeviceSynchronize());
+	
+	// Debug: vérifier les données sur GPU après transfert
+	//printf("Verification GPU data after H2D transfer:\n");
+	//double *h_verify_values = (double*)malloc(size_values);
+	//int *h_verify_indices = (int*)malloc(size_indices);
+	//
+	//CUDA_CHECK(cudaMemcpy(h_verify_values, d_values, size_values, cudaMemcpyDeviceToHost));
+	//CUDA_CHECK(cudaMemcpy(h_verify_indices, d_indices, size_indices, cudaMemcpyDeviceToHost));
+	//
+	//for (int i = 0; i < ellpack_matrix.nb_rows; i++) {
+	//	printf("GPU Row %d: ", i);
+	//	for (int j = 0; j < ellpack_matrix.ell_width; j++) {
+	//		int idx = i * ellpack_matrix.ell_width + j;
+	//		printf("(col:%d val:%lf) ", h_verify_indices[idx], h_verify_values[idx]);
+	//	}
+	//	printf("\n");
+	//}
+	//
+	//free(h_verify_values);
+	//free(h_verify_indices);
 	return 0;
 }
 
@@ -219,7 +283,8 @@ int stencil5_run(const double* x, double* y) {
 	int threads = 32;
 	int blocks = (ellpack_matrix.nb_rows + threads - 1) / threads;
 	//ellpack_matvec_optimized_diffusion<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta);
-	ellpack_matvec_optimized_diffusion_pattern_middle_and_else<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta);
+	printf("Matrix rows: %d, Grid size: %d\n", ellpack_matrix.nb_rows, ellpack_matrix.grid_size);
+	ellpack_matvec_optimized_diffusion_pattern_middle_and_else<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta, ellpack_matrix.grid_size);
 
 	cudaDeviceSynchronize();
 	cudaEventRecord(stop);

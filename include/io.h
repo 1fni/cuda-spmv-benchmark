@@ -50,6 +50,7 @@ typedef struct MatrixData {
     int rows;       ///< Number of rows in the matrix
     int cols;       ///< Number of columns in the matrix
     int nnz;        ///< Number of non-zero elements
+    int grid_size;  ///< Original grid size n for n×n stencil (-1 if not stencil)
     Entry* entries; ///< Dynamic array of non-zero entries
 } MatrixData;
 
