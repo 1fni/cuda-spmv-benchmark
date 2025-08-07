@@ -47,9 +47,20 @@ include_directories(
     ${GTEST_INCLUDE_DIR}
 )
 
+# Collect C/CUDA source files from main project (exclude main.cu)
+file(GLOB_RECURSE PROJECT_SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/*.cu"
+)
+# Remove main.cu since we have our own main
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "main.cu$")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "generate_matrix.cu$")
+
 # Add the test executable
 add_executable(spmv_tests
     test_main.cpp
+    test_wrapper_basic.cpp
+    wrappers/spmv_wrapper.cpp
+    ${PROJECT_SOURCES}
 )
 
 # Link libraries (same as Makefile: -lcusparse -lcublas)

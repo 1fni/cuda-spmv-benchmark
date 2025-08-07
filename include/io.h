@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ============================
    CONSTANTS & LIMITS
    ============================ */
@@ -131,5 +135,9 @@ void convert_csr_to_ellpack(const struct CSRMatrix* csr_matrix,
  * @return int 0 if successful, non-zero otherwise
  */
 int write_matrix_market_stencil5(int n, const char* filename);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // SPMV_IO_H

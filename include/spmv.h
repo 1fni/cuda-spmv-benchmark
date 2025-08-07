@@ -77,11 +77,19 @@ extern SpmvOperator SPMV_CSR;
 extern SpmvOperator SPMV_STENCIL5;
 extern SpmvOperator SPMV_ELLPACK;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Retrieves the appropriate SpMV operator by name.
  * @param mode Name of the operator (e.g., "csr", "ellpack").
  * @return Pointer to the matching SpmvOperator, or NULL if not found.
  */
 SpmvOperator* get_operator(const char* mode);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // SPMV_H
