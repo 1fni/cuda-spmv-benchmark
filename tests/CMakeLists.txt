@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 project(SpMVTests LANGUAGES CXX CUDA)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Build type (default: Release, matching Makefile default)
@@ -59,7 +59,11 @@ list(FILTER PROJECT_SOURCES EXCLUDE REGEX "generate_matrix.cu$")
 add_executable(spmv_tests
     test_main.cpp
     test_wrapper_basic.cpp
+    test_helpers_demo.cpp
     wrappers/spmv_wrapper.cpp
+    helpers/cuda_test_utils.cpp
+    helpers/matrix_fixtures.cpp
+    helpers/performance_benchmarks.cpp
     ${PROJECT_SOURCES}
 )
 
