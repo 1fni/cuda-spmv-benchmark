@@ -35,22 +35,22 @@ protected:
  * @brief Test wrapper construction with valid operators
  */
 TEST_F(SpMVWrapperTest, ConstructorWithValidOperators) {
-    // Test all three available operators
+    // Test all three available operators (use short names as expected by get_operator)
     EXPECT_NO_THROW({
-        SpMVWrapper csr_wrapper("SPMV_CSR");
-        EXPECT_EQ(csr_wrapper.get_name(), "SPMV_CSR");
+        SpMVWrapper csr_wrapper("csr");
+        EXPECT_EQ(csr_wrapper.get_name(), "csr");
         EXPECT_FALSE(csr_wrapper.is_initialized());
     });
     
     EXPECT_NO_THROW({
-        SpMVWrapper stencil_wrapper("SPMV_STENCIL5");
-        EXPECT_EQ(stencil_wrapper.get_name(), "SPMV_STENCIL5");
+        SpMVWrapper stencil_wrapper("stencil5");
+        EXPECT_EQ(stencil_wrapper.get_name(), "stencil5");
         EXPECT_FALSE(stencil_wrapper.is_initialized());
     });
     
     EXPECT_NO_THROW({
-        SpMVWrapper ellpack_wrapper("SPMV_ELLPACK");
-        EXPECT_EQ(ellpack_wrapper.get_name(), "SPMV_ELLPACK");
+        SpMVWrapper ellpack_wrapper("ellpack");
+        EXPECT_EQ(ellpack_wrapper.get_name(), "ellpack");
         EXPECT_FALSE(ellpack_wrapper.is_initialized());
     });
 }
@@ -88,7 +88,7 @@ TEST_F(SpMVWrapperTest, MatrixDataWrapperLoad) {
 TEST_F(SpMVWrapperTest, CSRInitialization) {
     EXPECT_NO_THROW({
         MatrixDataWrapper matrix(test_matrix_3x3_);
-        SpMVWrapper csr_wrapper("SPMV_CSR");
+        SpMVWrapper csr_wrapper("csr");
         
         EXPECT_TRUE(csr_wrapper.init(matrix.get()));
         EXPECT_TRUE(csr_wrapper.is_initialized());
@@ -101,7 +101,7 @@ TEST_F(SpMVWrapperTest, CSRInitialization) {
  */
 TEST_F(SpMVWrapperTest, CSRCorrectnessStencil3x3) {
     MatrixDataWrapper matrix(test_matrix_3x3_);
-    SpMVWrapper csr_wrapper("SPMV_CSR");
+    SpMVWrapper csr_wrapper("csr");
     
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
     
@@ -132,7 +132,7 @@ TEST_F(SpMVWrapperTest, CSRCorrectnessStencil3x3) {
  */
 TEST_F(SpMVWrapperTest, StencilCorrectnessStencil3x3) {
     MatrixDataWrapper matrix(test_matrix_3x3_);
-    SpMVWrapper stencil_wrapper("SPMV_STENCIL5");
+    SpMVWrapper stencil_wrapper("stencil5");
     
     ASSERT_TRUE(stencil_wrapper.init(matrix.get()));
     
@@ -160,8 +160,8 @@ TEST_F(SpMVWrapperTest, CrossValidationCSRvsStencil) {
     MatrixDataWrapper matrix(test_matrix_3x3_);
     
     // Initialize both operators
-    SpMVWrapper csr_wrapper("SPMV_CSR");
-    SpMVWrapper stencil_wrapper("SPMV_STENCIL5");
+    SpMVWrapper csr_wrapper("csr");
+    SpMVWrapper stencil_wrapper("stencil5");
     
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
     ASSERT_TRUE(stencil_wrapper.init(matrix.get()));
@@ -196,7 +196,7 @@ TEST_F(SpMVWrapperTest, CrossValidationCSRvsStencil) {
  * @brief Test error handling for uninitialized wrapper
  */
 TEST_F(SpMVWrapperTest, ErrorHandlingUninitialized) {
-    SpMVWrapper csr_wrapper("SPMV_CSR");
+    SpMVWrapper csr_wrapper("csr");
     std::vector<double> x(3, 1.0);
     
     // Should throw when not initialized
@@ -210,7 +210,7 @@ TEST_F(SpMVWrapperTest, ErrorHandlingUninitialized) {
  */
 TEST_F(SpMVWrapperTest, ErrorHandlingWrongVectorSize) {
     MatrixDataWrapper matrix(test_matrix_3x3_);
-    SpMVWrapper csr_wrapper("SPMV_CSR");
+    SpMVWrapper csr_wrapper("csr");
     
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
     
