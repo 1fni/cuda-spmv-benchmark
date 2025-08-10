@@ -63,22 +63,7 @@ int ellpack_init(MatrixData* matrix) {
 
 int ellpack_run(const double* x, double* y) {
 	printf("[cusparse ELLPACK with CSR struct] Running SpMV\n");
-	// TODO: Run SpMV: y = A * x
-	double * vector;
-	double * result;
-
-	/*If fill directly, not in read_vector*/
-	vector = (double *)malloc(csr_mat.nb_cols * sizeof(double ));
-	for (int i = 0; i < csr_mat.nb_cols; i++) {
-		vector[i] = 1.0;
-	}
-
-	result = (double *)calloc(csr_mat.nb_rows, sizeof(double));
-
-	if (result == NULL) {
-		fprintf(stderr, "Memory allocation error\n");
-		return 1;
-	}
+	// SpMV: y = A * x using provided vectors
 	double     alpha           = 1.0;
 	double     beta            = 0.0;
 
@@ -103,9 +88,9 @@ int ellpack_run(const double* x, double* y) {
 					cudaMemcpyHostToDevice) )
 		CUDA_CHECK( cudaMemcpy(dA_values, csr_mat.values, csr_mat.nb_nonzeros * sizeof(double),
 					cudaMemcpyHostToDevice) )
-		CUDA_CHECK( cudaMemcpy(dX, vector, csr_mat.nb_cols * sizeof(double),
+		CUDA_CHECK( cudaMemcpy(dX, x, csr_mat.nb_cols * sizeof(double),
 					cudaMemcpyHostToDevice) )
-		CUDA_CHECK( cudaMemcpy(dY, result, csr_mat.nb_rows * sizeof(double),
+		CUDA_CHECK( cudaMemcpy(dY, y, csr_mat.nb_rows * sizeof(double),
 					cudaMemcpyHostToDevice) )
 
 		fprintf(stderr, "tot memory matrix format %zu\n", tot_mem);
@@ -168,21 +153,23 @@ int ellpack_run(const double* x, double* y) {
 		CHECK_CUSPARSE( cusparseDestroy(handle) )
 
 		// device result check
-		CUDA_CHECK( cudaMemcpy(result, dY, csr_mat.nb_rows * sizeof(double),
+		CUDA_CHECK( cudaMemcpy(y, dY, csr_mat.nb_rows * sizeof(double),
 					cudaMemcpyDeviceToHost) )
 		double check_sum = 0.0;
 	for (int i = 0; i < csr_mat.nb_rows; i++) {
-		check_sum += result[i];
+		check_sum += y[i];
 	}
 	printf("check_sum %le\n", check_sum);
 
+	// Free GPU memory
 	CUDA_CHECK( cudaFree(dBuffer) )
 		CUDA_CHECK( cudaFree(dA_csrOffsets) )
 		CUDA_CHECK( cudaFree(dA_columns) )
 		CUDA_CHECK( cudaFree(dA_values) )
 		CUDA_CHECK( cudaFree(dX) )
 		CUDA_CHECK( cudaFree(dY) )
-		return EXIT_SUCCESS;
+		
+	return EXIT_SUCCESS;
 }
 
 void ellpack_free() {
