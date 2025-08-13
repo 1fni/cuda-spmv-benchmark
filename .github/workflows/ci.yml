@@ -114,7 +114,7 @@ jobs:
         echo "✅ All smoke tests completed - binaries functional at basic level"
     
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: spmv-binaries-${{ matrix.build_type }}
         path: |
@@ -187,7 +187,7 @@ jobs:
         echo "✅ Test framework smoke validation completed"
     
     - name: Upload test framework
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-framework
         path: |
@@ -239,7 +239,7 @@ jobs:
         grep -r "__global__" src/ || echo "No kernels found"
     
     - name: Download artifacts for analysis
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       continue-on-error: true
     
     - name: Generate comprehensive CI report
@@ -325,7 +325,7 @@ jobs:
         cat ci_report.md
     
     - name: Upload CI/CD report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ci-cd-report
         path: ci_report.md
