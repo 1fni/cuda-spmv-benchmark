@@ -14,7 +14,7 @@ jobs:
   # JOB 1: Build validation with both debug and release
   build-validation:
     name: Build Validation (Makefile)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     strategy:
       matrix:
@@ -125,7 +125,7 @@ jobs:
   # JOB 2: Test framework build and validation
   test-framework-validation:
     name: Test Framework Build (CMake)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-validation
     
     steps:
@@ -197,7 +197,7 @@ jobs:
   # JOB 3: Code analysis and reporting
   analysis-report:
     name: Code Analysis & CI Report
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build-validation, test-framework-validation]
     if: always()  # Run even if previous jobs fail
     
