@@ -110,7 +110,6 @@ void read_matrix_general(MatrixData* mat, const char* filename, int* rows, int* 
 	FILE *file;
 	int i;
 	Entry *entries;
-	int *row_ptr, *col_indices;
 
 	file = fopen(filename, "r");
 	if (file == NULL) {
