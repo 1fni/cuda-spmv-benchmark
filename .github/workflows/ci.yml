@@ -69,7 +69,7 @@ jobs:
         echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
         
         # Add CUDA include path to NVCC flags
-        export CUDA_INCLUDE_PATH="/usr/local/cuda/include"
+        export CUDA_INCLUDE_PATH="/usr/local/cuda-11.8/include"
         if [ -d "$CUDA_INCLUDE_PATH" ]; then
           echo "Using CUDA include path: $CUDA_INCLUDE_PATH"
           make BUILD_TYPE=${{ matrix.build_type }} INCLUDES="-Iinclude -I$CUDA_INCLUDE_PATH" -j$(nproc)
