@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cuda_runtime.h>
 #include "spmv.h"
 #include "io.h"
 
@@ -96,12 +97,30 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < mat.cols; i++) x[i] = 1.0; // Fill input vector with 1.0
     memset(y, 0, mat.rows * sizeof(double));       // Initialize output vector to 0
 
-    // Execute the SpMV benchmark using the selected implementation
-    if (op->run(x, y) != 0) {
-        fprintf(stderr, "SpMV run failed for mode '%s'\n", op->name);
+    // Warm-up run to ensure GPU is properly initialized
+    printf("Performing warm-up run...\n");
+    double warmup_time;
+    if (op->run_timed(x, y, &warmup_time) != 0) {
+        fprintf(stderr, "SpMV warm-up failed for mode '%s'\n", op->name);
         return EXIT_FAILURE;
     }
-
+    
+    // Reset output vector for the benchmark run
+    memset(y, 0, mat.rows * sizeof(double));
+    
+    // Execute timed benchmark run with kernel-level timing
+    printf("Executing timed benchmark run...\n");
+    double kernel_time_ms;
+    if (op->run_timed(x, y, &kernel_time_ms) != 0) {
+        fprintf(stderr, "SpMV benchmark run failed for mode '%s'\n", op->name);
+        return EXIT_FAILURE;
+    }
+    
+    // Calculate and display comprehensive performance metrics
+    BenchmarkMetrics metrics;
+    calculate_spmv_metrics(kernel_time_ms, &mat, op->name, &metrics);
+    print_benchmark_metrics(&metrics);
+    
     printf("SpMV completed successfully using mode: %s\n", op->name);
 
     // Free GPU resources used by the selected operator

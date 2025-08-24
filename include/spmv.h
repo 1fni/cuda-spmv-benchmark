@@ -56,19 +56,40 @@ extern ELLPACKMatrix ellpack_matrix;
 }
 
 /**
+ * @struct BenchmarkMetrics
+ * @brief Performance metrics collected during SpMV benchmarking.
+ *
+ * Comprehensive metrics for analyzing SpMV performance:
+ *  - Execution time measurements
+ *  - FLOPS (Floating Point Operations Per Second) calculations
+ *  - Memory bandwidth utilization
+ *  - Matrix characteristics for analysis context
+ */
+typedef struct {
+    double execution_time_ms;        ///< Total execution time in milliseconds
+    double gflops;                  ///< GFLOPS (Giga Floating Point Operations Per Second)
+    double bandwidth_gb_s;          ///< Memory bandwidth in GB/s
+    int matrix_rows;               ///< Number of matrix rows
+    int matrix_cols;               ///< Number of matrix columns
+    int matrix_nnz;                ///< Number of non-zero elements
+    double sparsity_ratio;         ///< Sparsity ratio (nnz / (rows * cols))
+    const char* operator_name;     ///< Name of the SpMV operator used
+} BenchmarkMetrics;
+
+/**
  * @struct SpmvOperator
  * @brief Defines the interface for different SpMV implementations.
  *
  * Each operator provides:
  *  - `name`: Identifier of the method (e.g., CSR, ELLPACK, stencil).
  *  - `init`: Function pointer for initialization with a given matrix.
- *  - `run`: Function pointer to execute SpMV with input/output vectors.
+ *  - `run_timed`: Function pointer to execute SpMV with kernel-level timing.
  *  - `free`: Function pointer to release associated resources.
  */
 typedef struct {
     const char* name;                                      ///< Operator name (e.g., "csr", "ellpack").
     int (*init)(MatrixData* mat);                          ///< Initialization function for matrix data.
-    int (*run)(const double* x, double* y);               ///< SpMV computation function.
+    int (*run_timed)(const double* x, double* y, double* kernel_time_ms); ///< SpMV with kernel timing.
     void (*free)();                                        ///< Resource cleanup function.
 } SpmvOperator;
 
@@ -87,6 +108,22 @@ extern "C" {
  * @return Pointer to the matching SpmvOperator, or NULL if not found.
  */
 SpmvOperator* get_operator(const char* mode);
+
+/**
+ * @brief Calculates comprehensive performance metrics for SpMV operations with format-specific memory analysis.
+ * @param execution_time_ms Measured execution time in milliseconds
+ * @param mat Matrix data structure containing matrix characteristics  
+ * @param operator_name Name of the SpMV operator used
+ * @param metrics Output structure to store calculated metrics
+ */
+void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat, 
+                           const char* operator_name, BenchmarkMetrics* metrics);
+
+/**
+ * @brief Prints detailed performance metrics in human-readable format.
+ * @param metrics Benchmark metrics structure to display
+ */
+void print_benchmark_metrics(const BenchmarkMetrics* metrics);
 
 #ifdef __cplusplus
 }

@@ -61,7 +61,9 @@ int ellpack_init(MatrixData* matrix) {
 	return 0;
 }
 
-int ellpack_run(const double* x, double* y) {
+int ellpack_run_timed(const double* x, double* y, double* kernel_time_ms) {
+	// ELLPACK implementation currently not functional - returning placeholder timing
+	*kernel_time_ms = 0.0;
 	printf("[cusparse ELLPACK with CSR struct] Running SpMV\n");
 	// SpMV: y = A * x using provided vectors
 	double     alpha           = 1.0;
@@ -179,7 +181,7 @@ void ellpack_free() {
 SpmvOperator SPMV_ELLPACK = {
 	.name = "ellpack",
 	.init = ellpack_init,
-	.run = ellpack_run,
+	.run_timed = ellpack_run_timed,
 	.free = ellpack_free
 };
 

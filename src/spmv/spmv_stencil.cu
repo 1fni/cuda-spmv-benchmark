@@ -258,18 +258,19 @@ int stencil5_init(MatrixData* mat) {
 }
 
 /**
- * @brief Executes the stencil5 SpMV computation on GPU with performance timing.
+ * @brief Executes the stencil5 SpMV computation with precise kernel timing measurement.
  * @details This function performs the complete SpMV execution workflow:
  * 1. Transfers input vector from host to device memory
  * 2. Launches optimized CUDA kernel for 5-point stencil pattern
- * 3. Measures kernel execution time using CUDA events
+ * 3. Measures precise kernel execution time using CUDA events
  * 4. Transfers result vector back to host memory
  * 5. Computes and displays checksum for verification
  * @param x Input vector (host memory)
  * @param y Output vector (host memory) - will contain result of A*x
+ * @param kernel_time_ms Output parameter for kernel execution time in milliseconds
  * @return int 0 on successful execution, non-zero on failure
  */
-int stencil5_run(const double* x, double* y) {
+int stencil5_run_timed(const double* x, double* y, double* kernel_time_ms) {
 	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
 	
 	CUDA_CHECK(cudaMemcpy(dX, x, size_vec, cudaMemcpyHostToDevice));
@@ -291,7 +292,13 @@ int stencil5_run(const double* x, double* y) {
 	cudaEventSynchronize(stop);
 	float computeTime;
 	cudaEventElapsedTime(&computeTime, start, stop);
-	printf("[Stencil5] Compute SpMV kernel: %.3f ms\n", computeTime);
+	
+	// Return precise kernel timing for metrics calculation
+	*kernel_time_ms = (double)computeTime;
+	printf("[Stencil5] Kernel time: %.3f ms\n", computeTime);
+	
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
 
 	// Copy result
 	CUDA_CHECK(cudaMemcpy(y, dY, size_vec, cudaMemcpyDeviceToHost));
@@ -359,7 +366,7 @@ void stencil5_free() {
 SpmvOperator SPMV_STENCIL5 = {
 	.name = "stencil5",
 	.init = stencil5_init,
-	.run = stencil5_run,
+	.run_timed = stencil5_run_timed,
 	.free = stencil5_free
 };
 

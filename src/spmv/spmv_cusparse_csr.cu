@@ -164,16 +164,18 @@ int csr_init(MatrixData* mat)
 }
 
 /**
- * @brief Executes CSR SpMV kernel and reports result.
+ * @brief Executes CSR SpMV kernel with precise timing measurement.
  * @details
  *   - Copies input vector to GPU
- *   - Launches cusparseSpMV and measures execution time
+ *   - Launches cusparseSpMV with accurate kernel-only timing
  *   - Copies output vector back to host and computes checksum
+ *   - Returns precise kernel execution time for metrics calculation
  * @param x Host input vector (length nb_cols)
- * @param y Host output vector (length nb_rows)
+ * @param y Host output vector (length nb_rows)  
+ * @param kernel_time_ms Output parameter for kernel execution time in milliseconds
  * @return EXIT_SUCCESS on success
  */
-int csr_run(const double* x, double* y)
+int csr_run_timed(const double* x, double* y, double* kernel_time_ms)
 {
     // Copy input vector
     CUDA_CHECK(cudaMemcpy(dX, x, csr_mat.nb_cols * sizeof(double), cudaMemcpyHostToDevice));
@@ -194,7 +196,11 @@ int csr_run(const double* x, double* y)
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&time_ms, start, stop);
-    printf("[cuSPARSE CSR] Compute SpMV: %.3f ms\n", time_ms);
+    
+    // Return precise kernel timing for metrics calculation
+    *kernel_time_ms = (double)time_ms;
+    printf("[cuSPARSE CSR] Kernel time: %.3f ms\n", time_ms);
+    
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 
@@ -254,6 +260,6 @@ void csr_free()
 SpmvOperator SPMV_CSR = {
     .name = "csr",
     .init = csr_init,
-    .run  = csr_run,
+    .run_timed = csr_run_timed,
     .free = csr_free
 };
