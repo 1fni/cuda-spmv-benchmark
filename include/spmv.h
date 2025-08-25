@@ -59,7 +59,7 @@ extern ELLPACKMatrix ellpack_matrix;
  * @struct BenchmarkMetrics
  * @brief Performance metrics collected during SpMV benchmarking.
  *
- * Comprehensive metrics for analyzing SpMV performance:
+ * Metrics for analyzing SpMV performance:
  *  - Execution time measurements
  *  - FLOPS (Floating Point Operations Per Second) calculations
  *  - Memory bandwidth utilization
@@ -110,7 +110,7 @@ extern "C" {
 SpmvOperator* get_operator(const char* mode);
 
 /**
- * @brief Calculates comprehensive performance metrics for SpMV operations with format-specific memory analysis.
+ * @brief Calculates performance metrics for SpMV operations with format-specific memory analysis.
  * @param execution_time_ms Measured execution time in milliseconds
  * @param mat Matrix data structure containing matrix characteristics  
  * @param operator_name Name of the SpMV operator used
@@ -122,8 +122,23 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
 /**
  * @brief Prints detailed performance metrics in human-readable format.
  * @param metrics Benchmark metrics structure to display
+ * @param output_file Output file pointer (use stdout if NULL)
  */
-void print_benchmark_metrics(const BenchmarkMetrics* metrics);
+void print_benchmark_metrics(const BenchmarkMetrics* metrics, FILE* output_file);
+
+/**
+ * @brief Exports performance metrics in JSON format for automated analysis.
+ * @param metrics Benchmark metrics structure to export
+ * @param output_file Output file pointer (use stdout if NULL)
+ */
+void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file);
+
+/**
+ * @brief Exports performance metrics in CSV format for spreadsheet analysis.
+ * @param metrics Benchmark metrics structure to export
+ * @param output_file Output file pointer (use stdout if NULL)
+ */
+void print_metrics_csv(const BenchmarkMetrics* metrics, FILE* output_file);
 
 #ifdef __cplusplus
 }

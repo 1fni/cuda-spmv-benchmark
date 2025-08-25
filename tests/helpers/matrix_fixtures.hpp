@@ -3,7 +3,7 @@
  * @brief Matrix generators and fixtures for systematic SpMV testing
  *
  * Provides specialized matrix generators with known analytical properties
- * for comprehensive SpMV correctness and performance validation.
+ * for SpMV correctness and performance validation.
  */
 
 #ifndef MATRIX_FIXTURES_HPP

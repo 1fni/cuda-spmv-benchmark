@@ -3,7 +3,7 @@
  * @brief Handles I/O operations for Matrix Market files and memory allocation.
  *
  * @details
- * This file provides comprehensive I/O functionality for sparse matrix operations:
+ * I/O functionality for sparse matrix operations:
  * - Reading sparse matrices from Matrix Market (.mtx) format
  * - Converting matrices to CSR (Compressed Sparse Row) representation
  * - Handling symmetry expansion for symmetric matrices

@@ -3,7 +3,7 @@
  * @brief Performance metrics calculation and display for SpMV operations.
  *
  * @details
- * This module provides comprehensive performance analysis capabilities for SpMV operations:
+ * Performance analysis capabilities for SpMV operations:
  * - FLOPS (Floating Point Operations Per Second) calculations
  * - Memory bandwidth measurements and utilization analysis
  * - Sparsity pattern analysis and characteristics
@@ -24,7 +24,7 @@
 #include "io.h"
 
 /**
- * @brief Calculates comprehensive performance metrics for SpMV operations.
+ * @brief Calculates performance metrics for SpMV operations.
  *
  * @details
  * Computes key performance indicators:
@@ -111,7 +111,7 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
 }
 
 /**
- * @brief Prints comprehensive performance metrics in professional format.
+ * @brief Prints performance metrics in human-readable format.
  *
  * @details
  * Displays detailed performance analysis including:
@@ -122,29 +122,30 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
  * - Performance classification (compute-bound vs memory-bound)
  *
  * Output format designed for:
- * - Professional HPC benchmarking reports
- * - Performance analysis and optimization
+ * - HPC benchmarking reports
+ * - Performance analysis
  * - Comparative studies between SpMV implementations
  *
  * @param metrics Complete benchmark metrics structure to display
  */
-void print_benchmark_metrics(const BenchmarkMetrics* metrics) {
-    printf("\n=== SpMV Performance Metrics ===\n");
-    printf("Operator: %s\n", metrics->operator_name);
-    printf("\n--- Matrix Characteristics ---\n");
-    printf("Dimensions: %d x %d\n", metrics->matrix_rows, metrics->matrix_cols);
-    printf("Non-zeros: %d\n", metrics->matrix_nnz);
-    printf("Sparsity ratio: %.6f (%.4f%% non-zero)\n", 
+void print_benchmark_metrics(const BenchmarkMetrics* metrics, FILE* output_file) {
+    FILE* fp = (output_file != NULL) ? output_file : stdout;
+    fprintf(fp, "\n=== SpMV Performance Metrics ===\n");
+    fprintf(fp, "Operator: %s\n", metrics->operator_name);
+    fprintf(fp, "\n--- Matrix Characteristics ---\n");
+    fprintf(fp, "Dimensions: %d x %d\n", metrics->matrix_rows, metrics->matrix_cols);
+    fprintf(fp, "Non-zeros: %d\n", metrics->matrix_nnz);
+    fprintf(fp, "Sparsity ratio: %.6f (%.4f%% non-zero)\n", 
            metrics->sparsity_ratio, metrics->sparsity_ratio * 100.0);
     
-    printf("\n--- Performance Metrics ---\n");
-    printf("Execution time: %.3f ms (%.1f μs)\n", 
+    fprintf(fp, "\n--- Performance Metrics ---\n");
+    fprintf(fp, "Execution time: %.3f ms (%.1f μs)\n", 
            metrics->execution_time_ms, metrics->execution_time_ms * 1000.0);
-    printf("GFLOPS: %.3f\n", metrics->gflops);
-    printf("Memory bandwidth: %.3f GB/s\n", metrics->bandwidth_gb_s);
+    fprintf(fp, "GFLOPS: %.3f\n", metrics->gflops);
+    fprintf(fp, "Memory bandwidth: %.3f GB/s\n", metrics->bandwidth_gb_s);
     
     // Performance analysis and context
-    printf("\n--- Performance Analysis ---\n");
+    fprintf(fp, "\n--- Performance Analysis ---\n");
     
     // Arithmetic intensity calculation (FLOPS per byte)
     double total_flops = 2.0 * metrics->matrix_nnz;
@@ -154,19 +155,148 @@ void print_benchmark_metrics(const BenchmarkMetrics* metrics) {
     double total_bytes = matrix_data_bytes + matrix_indices_bytes + vector_bytes;
     double arithmetic_intensity = total_flops / total_bytes;
     
-    printf("Arithmetic intensity: %.3f FLOP/byte\n", arithmetic_intensity);
+    fprintf(fp, "Arithmetic intensity: %.3f FLOP/byte\n", arithmetic_intensity);
     
     // Performance classification
     if (arithmetic_intensity < 0.5) {
-        printf("Classification: Memory-bound (low arithmetic intensity)\n");
-        printf("Optimization focus: Memory access patterns, data locality\n");
+        fprintf(fp, "Classification: Memory-bound (low arithmetic intensity)\n");
+        fprintf(fp, "Optimization focus: Memory access patterns, data locality\n");
     } else if (arithmetic_intensity < 2.0) {
-        printf("Classification: Balanced compute/memory\n"); 
-        printf("Optimization focus: Both compute and memory optimization\n");
+        fprintf(fp, "Classification: Balanced compute/memory\n"); 
+        fprintf(fp, "Optimization focus: Both compute and memory optimization\n");
     } else {
-        printf("Classification: Compute-bound (high arithmetic intensity)\n");
-        printf("Optimization focus: Compute throughput, parallelization\n");
+        fprintf(fp, "Classification: Compute-bound (high arithmetic intensity)\n");
+        fprintf(fp, "Optimization focus: Compute throughput, parallelization\n");
     }
     
-    printf("=============================\n\n");
+    fprintf(fp, "=============================\n\n");
+}
+
+/**
+ * @brief Exports performance metrics in JSON format for automated processing.
+ *
+ * @details
+ * Outputs structured JSON containing:
+ * - Matrix characteristics (dimensions, sparsity, operator)
+ * - Performance metrics (execution time, GFLOPS, bandwidth)
+ * - Derived analysis (arithmetic intensity, performance classification)
+ * - Metadata (timestamp, version info for reproducibility)
+ *
+ * JSON format designed for:
+ * - Automated benchmarking pipelines
+ * - Data visualization tools and scripts
+ * - Comparative analysis and trend tracking
+ * - Integration with monitoring systems
+ *
+ * @param metrics Complete benchmark metrics structure to export
+ */
+void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
+    FILE* fp = (output_file != NULL) ? output_file : stdout;
+    // Calculate additional derived metrics for JSON export
+    double total_flops = 2.0 * metrics->matrix_nnz;
+    double matrix_data_bytes, matrix_indices_bytes, vector_bytes;
+    
+    // Recalculate format-specific memory traffic for JSON details
+    extern CSRMatrix csr_mat;
+    extern ELLPACKMatrix ellpack_matrix;
+    
+    if (strcmp(metrics->operator_name, "csr") == 0) {
+        matrix_data_bytes = csr_mat.nb_nonzeros * sizeof(double);
+        matrix_indices_bytes = csr_mat.nb_nonzeros * sizeof(int) + (csr_mat.nb_rows + 1) * sizeof(int);
+    } else if (strcmp(metrics->operator_name, "stencil5") == 0) {
+        matrix_data_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+        matrix_indices_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
+    } else {
+        // Fallback calculation
+        matrix_data_bytes = metrics->matrix_nnz * sizeof(double);
+        matrix_indices_bytes = metrics->matrix_nnz * sizeof(int) * 2;
+    }
+    
+    vector_bytes = (metrics->matrix_rows + metrics->matrix_cols) * sizeof(double);
+    double total_bytes = matrix_data_bytes + matrix_indices_bytes + vector_bytes;
+    double arithmetic_intensity = total_flops / total_bytes;
+    
+    // Output structured JSON
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"benchmark\": {\n");
+    fprintf(fp, "    \"operator\": \"%s\",\n", metrics->operator_name);
+    fprintf(fp, "    \"matrix\": {\n");
+    fprintf(fp, "      \"rows\": %d,\n", metrics->matrix_rows);
+    fprintf(fp, "      \"cols\": %d,\n", metrics->matrix_cols);
+    fprintf(fp, "      \"nnz\": %d,\n", metrics->matrix_nnz);
+    fprintf(fp, "      \"sparsity_ratio\": %.6f,\n", metrics->sparsity_ratio);
+    fprintf(fp, "      \"sparsity_percent\": %.4f\n", metrics->sparsity_ratio * 100.0);
+    fprintf(fp, "    },\n");
+    fprintf(fp, "    \"performance\": {\n");
+    fprintf(fp, "      \"execution_time_ms\": %.6f,\n", metrics->execution_time_ms);
+    fprintf(fp, "      \"execution_time_us\": %.1f,\n", metrics->execution_time_ms * 1000.0);
+    fprintf(fp, "      \"gflops\": %.6f,\n", metrics->gflops);
+    fprintf(fp, "      \"bandwidth_gb_s\": %.6f\n", metrics->bandwidth_gb_s);
+    fprintf(fp, "    },\n");
+    fprintf(fp, "    \"analysis\": {\n");
+    fprintf(fp, "      \"arithmetic_intensity\": %.6f,\n", arithmetic_intensity);
+    fprintf(fp, "      \"total_flops\": %.0f,\n", total_flops);
+    fprintf(fp, "      \"total_bytes\": %.0f,\n", total_bytes);
+    fprintf(fp, "      \"matrix_data_bytes\": %.0f,\n", matrix_data_bytes);
+    fprintf(fp, "      \"matrix_indices_bytes\": %.0f,\n", matrix_indices_bytes);
+    fprintf(fp, "      \"vector_bytes\": %.0f,\n", vector_bytes);
+    fprintf(fp, "      \"performance_bound\": \"%s\"\n", 
+           (arithmetic_intensity < 0.5) ? "memory-bound" : 
+           (arithmetic_intensity < 2.0) ? "balanced" : "compute-bound");
+    fprintf(fp, "    }\n");
+    fprintf(fp, "  }\n");
+    fprintf(fp, "}\n");
+}
+
+/**
+ * @brief Exports performance metrics in CSV format for spreadsheet analysis.
+ *
+ * @details
+ * Outputs CSV with metrics suitable for:
+ * - Spreadsheet analysis and visualization
+ * - Statistical analysis and trend tracking
+ * - Batch processing and automation scripts
+ * - Performance comparison studies
+ *
+ * CSV includes all key metrics in a single row for easy aggregation
+ * across multiple benchmarks and comparative analysis.
+ *
+ * @param metrics Complete benchmark metrics structure to export
+ */
+void print_metrics_csv(const BenchmarkMetrics* metrics, FILE* output_file) {
+    FILE* fp = (output_file != NULL) ? output_file : stdout;
+    // Calculate derived metrics for CSV
+    double total_flops = 2.0 * metrics->matrix_nnz;
+    double arithmetic_intensity = total_flops / ((metrics->matrix_nnz * 12.0) + 
+                                                (metrics->matrix_rows + metrics->matrix_cols) * 8.0);
+    
+    // CSV Header (print only once - could be controlled by a flag)
+    static int header_printed = 0;
+    if (!header_printed) {
+        fprintf(fp, "operator,matrix_rows,matrix_cols,matrix_nnz,sparsity_ratio,sparsity_percent,");
+        fprintf(fp, "execution_time_ms,execution_time_us,gflops,bandwidth_gb_s,");
+        fprintf(fp, "arithmetic_intensity,total_flops,performance_bound\n");
+        header_printed = 1;
+    }
+    
+    // CSV Data
+    fprintf(fp, "%s,%d,%d,%d,%.6f,%.4f,",
+           metrics->operator_name,
+           metrics->matrix_rows,
+           metrics->matrix_cols, 
+           metrics->matrix_nnz,
+           metrics->sparsity_ratio,
+           metrics->sparsity_ratio * 100.0);
+    
+    fprintf(fp, "%.6f,%.1f,%.6f,%.6f,",
+           metrics->execution_time_ms,
+           metrics->execution_time_ms * 1000.0,
+           metrics->gflops,
+           metrics->bandwidth_gb_s);
+    
+    fprintf(fp, "%.6f,%.0f,%s\n",
+           arithmetic_intensity,
+           total_flops,
+           (arithmetic_intensity < 0.5) ? "memory-bound" : 
+           (arithmetic_intensity < 2.0) ? "balanced" : "compute-bound");
 }

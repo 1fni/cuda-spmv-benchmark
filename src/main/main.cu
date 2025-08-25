@@ -43,23 +43,35 @@
 int main(int argc, char* argv[]) {
     // Check for correct number of command-line arguments
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<csr|ellpack|stencil>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<csr|ellpack|stencil> [--output-format=<human|json|csv>] [--output-file=<filename>]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    const char* matrix_file = argv[1]; ///< Path to Matrix Market file containing sparse matrix
-    const char* mode = NULL;           ///< SpMV implementation mode (csr, ellpack, or stencil)
+    const char* matrix_file = argv[1];        ///< Path to Matrix Market file containing sparse matrix
+    const char* mode = NULL;                  ///< SpMV implementation mode (csr, ellpack, or stencil)
+    const char* output_format = "human";      ///< Output format for metrics (default: human-readable)
+    const char* output_file = NULL;           ///< Output file for metrics (default: stdout)
 
-    // Parse command-line arguments to find the mode
+    // Parse command-line arguments to find mode, output format, and output file
     for (int i = 2; i < argc; ++i) {
         if (strncmp(argv[i], "--mode=", 7) == 0) {
             mode = argv[i] + 7;  // Get mode value after "--mode="
+        } else if (strncmp(argv[i], "--output-format=", 16) == 0) {
+            output_format = argv[i] + 16;  // Get format value after "--output-format="
+        } else if (strncmp(argv[i], "--output-file=", 14) == 0) {
+            output_file = argv[i] + 14;  // Get filename after "--output-file="
         }
     }
 
     // Validate that mode was specified
     if (mode == NULL) {
         fprintf(stderr, "Error: mode not specified. Use --mode=<csr|ellpack|stencil>\n");
+        return EXIT_FAILURE;
+    }
+
+    // Validate output format
+    if (strcmp(output_format, "human") != 0 && strcmp(output_format, "json") != 0 && strcmp(output_format, "csv") != 0) {
+        fprintf(stderr, "Error: Invalid output format '%s'. Use --output-format=<human|json|csv>\n", output_format);
         return EXIT_FAILURE;
     }
 
@@ -116,10 +128,35 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
     
-    // Calculate and display comprehensive performance metrics
+    // Calculate and display performance metrics
     BenchmarkMetrics metrics;
     calculate_spmv_metrics(kernel_time_ms, &mat, op->name, &metrics);
-    print_benchmark_metrics(&metrics);
+    
+    // Open output file if specified
+    FILE* output_fp = stdout;  // Default to stdout
+    if (output_file != NULL) {
+        output_fp = fopen(output_file, "w");
+        if (output_fp == NULL) {
+            fprintf(stderr, "Error: Could not open output file '%s' for writing\n", output_file);
+            return EXIT_FAILURE;
+        }
+        printf("Writing metrics to file: %s\n", output_file);
+    }
+    
+    // Output metrics in requested format
+    if (strcmp(output_format, "json") == 0) {
+        print_metrics_json(&metrics, output_fp);
+    } else if (strcmp(output_format, "csv") == 0) {
+        print_metrics_csv(&metrics, output_fp);
+    } else {
+        print_benchmark_metrics(&metrics, output_fp);  // Default human-readable format
+    }
+    
+    // Close output file if it was opened
+    if (output_fp != stdout) {
+        fclose(output_fp);
+        printf("Metrics successfully written to: %s\n", output_file);
+    }
     
     printf("SpMV completed successfully using mode: %s\n", op->name);
 

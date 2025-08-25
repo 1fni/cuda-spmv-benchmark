@@ -1,6 +1,6 @@
 # CUDA SpMV Local Testing Guide
 
-This guide covers comprehensive local testing with GPU hardware. The GitHub CI/CD performs build validation and smoke tests only - **full CUDA kernel testing requires GPU hardware**.
+This guide covers local testing with GPU hardware. The GitHub CI/CD performs build validation and smoke tests only - **full CUDA kernel testing requires GPU hardware**.
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ make BUILD_TYPE=debug
 ./bin/release/spmv_bench matrix/test_100x100.mtx --mode=csr
 ```
 
-## Comprehensive Test Suite
+## Test Suite
 
 ### 1. Build and Run Full Test Framework
 ```bash
@@ -163,7 +163,7 @@ done
 
 ### 2. Automated Performance Suite
 ```bash
-# Run comprehensive performance tests
+# Run performance tests
 ./spmv_tests --gtest_filter="*Performance*"
 ```
 
@@ -321,7 +321,7 @@ This testing approach provides:
 
 - **🏗️ Build validation**: GitHub Actions CI/CD  
 - **🧪 Full testing**: Local GPU-enabled environment
-- **📊 Performance**: Comprehensive benchmarking tools
+- **📊 Performance**: Benchmarking tools
 - **🔧 Debug support**: Multiple debugging approaches
 - **🚀 Integration**: Smooth development workflow
 

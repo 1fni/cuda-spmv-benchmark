@@ -2,7 +2,7 @@
  * @file performance_benchmarks.hpp
  * @brief Performance benchmarking utilities for SpMV operations
  *
- * Provides comprehensive performance measurement, comparison, and analysis tools
+ * Provides performance measurement, comparison, and analysis tools
  * specifically designed for evaluating SpMV implementations in HPC environments.
  */
 
@@ -21,7 +21,7 @@
 namespace PerformanceBenchmarks {
 
     /**
-     * @brief Comprehensive performance measurement result
+     * @brief Performance measurement result
      */
     struct BenchmarkResult {
         std::string operator_name;          ///< SpMV operator name
@@ -118,7 +118,7 @@ namespace PerformanceBenchmarks {
      * @param operator_name Name of SpMV operator ("csr", "stencil5", "ellpack")
      * @param matrix Matrix to test with
      * @param config Benchmark configuration
-     * @return Comprehensive benchmark results
+     * @return Benchmark results
      */
     BenchmarkResult benchmark_operator(const std::string& operator_name,
                                       const MatrixDataWrapper& matrix,

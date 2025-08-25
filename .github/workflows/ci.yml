@@ -109,7 +109,7 @@ jobs:
     
     - name: Smoke tests (no GPU execution)
       run: |
-        echo "💨 Running comprehensive smoke tests..."
+        echo "💨 Running smoke tests..."
         
         # Test 1: Binary help functionality
         echo "🧪 Testing help/usage commands:"
@@ -267,7 +267,7 @@ jobs:
       uses: actions/download-artifact@v4
       continue-on-error: true
     
-    - name: Generate comprehensive CI report
+    - name: Generate CI report
       run: |
         echo "📋 Generating CI/CD Report..."
         
@@ -346,7 +346,7 @@ jobs:
         Full CUDA kernel validation requires GPU hardware for local testing.*
         EOF
         
-        echo "📄 Generated comprehensive CI/CD report"
+        echo "📄 Generated CI/CD report"
         cat ci_report.md
     
     - name: Upload CI/CD report
