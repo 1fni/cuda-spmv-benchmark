@@ -1,0 +1,18 @@
+=== SpMV Performance Analysis Report ===
+Matrix: matrix/test_optimized.mtx
+Generated: Mon Sep  1 18:26:36 UTC 2025
+
+=== Matrix Information ===
+Rows: 
+Columns: 
+Non-zeros: 
+
+=== Performance Results ===
+Format     | Time (ms) | GFLOPS | Bandwidth (GB/s) | Relative Performance
+-----------|-----------|--------|------------------|--------------------
+csr        |     7.92 | 338.93 |        2711.44 | 1.00x (baseline)
+stencil5   |     5.55 | 483.28 |        3673.09 | 1.42x
+
+=== Recommendations ===
+Best performing format: csr (7.919808 GFLOPS)
+Recommendation: Good general-purpose format for irregular sparse patterns

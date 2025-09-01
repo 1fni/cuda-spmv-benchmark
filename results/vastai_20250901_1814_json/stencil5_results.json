@@ -1,0 +1,48 @@
+{
+  "gpu": {
+    "name": "NVIDIA H200 NVL",
+    "memory_mb": 143186,
+    "compute_capability": "9.0",
+    "multiprocessor_count": 132,
+    "memory_clock_khz": 3201000,
+    "graphics_clock_mhz": 1785,
+    "cuda_runtime_version": 12060,
+    "cuda_driver_version": 12060,
+    "cusparse_version": 12504,
+    "current_temp_c": 0,
+    "power_draw_w": 135168,
+    "power_limit_w": 0,
+    "persistence_mode": "",
+    "pcie_generation": "Gen5",
+    "pcie_link_width": 16
+  },
+  "system": {
+    "cpu_model": "Intel(R) Xeon(R) 6747P",
+    "system_ram_gb": 2015
+  },
+  "benchmark": {
+    "operator": "stencil5",
+    "matrix": {
+      "rows": 268435456,
+      "cols": 268435456,
+      "nnz": 1342111744,
+      "sparsity_ratio": 0.000000,
+      "sparsity_percent": 0.0000
+    },
+    "performance": {
+      "execution_time_ms": 5.554208,
+      "execution_time_us": 5554.2,
+      "gflops": 483.277469,
+      "bandwidth_gb_s": 3673.088113
+    },
+    "analysis": {
+      "arithmetic_intensity": 0.131573,
+      "total_flops": 2684223488,
+      "total_bytes": 20401094656,
+      "matrix_data_bytes": 10737418240,
+      "matrix_indices_bytes": 5368709120,
+      "vector_bytes": 4294967296,
+      "performance_bound": "memory-bound"
+    }
+  }
+}
