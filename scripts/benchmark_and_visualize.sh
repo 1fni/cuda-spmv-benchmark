@@ -14,8 +14,28 @@ MATRIX_FILE="$1"
 OUTPUT_PREFIX="${2:-benchmark_results}"
 
 if [ ! -f "$MATRIX_FILE" ]; then
-    echo "Error: Matrix file $MATRIX_FILE not found"
-    exit 1
+    echo "Matrix file not found: $MATRIX_FILE"
+    
+    # Auto-generate using GPU config if available
+    if [ -f "/tmp/gpu_config.env" ]; then
+        source /tmp/gpu_config.env
+        MATRIX_SIZE=$MAX_MATRIX_SIZE
+        echo "Auto-generating ${MATRIX_SIZE}x${MATRIX_SIZE} matrix optimized for GPU memory..."
+        echo "This may take 30-120 seconds for large matrices..."
+    else
+        echo "GPU config not found, using default 1024x1024 matrix"
+        MATRIX_SIZE=1024
+    fi
+    
+    # Generate matrix
+    ./bin/generate_matrix $MATRIX_SIZE "$MATRIX_FILE"
+    
+    if [ $? -eq 0 ] && [ -f "$MATRIX_FILE" ]; then
+        echo "Matrix generation completed: $MATRIX_FILE"
+    else
+        echo "Error: Matrix generation failed"
+        exit 1
+    fi
 fi
 
 # Check if benchmark binary exists
