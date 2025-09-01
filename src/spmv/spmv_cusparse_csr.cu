@@ -177,7 +177,8 @@ int csr_init(MatrixData* mat)
  */
 int csr_run_timed(const double* x, double* y, double* kernel_time_ms)
 {
-    // Copy input vector
+    // Reset output vector and copy input vector
+    CUDA_CHECK(cudaMemset(dY, 0, csr_mat.nb_rows * sizeof(double)));
     CUDA_CHECK(cudaMemcpy(dX, x, csr_mat.nb_cols * sizeof(double), cudaMemcpyHostToDevice));
 
     // Record and perform SpMV

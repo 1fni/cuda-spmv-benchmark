@@ -19,6 +19,7 @@
 #ifndef SPMV_H
 #define SPMV_H
 
+#include <stdio.h>
 #include "spmv_csr.h"
 #include "spmv_ellpack.h"
 
@@ -74,6 +75,16 @@ typedef struct {
     int matrix_nnz;                ///< Number of non-zero elements
     double sparsity_ratio;         ///< Sparsity ratio (nnz / (rows * cols))
     const char* operator_name;     ///< Name of the SpMV operator used
+    
+    struct {
+        char name[128];
+        int memory_mb;
+        char compute_capability[16];
+        int multiprocessor_count;
+        int max_threads_per_block;
+        int memory_clock_khz;
+        int graphics_clock_mhz;
+    } gpu_info;
 } BenchmarkMetrics;
 
 /**
@@ -118,6 +129,8 @@ SpmvOperator* get_operator(const char* mode);
  */
 void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat, 
                            const char* operator_name, BenchmarkMetrics* metrics);
+
+int get_gpu_properties(BenchmarkMetrics* metrics);
 
 /**
  * @brief Prints detailed performance metrics in human-readable format.

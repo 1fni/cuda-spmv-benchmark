@@ -26,6 +26,7 @@
 #include <cuda_runtime.h>
 #include "spmv.h"
 #include "io.h"
+#include "benchmark_stats.h"
 
 /**
  * @brief Main function - Entry point for SpMV benchmark program.
@@ -109,28 +110,25 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < mat.cols; i++) x[i] = 1.0; // Fill input vector with 1.0
     memset(y, 0, mat.rows * sizeof(double));       // Initialize output vector to 0
 
-    // Warm-up run to ensure GPU is properly initialized
-    printf("Performing warm-up run...\n");
-    double warmup_time;
-    if (op->run_timed(x, y, &warmup_time) != 0) {
-        fprintf(stderr, "SpMV warm-up failed for mode '%s'\n", op->name);
+    // Statistical benchmark with outlier detection
+    printf("Running statistical benchmark (10 iterations)...\n");
+    BenchmarkStats bench_stats;
+    if (benchmark_with_stats(op->run_timed, x, y, 10, &bench_stats) != 0) {
+        fprintf(stderr, "Statistical benchmark failed for mode '%s'\n", op->name);
         return EXIT_FAILURE;
     }
     
-    // Reset output vector for the benchmark run
-    memset(y, 0, mat.rows * sizeof(double));
+    printf("Completed: %d valid runs, %d outliers removed\n", 
+           bench_stats.valid_runs, bench_stats.outliers_removed);
     
-    // Execute timed benchmark run with kernel-level timing
-    printf("Executing timed benchmark run...\n");
-    double kernel_time_ms;
-    if (op->run_timed(x, y, &kernel_time_ms) != 0) {
-        fprintf(stderr, "SpMV benchmark run failed for mode '%s'\n", op->name);
-        return EXIT_FAILURE;
-    }
-    
-    // Calculate and display performance metrics
+    // Calculate performance metrics using median time
     BenchmarkMetrics metrics;
-    calculate_spmv_metrics(kernel_time_ms, &mat, op->name, &metrics);
+    calculate_spmv_metrics(bench_stats.median_ms, &mat, op->name, &metrics);
+    
+    // Add GPU specifications to metrics
+    if (get_gpu_properties(&metrics) != 0) {
+        fprintf(stderr, "Warning: Could not retrieve GPU properties\n");
+    }
     
     // Open output file if specified
     FILE* output_fp = stdout;  // Default to stdout

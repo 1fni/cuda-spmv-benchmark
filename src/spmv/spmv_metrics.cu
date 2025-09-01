@@ -218,6 +218,14 @@ void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
     
     // Output structured JSON
     fprintf(fp, "{\n");
+    fprintf(fp, "  \"gpu\": {\n");
+    fprintf(fp, "    \"name\": \"%s\",\n", metrics->gpu_info.name);
+    fprintf(fp, "    \"memory_mb\": %d,\n", metrics->gpu_info.memory_mb);
+    fprintf(fp, "    \"compute_capability\": \"%s\",\n", metrics->gpu_info.compute_capability);
+    fprintf(fp, "    \"multiprocessor_count\": %d,\n", metrics->gpu_info.multiprocessor_count);
+    fprintf(fp, "    \"memory_clock_khz\": %d,\n", metrics->gpu_info.memory_clock_khz);
+    fprintf(fp, "    \"graphics_clock_mhz\": %d\n", metrics->gpu_info.graphics_clock_mhz);
+    fprintf(fp, "  },\n");
     fprintf(fp, "  \"benchmark\": {\n");
     fprintf(fp, "    \"operator\": \"%s\",\n", metrics->operator_name);
     fprintf(fp, "    \"matrix\": {\n");

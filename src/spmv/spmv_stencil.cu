@@ -273,6 +273,8 @@ int stencil5_init(MatrixData* mat) {
 int stencil5_run_timed(const double* x, double* y, double* kernel_time_ms) {
 	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
 	
+	// Reset output vector and copy input vector
+	CUDA_CHECK(cudaMemset(dY, 0, size_vec));
 	CUDA_CHECK(cudaMemcpy(dX, x, size_vec, cudaMemcpyHostToDevice));
 
 	cudaEvent_t start, stop;
