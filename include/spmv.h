@@ -84,6 +84,18 @@ typedef struct {
         int max_threads_per_block;
         int memory_clock_khz;
         int graphics_clock_mhz;
+        int cuda_runtime_version;
+        int cuda_driver_version;
+        int cusparse_version;
+        int current_temp_c;
+        int max_temp_c;
+        int power_draw_w;
+        int power_limit_w;
+        char persistence_mode[16];
+        char cpu_model[128];
+        int system_ram_gb;
+        char pcie_generation[16];
+        int pcie_link_width;
     } gpu_info;
 } BenchmarkMetrics;
 
