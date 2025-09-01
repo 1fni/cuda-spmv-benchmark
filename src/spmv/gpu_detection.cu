@@ -88,9 +88,13 @@ int get_gpu_properties(BenchmarkMetrics* metrics) {
     CUDA_CHECK(cudaDriverGetVersion(&metrics->gpu_info.cuda_driver_version));
     
     // cuSPARSE version
-    int cusparse_version;
-    if (cusparseGetVersion(NULL, &cusparse_version) == CUSPARSE_STATUS_SUCCESS) {
-        metrics->gpu_info.cusparse_version = cusparse_version;
+    cusparseHandle_t handle;
+    if (cusparseCreate(&handle) == CUSPARSE_STATUS_SUCCESS) {
+        int cusparse_version;
+        if (cusparseGetVersion(handle, &cusparse_version) == CUSPARSE_STATUS_SUCCESS) {
+            metrics->gpu_info.cusparse_version = cusparse_version;
+        }
+        cusparseDestroy(handle);
     }
     
     // System info

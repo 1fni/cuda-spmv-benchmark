@@ -64,7 +64,7 @@ fi
 
 # Generate test matrix
 echo "Generating test matrix..."
-echo "128" | ./bin/generate_matrix > matrix/test_128x128.mtx
+./bin/generate_matrix 128 matrix/test_128x128.mtx
 
 # Quick verification run
 echo "Running verification test..."
