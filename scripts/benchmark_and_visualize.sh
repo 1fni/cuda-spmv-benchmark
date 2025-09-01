@@ -59,7 +59,7 @@ CSV_FILE="${OUTPUT_PREFIX}.csv"
 JSON_DIR="${OUTPUT_PREFIX}_json"
 
 echo "Running benchmarks..."
-echo "operator,gflops,bandwidth" > $CSV_FILE
+echo "operator,time_ms,gflops,bandwidth" > $CSV_FILE
 
 mkdir -p $JSON_DIR
 
@@ -72,12 +72,13 @@ for op in "${OPERATORS[@]}"; do
     
     if [ $? -eq 0 ] && [ -f $JSON_FILE ]; then
         # Extract metrics from JSON using standard tools
+        time_ms=$(grep -o '"execution_time_ms": [0-9.]*' $JSON_FILE | sed 's/"execution_time_ms": //')
         gflops=$(grep -o '"gflops": [0-9.]*' $JSON_FILE | sed 's/"gflops": //')
         bandwidth=$(grep -o '"bandwidth_gb_s": [0-9.]*' $JSON_FILE | sed 's/"bandwidth_gb_s": //')
         
-        if [ -n "$gflops" ] && [ -n "$bandwidth" ]; then
-            echo "$op,$gflops,$bandwidth" >> $CSV_FILE
-            echo "    GFLOPS: $gflops, Bandwidth: ${bandwidth} GB/s"
+        if [ -n "$time_ms" ] && [ -n "$gflops" ] && [ -n "$bandwidth" ]; then
+            echo "$op,$time_ms,$gflops,$bandwidth" >> $CSV_FILE
+            echo "    Time: ${time_ms}ms, GFLOPS: $gflops, Bandwidth: ${bandwidth} GB/s"
         else
             echo "    Warning: Could not extract metrics for $op"
         fi
@@ -129,12 +130,12 @@ if [ -f "$FIRST_JSON" ]; then
 fi
 
 echo "=== Performance Results ===" >> $REPORT_FILE
-echo "Format     | GFLOPS | Bandwidth (GB/s) | Relative Performance" >> $REPORT_FILE
-echo "-----------|--------|------------------|--------------------" >> $REPORT_FILE
+echo "Format     | Time (ms) | GFLOPS | Bandwidth (GB/s) | Relative Performance" >> $REPORT_FILE
+echo "-----------|-----------|--------|------------------|--------------------" >> $REPORT_FILE
 
 # Calculate relative performance (compared to first entry)
 BASELINE_GFLOPS=""
-while IFS=',' read -r op gflops bandwidth; do
+while IFS=',' read -r op time_ms gflops bandwidth; do
     if [ "$op" != "operator" ]; then  # Skip header
         if [ -z "$BASELINE_GFLOPS" ]; then
             BASELINE_GFLOPS=$gflops
@@ -142,7 +143,7 @@ while IFS=',' read -r op gflops bandwidth; do
         else
             relative=$(echo "scale=2; $gflops / $BASELINE_GFLOPS" | bc)x
         fi
-        printf "%-10s | %6.2f | %14.2f | %s\n" "$op" "$gflops" "$bandwidth" "$relative" >> $REPORT_FILE
+        printf "%-10s | %8.2f | %6.2f | %14.2f | %s\n" "$op" "$time_ms" "$gflops" "$bandwidth" "$relative" >> $REPORT_FILE
     fi
 done < $CSV_FILE
 
