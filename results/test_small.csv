@@ -1,0 +1,3 @@
+operator,gflops,bandwidth
+csr,87.150387,697.339405
+stencil5,152.148693,1157.234153

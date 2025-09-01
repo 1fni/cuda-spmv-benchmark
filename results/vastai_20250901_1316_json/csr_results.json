@@ -1,0 +1,48 @@
+{
+  "gpu": {
+    "name": "NVIDIA A100-SXM4-40GB",
+    "memory_mb": 40442,
+    "compute_capability": "8.0",
+    "multiprocessor_count": 108,
+    "memory_clock_khz": 1215000,
+    "graphics_clock_mhz": 1410,
+    "cuda_runtime_version": 12080,
+    "cuda_driver_version": 12080,
+    "cusparse_version": 12508,
+    "current_temp_c": -1204778304,
+    "power_draw_w": 4,
+    "power_limit_w": 0,
+    "persistence_mode": "X+ßd",
+    "pcie_generation": "Gen4",
+    "pcie_link_width": 16
+  },
+  "system": {
+    "cpu_model": "AMD EPYC 7J13 64-Core Processor",
+    "system_ram_gb": 216
+  },
+  "benchmark": {
+    "operator": "csr",
+    "matrix": {
+      "rows": 1048576,
+      "cols": 1048576,
+      "nnz": 5238784,
+      "sparsity_ratio": 0.000005,
+      "sparsity_percent": 0.0005
+    },
+    "performance": {
+      "execution_time_ms": 0.120000,
+      "execution_time_us": 120.0,
+      "gflops": 87.313069,
+      "bandwidth_gb_s": 698.641116
+    },
+    "analysis": {
+      "arithmetic_intensity": 0.124976,
+      "total_flops": 10477568,
+      "total_bytes": 83836932,
+      "matrix_data_bytes": 41910272,
+      "matrix_indices_bytes": 25149444,
+      "vector_bytes": 16777216,
+      "performance_bound": "memory-bound"
+    }
+  }
+}

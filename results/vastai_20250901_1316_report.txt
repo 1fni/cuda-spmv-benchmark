@@ -1,0 +1,18 @@
+=== SpMV Performance Analysis Report ===
+Matrix: matrix/test_optimized.mtx
+Generated: Mon Sep  1 13:16:37 UTC 2025
+
+=== Matrix Information ===
+Rows: 
+Columns: 
+Non-zeros: 
+
+=== Performance Results ===
+Format     | GFLOPS | Bandwidth (GB/s) | Relative Performance
+-----------|--------|------------------|--------------------
+csr        |  87.31 |         698.64 | 1.00x (baseline)
+stencil5   | 155.18 |        1180.27 | 1.77x
+
+=== Recommendations ===
+Best performing format: stencil5 (155.177251 GFLOPS)
+Recommendation: Optimal for structured grid problems (finite difference, stencil operations)
