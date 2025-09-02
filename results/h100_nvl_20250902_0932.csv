@@ -1,0 +1,3 @@
+operator,time_ms,gflops,bandwidth
+csr,8.334816,322.049520,2576.427615
+stencil5,5.597440,479.544863,3644.718927

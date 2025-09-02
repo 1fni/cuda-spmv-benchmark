@@ -1,0 +1,18 @@
+=== SpMV Performance Analysis Report ===
+Matrix: matrix/stencil_gpu_maxmem.mtx
+Generated: Tue Sep  2 09:43:19 UTC 2025
+
+=== Matrix Information ===
+Rows: 
+Columns: 
+Non-zeros: 
+
+=== Performance Results ===
+Format     | Time (ms) | GFLOPS | Bandwidth (GB/s) | Relative Performance
+-----------|-----------|--------|------------------|--------------------
+csr        |     8.33 | 322.05 |        2576.43 | 1.00x (baseline)
+stencil5   |     5.60 | 479.54 |        3644.72 | 1.48x
+
+=== Recommendations ===
+Best performing format: csr (8.334816 GFLOPS)
+Recommendation: Good general-purpose format for irregular sparse patterns
