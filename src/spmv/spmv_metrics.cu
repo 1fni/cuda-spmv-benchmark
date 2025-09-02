@@ -50,6 +50,7 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
     metrics->matrix_rows = mat->rows;
     metrics->matrix_cols = mat->cols;
     metrics->matrix_nnz = mat->nnz;
+    metrics->grid_size = mat->grid_size;  // 2D grid dimension (N for NxN stencil)
     metrics->execution_time_ms = execution_time_ms;
     metrics->operator_name = operator_name;
     
@@ -133,7 +134,12 @@ void print_benchmark_metrics(const BenchmarkMetrics* metrics, FILE* output_file)
     fprintf(fp, "\n=== SpMV Performance Metrics ===\n");
     fprintf(fp, "Operator: %s\n", metrics->operator_name);
     fprintf(fp, "\n--- Matrix Characteristics ---\n");
-    fprintf(fp, "Dimensions: %d x %d\n", metrics->matrix_rows, metrics->matrix_cols);
+    if (metrics->grid_size > 0) {
+        fprintf(fp, "Grid size: %d x %d (2D stencil)\n", metrics->grid_size, metrics->grid_size);
+        fprintf(fp, "Matrix dimensions: %d x %d (grid²)\n", metrics->matrix_rows, metrics->matrix_cols);
+    } else {
+        fprintf(fp, "Matrix dimensions: %d x %d\n", metrics->matrix_rows, metrics->matrix_cols);
+    }
     fprintf(fp, "Non-zeros: %d\n", metrics->matrix_nnz);
     fprintf(fp, "Sparsity ratio: %.6f (%.4f%% non-zero)\n", 
            metrics->sparsity_ratio, metrics->sparsity_ratio * 100.0);
@@ -242,6 +248,10 @@ void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
     fprintf(fp, "  \"benchmark\": {\n");
     fprintf(fp, "    \"operator\": \"%s\",\n", metrics->operator_name);
     fprintf(fp, "    \"matrix\": {\n");
+    if (metrics->grid_size > 0) {
+        fprintf(fp, "      \"grid_size\": %d,\n", metrics->grid_size);
+        fprintf(fp, "      \"grid_dimensions\": \"%dx%d\",\n", metrics->grid_size, metrics->grid_size);
+    }
     fprintf(fp, "      \"rows\": %d,\n", metrics->matrix_rows);
     fprintf(fp, "      \"cols\": %d,\n", metrics->matrix_cols);
     fprintf(fp, "      \"nnz\": %d,\n", metrics->matrix_nnz);
@@ -294,15 +304,16 @@ void print_metrics_csv(const BenchmarkMetrics* metrics, FILE* output_file) {
     // CSV Header (print only once - could be controlled by a flag)
     static int header_printed = 0;
     if (!header_printed) {
-        fprintf(fp, "operator,matrix_rows,matrix_cols,matrix_nnz,sparsity_ratio,sparsity_percent,");
+        fprintf(fp, "operator,grid_size,matrix_rows,matrix_cols,matrix_nnz,sparsity_ratio,sparsity_percent,");
         fprintf(fp, "execution_time_ms,execution_time_us,gflops,bandwidth_gb_s,");
         fprintf(fp, "arithmetic_intensity,total_flops,performance_bound\n");
         header_printed = 1;
     }
     
     // CSV Data
-    fprintf(fp, "%s,%d,%d,%d,%.6f,%.4f,",
+    fprintf(fp, "%s,%d,%d,%d,%d,%.6f,%.4f,",
            metrics->operator_name,
+           metrics->grid_size,
            metrics->matrix_rows,
            metrics->matrix_cols, 
            metrics->matrix_nnz,

@@ -70,9 +70,10 @@ typedef struct {
     double execution_time_ms;        ///< Total execution time in milliseconds
     double gflops;                  ///< GFLOPS (Giga Floating Point Operations Per Second)
     double bandwidth_gb_s;          ///< Memory bandwidth in GB/s
-    int matrix_rows;               ///< Number of matrix rows
-    int matrix_cols;               ///< Number of matrix columns
+    int matrix_rows;               ///< Number of matrix rows (N² for stencil)
+    int matrix_cols;               ///< Number of matrix columns (N² for stencil)
     int matrix_nnz;                ///< Number of non-zero elements
+    int grid_size;                 ///< Original 2D grid dimension (N for NxN stencil)
     double sparsity_ratio;         ///< Sparsity ratio (nnz / (rows * cols))
     const char* operator_name;     ///< Name of the SpMV operator used
     
