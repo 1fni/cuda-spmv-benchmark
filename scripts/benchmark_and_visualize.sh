@@ -36,6 +36,25 @@ if [ ! -f "$MATRIX_FILE" ]; then
         MATRIX_SIZE=1024
     fi
     
+    # Check available disk space before generation
+    MATRIX_FILE_SIZE_GB=$(echo "scale=1; $MATRIX_SIZE^2 * 5 * 20 / (1024^3)" | bc -l)
+    AVAILABLE_GB=$(df . | awk 'NR==2 {print int($4/1024/1024)}')
+    
+    echo "Matrix file size estimate: ${MATRIX_FILE_SIZE_GB}GB"
+    echo "Available disk space: ${AVAILABLE_GB}GB"
+    
+    if (( $(echo "$MATRIX_FILE_SIZE_GB > $AVAILABLE_GB" | bc -l) )); then
+        echo "Error: Insufficient disk space for ${MATRIX_SIZE}x${MATRIX_SIZE} matrix"
+        echo "Required: ${MATRIX_FILE_SIZE_GB}GB, Available: ${AVAILABLE_GB}GB"
+        echo "Reducing matrix size to fit available space..."
+        
+        # Calculate max size that fits in 80% of available space
+        MAX_SAFE_ELEMENTS=$(echo "$AVAILABLE_GB * 0.8 * 1024^3 / (5 * 20)" | bc -l)
+        SAFE_SIZE=$(echo "sqrt($MAX_SAFE_ELEMENTS)" | bc -l | cut -d. -f1)
+        MATRIX_SIZE=$SAFE_SIZE
+        echo "Using reduced size: ${MATRIX_SIZE}x${MATRIX_SIZE}"
+    fi
+    
     # Generate matrix
     ./bin/generate_matrix $MATRIX_SIZE "$MATRIX_FILE"
     
