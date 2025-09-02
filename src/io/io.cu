@@ -333,10 +333,24 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 	fprintf(f, "%% STENCIL_GRID_SIZE %d\n", n);  // Commentaire avec n original
 	fprintf(f, "%d %d %d\n", grid_size, grid_size, nnz);
 
-	// Write values
+	// Write values with progress indication
+	int total_points = n * n;
+	int progress_step = total_points / 20; // Print every 5%
+	
+	printf("Writing matrix entries: 0%%");
+	fflush(stdout);
+	
 	for (int row = 0; row < n; row++) {
 		for (int col = 0; col < n; col++) {
 			int idx = row * n + col + 1;  // 1-based index
+			int current_point = row * n + col;
+			
+			// Progress indicator
+			if (progress_step > 0 && current_point % progress_step == 0) {
+				int percent = (current_point * 100) / total_points;
+				printf("\rWriting matrix entries: %d%%", percent);
+				fflush(stdout);
+			}
 
 			// Center
 			fprintf(f, "%d %d -4.0\n", idx, idx);
@@ -358,8 +372,9 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 				fprintf(f, "%d %d -1.0\n", idx, idx + n);
 		}
 	}
-
+	
+	printf("\rWriting matrix entries: 100%%\n");
 	fclose(f);
-	printf("Matrice 5-points écrite dans : %s\n", filename);
+	printf("Matrix generated: %s (%dx%d, %d nnz)\n", filename, grid_size, grid_size, nnz);
 	return 0;
 }
