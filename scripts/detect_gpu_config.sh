@@ -6,6 +6,9 @@
 set -e
 
 detect_gpu_capabilities() {
+    # Memory usage safety factor (0.6=conservative, 0.8=aggressive, 0.9=risky)
+    MEMORY_SAFETY_FACTOR=${MEMORY_SAFETY_FACTOR:-0.75}
+    
     if ! command -v nvidia-smi &> /dev/null; then
         echo "Error: nvidia-smi not found"
         exit 1
@@ -16,10 +19,10 @@ detect_gpu_capabilities() {
     VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
     VRAM_GB=$((VRAM_MB / 1024))
     
-    # Calculate max matrix size based on VRAM (safety factor 0.85 for aggressive memory usage)
+    # Calculate max matrix size based on VRAM with configurable safety factor
     # Formula: size^2 * 5 (stencil points) * 8 (bytes) + size * 16 (vectors) < 0.85 * VRAM
     # Simplified: size^2 * 40 + size * 16 < available_bytes
-    VRAM_BYTES=$(echo "$VRAM_GB * 1024^3 * 0.85" | bc -l)
+    VRAM_BYTES=$(echo "$VRAM_GB * 1024^3 * $MEMORY_SAFETY_FACTOR" | bc -l)
     
     # Solve quadratic: 40*size^2 + 16*size - VRAM_BYTES = 0
     # size = (-16 + sqrt(16^2 + 4*40*VRAM_BYTES)) / (2*40)
@@ -31,7 +34,7 @@ detect_gpu_capabilities() {
     MAX_SIZE_CLEAN=$(( (MAX_SIZE / 100) * 100 ))
     
     echo "GPU: $GPU_NAME"
-    echo "VRAM: ${VRAM_GB}GB"
+    echo "VRAM: ${VRAM_GB}GB (safety factor: $MEMORY_SAFETY_FACTOR)"
     echo "Max matrix size: ${MAX_SIZE_CLEAN}x${MAX_SIZE_CLEAN} (${MAX_SIZE_EXACT} exact)"
     
     # Generate test sizes (logarithmic scaling up to optimal size)
