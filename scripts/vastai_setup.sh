@@ -75,7 +75,7 @@ if [ $? -eq 0 ]; then
     echo
     echo "Next steps:"
     echo "1. ./scripts/detect_gpu_config.sh"
-    echo "2. ./scripts/benchmark_and_visualize.sh matrix/test_matrix.mtx"
+    echo "2. ./scripts/benchmark_and_visualize.sh matrix/stencil_gpu_maxmem.mtx"
 else
     echo "Verification failed!"
     exit 1

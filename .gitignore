@@ -10,6 +10,9 @@ tags
 *.tmp
 *.swp
 
+# Scripts for results management (keep out of main)
+scripts/save_results_to_git.sh
+
 # Matrix files - ignore all except example3x3.mtx
 *.mtx
 !matrix/example3x3.mtx
