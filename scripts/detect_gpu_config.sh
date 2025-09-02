@@ -30,12 +30,31 @@ detect_gpu_capabilities() {
     MAX_SIZE_EXACT=$(echo "(-16 + sqrt($DISCRIMINANT)) / 80" | bc -l)
     MAX_SIZE=$(echo "$MAX_SIZE_EXACT" | cut -d. -f1)
     
+    # Check disk space constraint
+    AVAILABLE_GB=$(df . | awk 'NR==2 {print int($4/1024/1024)}')
+    DISK_SAFETY_FACTOR=0.8
+    DISK_AVAILABLE_BYTES=$(echo "$AVAILABLE_GB * 1024^3 * $DISK_SAFETY_FACTOR" | bc -l)
+    
+    # Max size based on disk: size^2 * 5 * 20 < available_disk_bytes  
+    DISK_MAX_SIZE_EXACT=$(echo "sqrt($DISK_AVAILABLE_BYTES / 100)" | bc -l)
+    DISK_MAX_SIZE=$(echo "$DISK_MAX_SIZE_EXACT" | cut -d. -f1)
+    
+    # Take the minimum of VRAM and disk constraints
+    if (( $(echo "$DISK_MAX_SIZE < $MAX_SIZE" | bc -l) )); then
+        MAX_SIZE=$DISK_MAX_SIZE
+        MAX_SIZE_EXACT=$DISK_MAX_SIZE_EXACT
+        LIMITING_FACTOR="disk space"
+    else
+        LIMITING_FACTOR="GPU memory"
+    fi
+    
     # Round to nearest 100 for clean numbers (9347 → 9300)
     MAX_SIZE_CLEAN=$(( (MAX_SIZE / 100) * 100 ))
     
     echo "GPU: $GPU_NAME"
     echo "VRAM: ${VRAM_GB}GB (safety factor: $MEMORY_SAFETY_FACTOR)"
-    echo "Max matrix size: ${MAX_SIZE_CLEAN}x${MAX_SIZE_CLEAN} (${MAX_SIZE_EXACT} exact)"
+    echo "Disk space: ${AVAILABLE_GB}GB (safety factor: $DISK_SAFETY_FACTOR)"
+    echo "Max matrix size: ${MAX_SIZE_CLEAN}x${MAX_SIZE_CLEAN} (limited by $LIMITING_FACTOR)"
     
     # Generate test sizes (logarithmic scaling up to optimal size)
     SIZES=(256 512 1024 2048 4096)
