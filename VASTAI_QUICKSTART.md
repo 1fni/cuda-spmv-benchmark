@@ -14,8 +14,8 @@ git pull && make
 ./scripts/detect_gpu_config.sh
 source /tmp/gpu_config.env
 
-# 4. Run benchmarks (auto-generates optimal matrix)
-./scripts/benchmark_and_visualize.sh matrix/test_optimized.mtx "vastai_$(date +%Y%m%d_%H%M)"
+# 4. Run benchmarks (auto-generates GPU memory-optimized matrix)
+./scripts/benchmark_and_visualize.sh matrix/stencil_gpu_maxmem.mtx
 ```
 
 ## What Happens
@@ -50,8 +50,9 @@ results/
 ## Save Results to Git Branch
 
 ```bash
-# 1. Create results branch with timestamp
-git checkout -b results-vastai-$(date +%Y%m%d_%H%M)
+# 1. Create results branch with GPU architecture and timestamp
+GPU_ARCH=$(nvidia-smi --query-gpu=name --format=csv,noheader | sed 's/NVIDIA //g' | tr ' -' '_' | tr '[:upper:]' '[:lower:]')
+git checkout -b results-${GPU_ARCH}-$(date +%Y%m%d_%H%M)
 
 # 2. Add results (force override .gitignore)
 git add -f results/
@@ -63,8 +64,8 @@ Matrix: $(basename $MATRIX_FILE)
 Performance summary from results CSV
 Date: $(date)"
 
-# 4. Push results branch to GitHub
-git push origin results-vastai-$(date +%Y%m%d_%H%M)
+# 4. Push results branch to GitHub  
+git push origin results-${GPU_ARCH}-$(date +%Y%m%d_%H%M)
 ```
 
 ## Retrieve Results Locally
@@ -72,7 +73,7 @@ git push origin results-vastai-$(date +%Y%m%d_%H%M)
 ```bash
 # Fetch and checkout results branch
 git fetch origin
-git checkout results-vastai-YYYYMMDD_HHMM
+git checkout results-GPU_ARCH-YYYYMMDD_HHMM
 
 # Results now available in results/ directory
 ls results/

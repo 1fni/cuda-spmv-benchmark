@@ -11,7 +11,16 @@ if [ $# -lt 1 ]; then
 fi
 
 MATRIX_FILE="$1"
-OUTPUT_PREFIX="${2:-benchmark_results}"
+DEFAULT_PREFIX="benchmark_results"
+
+# Get GPU name for prefix if available
+if command -v nvidia-smi &> /dev/null; then
+    GPU_NAME_RAW=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1)
+    GPU_NAME_CLEAN=$(echo "$GPU_NAME_RAW" | sed 's/NVIDIA //g' | sed 's/GeForce //g' | tr ' -' '_' | tr '[:upper:]' '[:lower:]')
+    DEFAULT_PREFIX="${GPU_NAME_CLEAN}_$(date +%Y%m%d_%H%M)"
+fi
+
+OUTPUT_PREFIX="${2:-$DEFAULT_PREFIX}"
 
 if [ ! -f "$MATRIX_FILE" ]; then
     echo "Matrix file not found: $MATRIX_FILE"
