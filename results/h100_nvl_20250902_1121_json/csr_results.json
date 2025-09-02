@@ -1,0 +1,50 @@
+{
+  "gpu": {
+    "name": "NVIDIA H100 NVL",
+    "memory_mb": 95248,
+    "compute_capability": "9.0",
+    "multiprocessor_count": 132,
+    "memory_clock_khz": 2619000,
+    "graphics_clock_mhz": 1785,
+    "cuda_runtime_version": 12010,
+    "cuda_driver_version": 12020,
+    "cusparse_version": 12100,
+    "current_temp_c": 0,
+    "power_draw_w": 0,
+    "power_limit_w": 0,
+    "persistence_mode": "",
+    "pcie_generation": "Gen5",
+    "pcie_link_width": 16
+  },
+  "system": {
+    "cpu_model": "AMD EPYC 9354 32-Core Processor",
+    "system_ram_gb": 755
+  },
+  "benchmark": {
+    "operator": "csr",
+    "matrix": {
+      "grid_size": 16300,
+      "grid_dimensions": "16300x16300",
+      "rows": 265690000,
+      "cols": 265690000,
+      "nnz": 1328384800,
+      "sparsity_ratio": 0.000000,
+      "sparsity_percent": 0.0000
+    },
+    "performance": {
+      "execution_time_ms": 8.253824,
+      "execution_time_us": 8253.8,
+      "gflops": 321.883472,
+      "bandwidth_gb_s": 2575.099372
+    },
+    "analysis": {
+      "arithmetic_intensity": 0.124998,
+      "total_flops": 2656769600,
+      "total_bytes": 21254417604,
+      "matrix_data_bytes": 10627078400,
+      "matrix_indices_bytes": 6376299204,
+      "vector_bytes": 4251040000,
+      "performance_bound": "memory-bound"
+    }
+  }
+}
