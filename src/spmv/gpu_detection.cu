@@ -80,8 +80,9 @@ int get_gpu_properties(BenchmarkMetrics* metrics) {
              "%d.%d", prop.major, prop.minor);
     metrics->gpu_info.multiprocessor_count = prop.multiProcessorCount;
     metrics->gpu_info.max_threads_per_block = prop.maxThreadsPerBlock;
-    metrics->gpu_info.memory_clock_khz = prop.memoryClockRate;
-    metrics->gpu_info.graphics_clock_mhz = prop.clockRate / 1000;
+    // Note: memoryClockRate and clockRate deprecated in newer CUDA versions
+    metrics->gpu_info.memory_clock_khz = 0;
+    metrics->gpu_info.graphics_clock_mhz = 0;
     
     // CUDA/Driver versions
     CUDA_CHECK(cudaRuntimeGetVersion(&metrics->gpu_info.cuda_runtime_version));

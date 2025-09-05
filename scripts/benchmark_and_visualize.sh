@@ -81,8 +81,8 @@ echo
 mkdir -p results
 cd results
 
-# Test all SpMV implementations (ellpack disabled due to stability issues)
-OPERATORS=("csr" "stencil5")
+# Test all SpMV implementations showcasing different optimization techniques
+OPERATORS=("csr" "ellpack-naive" "stencil5" "stencil5-opt" "stencil5-shared" "stencil5-coarsened")
 CSV_FILE="${OUTPUT_PREFIX}.csv"
 JSON_DIR="${OUTPUT_PREFIX}_json"
 

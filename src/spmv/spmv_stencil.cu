@@ -20,6 +20,7 @@
 #include "io.h"
 
 ELLPACKMatrix ellpack_matrix; ///< Global ELLPACK matrix structure used by stencil operator
+static bool ellpack_structure_built = false; ///< Flag to avoid redundant ELLPACK reconstruction
 
 // GPU device memory pointers
 static double *d_values = nullptr;  ///< Device memory for ELLPACK matrix values
@@ -30,6 +31,33 @@ static double *dY = nullptr;        ///< Device memory for output vector y
 // SpMV computation parameters
 static const double alpha = 1.0;    ///< Alpha coefficient for SpMV operation (y = alpha*A*x + beta*y)
 static const double beta = 0.0;     ///< Beta coefficient for SpMV operation (y = alpha*A*x + beta*y)
+
+/**
+ * @brief Ensures ELLPACK structure is built from matrix data (shared across all kernels)
+ * @param mat Matrix data to convert to ELLPACK format
+ * @return 0 on success, non-zero on failure
+ */
+int ensure_ellpack_structure_built(MatrixData* mat) {
+    if (ellpack_structure_built) {
+        // Verify grid_size consistency
+        if (ellpack_matrix.grid_size != mat->grid_size) {
+            printf("Warning: Grid size mismatch (%d vs %d), rebuilding ELLPACK\n", 
+                   ellpack_matrix.grid_size, mat->grid_size);
+            ellpack_structure_built = false;
+        } else {
+            return 0;  // Already built and consistent
+        }
+    }
+    
+    printf("Building ELLPACK structure (CSR conversion)...\n");
+    build_csr_struct(mat);
+    build_ellpack_from_csr_local(&csr_mat);
+    ellpack_matrix.grid_size = mat->grid_size;
+    ellpack_structure_built = true;
+    printf("ELLPACK structure built: %d rows, width %d\n", ellpack_matrix.nb_rows, ellpack_matrix.ell_width);
+    
+    return 0;
+}
 
 /**
  * @brief CUDA kernel for SpMV optimized for 5-point stencil patterns with separate handling for interior and boundary points.
@@ -135,6 +163,138 @@ __global__ void ellpack_matvec_optimized_diffusion(const double * data, const in
 	}
 }
 
+__global__ void stencil5_optimized_ellpack_kernel(const double* __restrict__ data, 
+                                                    const int* __restrict__ col_indices,
+                                                    const double* __restrict__ vec, 
+                                                    double* __restrict__ result,
+                                                    int num_rows, int max_nonzero_per_row, 
+                                                    double alpha, double beta) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row >= num_rows) return;
+    
+    double sum = 0.0;
+    int base_idx = row * max_nonzero_per_row;
+    
+    // Unroll the loop for 5-point stencil (max_nonzero_per_row should be 5 for stencil matrices)
+    #pragma unroll 5
+    for (int j = 0; j < max_nonzero_per_row; j++) {
+        int col = col_indices[base_idx + j];
+        if (col >= 0 && col < num_rows) {  // Valid column index
+            sum += data[base_idx + j] * vec[col];
+        }
+    }
+    
+    result[row] = alpha * sum + beta * result[row];
+}
+
+__global__ void stencil5_shared_memory_ellpack_kernel(const double* __restrict__ data,
+                                                      const int* __restrict__ col_indices,
+                                                      const double* __restrict__ vec,
+                                                      double* __restrict__ result,
+                                                      int num_rows, int max_nonzero_per_row,
+                                                      double alpha, double beta, int grid_size) {
+    const int TILE_SIZE = 32;
+    __shared__ double tile[TILE_SIZE + 2][TILE_SIZE + 2];
+    
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    
+    int global_x = bx * TILE_SIZE + tx;
+    int global_y = by * TILE_SIZE + ty;
+    int global_idx = global_y * grid_size + global_x;
+    
+    if (global_x >= grid_size || global_y >= grid_size) return;
+    
+    // Load tile center
+    tile[ty + 1][tx + 1] = vec[global_idx];
+    
+    // Load halo regions cooperatively
+    if (ty == 0 && global_y > 0) 
+        tile[0][tx + 1] = vec[(global_y - 1) * grid_size + global_x];
+    if (ty == TILE_SIZE - 1 && global_y < grid_size - 1)
+        tile[TILE_SIZE + 1][tx + 1] = vec[(global_y + 1) * grid_size + global_x];
+    if (tx == 0 && global_x > 0)
+        tile[ty + 1][0] = vec[global_y * grid_size + global_x - 1];
+    if (tx == TILE_SIZE - 1 && global_x < grid_size - 1)
+        tile[ty + 1][TILE_SIZE + 1] = vec[global_y * grid_size + global_x + 1];
+    
+    __syncthreads();
+    
+    // Read stencil coefficients from ELLPACK data for this row
+    int base_idx = global_idx * max_nonzero_per_row;
+    double sum = 0.0;
+    
+    // Find center coefficient (should be at column = global_idx)
+    double center_val = 0.0;
+    for (int j = 0; j < max_nonzero_per_row; j++) {
+        int col = col_indices[base_idx + j];
+        if (col == global_idx) {
+            center_val = data[base_idx + j];
+            break;
+        }
+    }
+    
+    // Use shared memory for computation with real center coefficient
+    sum = center_val * tile[ty + 1][tx + 1];
+    
+    // Add neighbors using ELLPACK data
+    for (int j = 0; j < max_nonzero_per_row; j++) {
+        int col = col_indices[base_idx + j];
+        if (col != global_idx && col >= 0 && col < num_rows) {
+            // Determine if neighbor is available in shared memory
+            int neighbor_y = col / grid_size;
+            int neighbor_x = col % grid_size;
+            
+            // Check if neighbor is within shared memory tile
+            if (abs(neighbor_y - global_y) <= 1 && abs(neighbor_x - global_x) <= 1) {
+                int tile_y = neighbor_y - (by * TILE_SIZE) + 1;
+                int tile_x = neighbor_x - (bx * TILE_SIZE) + 1;
+                if (tile_y >= 0 && tile_y < TILE_SIZE + 2 && tile_x >= 0 && tile_x < TILE_SIZE + 2) {
+                    sum += data[base_idx + j] * tile[tile_y][tile_x];
+                } else {
+                    sum += data[base_idx + j] * vec[col];  // Fallback to global memory
+                }
+            } else {
+                sum += data[base_idx + j] * vec[col];  // Fallback to global memory
+            }
+        }
+    }
+    
+    result[global_idx] = alpha * sum + beta * result[global_idx];
+}
+
+__global__ void stencil5_coarsened_ellpack_kernel(const double* __restrict__ data,
+                                                   const int* __restrict__ col_indices,
+                                                   const double* __restrict__ vec,
+                                                   double* __restrict__ result,
+                                                   int num_rows, int max_nonzero_per_row,
+                                                   double alpha, double beta) {
+    int base_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Process multiple rows per thread (thread coarsening for better throughput)
+    for (int offset = 0; offset < 4 && base_idx + offset * blockDim.x * gridDim.x < num_rows; offset++) {
+        int row = base_idx + offset * blockDim.x * gridDim.x;
+        
+        if (row >= num_rows) continue;
+        
+        double sum = 0.0;
+        int ellpack_base = row * max_nonzero_per_row;
+        
+        // Process all nonzeros in this row using real ELLPACK data
+        for (int j = 0; j < max_nonzero_per_row; j++) {
+            int col = col_indices[ellpack_base + j];
+            if (col >= 0 && col < num_rows) {  // Valid column index
+                sum += data[ellpack_base + j] * vec[col];
+            }
+        }
+        
+        result[row] = alpha * sum + beta * result[row];
+    }
+}
+
 
 /**
  * @brief Converts CSR matrix format to ELLPACK format for optimized GPU processing.
@@ -145,7 +305,7 @@ __global__ void ellpack_matvec_optimized_diffusion(const double * data, const in
  * @param csr_matrix Pointer to the source CSR matrix structure
  * @return int 0 on success, non-zero on failure
  */
-int build_ellpack_from_csr_struct(CSRMatrix *csr_matrix){
+int build_ellpack_from_csr_local(CSRMatrix *csr_matrix){
 	int max_nonzeros = 0;
 	for (int i = 0; i < csr_matrix->nb_rows; ++i) {
 		int row_nonzeros = csr_matrix->row_ptr[i + 1] - csr_matrix->row_ptr[i];
@@ -210,13 +370,8 @@ int build_ellpack_from_csr_struct(CSRMatrix *csr_matrix){
  * @return int 0 on successful initialization, non-zero on failure
  */
 int stencil5_init(MatrixData* mat) {
-
-	//build CSR from MatrixData* mat then convert in ELLPACK
-	build_csr_struct(mat);
-	build_ellpack_from_csr_struct(&csr_mat);
-	
-	// Store grid_size from MatrixData for stencil operations
-	ellpack_matrix.grid_size = mat->grid_size;
+	// Ensure ELLPACK structure is built (shared across all kernels)
+	ensure_ellpack_structure_built(mat);
 
 	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
 	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
@@ -255,6 +410,82 @@ int stencil5_init(MatrixData* mat) {
 	//free(h_verify_values);
 	//free(h_verify_indices);
 	return 0;
+}
+
+int stencil5_optimized_init(MatrixData* mat) {
+	// Ensure ELLPACK structure is built (shared across all kernels)
+	ensure_ellpack_structure_built(mat);
+
+	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
+	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
+
+	// Allocate GPU memory for ELLPACK data
+	CUDA_CHECK(cudaMalloc((void**)&d_values, size_values));
+	CUDA_CHECK(cudaMalloc((void**)&d_indices, size_indices));
+	CUDA_CHECK(cudaMalloc((void**)&dX, size_vec));
+	CUDA_CHECK(cudaMalloc((void**)&dY, size_vec));
+
+	// Transfer ELLPACK data to GPU
+	CUDA_CHECK(cudaMemcpy(d_values, ellpack_matrix.values, size_values, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_indices, ellpack_matrix.indices, size_indices, cudaMemcpyHostToDevice));
+	
+	CUDA_CHECK(cudaDeviceSynchronize());
+	
+	return 0;
+}
+
+int stencil5_optimized_run_timed(const double* x, double* y, double* kernel_time_ms) {
+	size_t size_vec = ellpack_matrix.grid_size * ellpack_matrix.grid_size * sizeof(double);
+	
+	CUDA_CHECK(cudaMemset(dY, 0, size_vec));
+	CUDA_CHECK(cudaMemcpy(dX, x, size_vec, cudaMemcpyHostToDevice));
+
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	// Use optimized ELLPACK kernel with loop unrolling
+	cudaEventRecord(start);
+	
+	dim3 block_size(256);
+	dim3 grid_size((ellpack_matrix.nb_rows + block_size.x - 1) / block_size.x);
+	
+	stencil5_optimized_ellpack_kernel<<<grid_size, block_size>>>(d_values, d_indices, dX, dY, 
+	                                                              ellpack_matrix.nb_rows, 
+	                                                              ellpack_matrix.ell_width, 
+	                                                              alpha, beta);
+
+	CUDA_CHECK(cudaDeviceSynchronize());
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	
+	float computeTime;
+	cudaEventElapsedTime(&computeTime, start, stop);
+	*kernel_time_ms = (double)computeTime;
+	
+	printf("[Stencil5-Optimized] Kernel time: %.3f ms\n", computeTime);
+	
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	CUDA_CHECK(cudaMemcpy(y, dY, size_vec, cudaMemcpyDeviceToHost));
+
+	double check_sum = 0.0;
+	for (int i = 0; i < ellpack_matrix.grid_size * ellpack_matrix.grid_size; i++) {
+		check_sum += y[i];
+	}
+	printf("check_sum %le\n", check_sum);
+
+	return 0;
+}
+
+void stencil5_optimized_free() {
+	printf("[STENCIL5-OPTIMIZED] Cleaning up\n");
+	CUDA_CHECK(cudaFree(d_values));
+	CUDA_CHECK(cudaFree(d_indices));
+	CUDA_CHECK(cudaFree(dX));
+	CUDA_CHECK(cudaFree(dY));
 }
 
 /**
@@ -371,4 +602,293 @@ SpmvOperator SPMV_STENCIL5 = {
 	.run_timed = stencil5_run_timed,
 	.free = stencil5_free
 };
+
+SpmvOperator SPMV_STENCIL5_OPTIMIZED = {
+	.name = "stencil5-opt",
+	.init = stencil5_optimized_init,
+	.run_timed = stencil5_optimized_run_timed,
+	.free = stencil5_optimized_free
+};
+
+// Shared memory variables (separate from regular stencil)
+static double *d_values_shared = nullptr;
+static int *d_indices_shared = nullptr; 
+static double *dX_shared = nullptr;
+static double *dY_shared = nullptr;
+
+int stencil5_shared_init(MatrixData* mat) {
+	// Ensure ELLPACK structure is built (shared across all kernels)
+	ensure_ellpack_structure_built(mat);
+
+	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
+	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
+
+	CUDA_CHECK(cudaMalloc((void**)&d_values_shared, size_values));
+	CUDA_CHECK(cudaMalloc((void**)&d_indices_shared, size_indices));
+	CUDA_CHECK(cudaMalloc((void**)&dX_shared, size_vec));
+	CUDA_CHECK(cudaMalloc((void**)&dY_shared, size_vec));
+
+	CUDA_CHECK(cudaMemcpy(d_values_shared, ellpack_matrix.values, size_values, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_indices_shared, ellpack_matrix.indices, size_indices, cudaMemcpyHostToDevice));
+	
+	CUDA_CHECK(cudaDeviceSynchronize());
+	
+	return 0;
+}
+
+int stencil5_shared_run_timed(const double* x, double* y, double* kernel_time_ms) {
+	size_t size_vec = ellpack_matrix.grid_size * ellpack_matrix.grid_size * sizeof(double);
+	
+	CUDA_CHECK(cudaMemset(dY_shared, 0, size_vec));
+	CUDA_CHECK(cudaMemcpy(dX_shared, x, size_vec, cudaMemcpyHostToDevice));
+
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	// Use shared memory kernel with 2D blocks
+	cudaEventRecord(start);
+	
+	dim3 block_size(32, 32);
+	dim3 grid_size((ellpack_matrix.grid_size + 31) / 32, (ellpack_matrix.grid_size + 31) / 32);
+	
+	stencil5_shared_memory_ellpack_kernel<<<grid_size, block_size>>>(d_values_shared, d_indices_shared, dX_shared, dY_shared, 
+	                                                                  ellpack_matrix.nb_rows, 
+	                                                                  ellpack_matrix.ell_width, 
+	                                                                  alpha, beta, ellpack_matrix.grid_size);
+
+	CUDA_CHECK(cudaDeviceSynchronize());
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	
+	float computeTime;
+	cudaEventElapsedTime(&computeTime, start, stop);
+	*kernel_time_ms = (double)computeTime;
+	
+	printf("[Stencil5-Shared] Kernel time: %.3f ms\n", computeTime);
+	
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	CUDA_CHECK(cudaMemcpy(y, dY_shared, size_vec, cudaMemcpyDeviceToHost));
+
+	double check_sum = 0.0;
+	for (int i = 0; i < ellpack_matrix.grid_size * ellpack_matrix.grid_size; i++) {
+		check_sum += y[i];
+	}
+	printf("check_sum %e\n", check_sum);
+
+	return 0;
+}
+
+void stencil5_shared_free() {
+	printf("[STENCIL5-SHARED] Cleaning up\n");
+	CUDA_CHECK(cudaFree(d_values_shared));
+	CUDA_CHECK(cudaFree(d_indices_shared));
+	CUDA_CHECK(cudaFree(dX_shared));
+	CUDA_CHECK(cudaFree(dY_shared));
+}
+
+SpmvOperator SPMV_STENCIL5_SHARED = {
+	.name = "stencil5-shared",
+	.init = stencil5_shared_init,
+	.run_timed = stencil5_shared_run_timed,
+	.free = stencil5_shared_free
+};
+
+// Thread coarsening variables
+static double *d_values_coarsened = nullptr;
+static int *d_indices_coarsened = nullptr; 
+static double *dX_coarsened = nullptr;
+static double *dY_coarsened = nullptr;
+
+// Naive ELLPACK variables
+static double *d_values_naive = nullptr;
+static int *d_indices_naive = nullptr; 
+static double *dX_naive = nullptr;
+static double *dY_naive = nullptr;
+
+__global__ void ellpack_naive_kernel(const double* __restrict__ data,
+                                      const int* __restrict__ col_indices,
+                                      const double* __restrict__ vec,
+                                      double* __restrict__ result,
+                                      int num_rows, int max_nonzero_per_row,
+                                      double alpha, double beta) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row >= num_rows) return;
+    
+    double sum = 0.0;
+    int base_idx = row * max_nonzero_per_row;
+    
+    // Simple ELLPACK implementation - no optimizations
+    for (int j = 0; j < max_nonzero_per_row; j++) {
+        int col = col_indices[base_idx + j];
+        if (col >= 0 && col < num_rows) {
+            sum += data[base_idx + j] * vec[col];
+        }
+    }
+    
+    result[row] = alpha * sum + beta * result[row];
+}
+
+int stencil5_coarsened_init(MatrixData* mat) {
+	// Ensure ELLPACK structure is built (shared across all kernels)
+	ensure_ellpack_structure_built(mat);
+
+	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
+	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
+
+	CUDA_CHECK(cudaMalloc((void**)&d_values_coarsened, size_values));
+	CUDA_CHECK(cudaMalloc((void**)&d_indices_coarsened, size_indices));
+	CUDA_CHECK(cudaMalloc((void**)&dX_coarsened, size_vec));
+	CUDA_CHECK(cudaMalloc((void**)&dY_coarsened, size_vec));
+
+	CUDA_CHECK(cudaMemcpy(d_values_coarsened, ellpack_matrix.values, size_values, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_indices_coarsened, ellpack_matrix.indices, size_indices, cudaMemcpyHostToDevice));
+	
+	CUDA_CHECK(cudaDeviceSynchronize());
+	
+	return 0;
+}
+
+int stencil5_coarsened_run_timed(const double* x, double* y, double* kernel_time_ms) {
+	size_t size_vec = ellpack_matrix.grid_size * ellpack_matrix.grid_size * sizeof(double);
+	
+	CUDA_CHECK(cudaMemset(dY_coarsened, 0, size_vec));
+	CUDA_CHECK(cudaMemcpy(dX_coarsened, x, size_vec, cudaMemcpyHostToDevice));
+
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
+	
+	dim3 block_size(256);
+	dim3 grid_size((ellpack_matrix.nb_rows + 4 * block_size.x - 1) / (4 * block_size.x));
+	
+	stencil5_coarsened_ellpack_kernel<<<grid_size, block_size>>>(d_values_coarsened, d_indices_coarsened, dX_coarsened, dY_coarsened, 
+	                                                             ellpack_matrix.nb_rows, ellpack_matrix.ell_width, 
+	                                                             alpha, beta);
+
+	CUDA_CHECK(cudaDeviceSynchronize());
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	
+	float computeTime;
+	cudaEventElapsedTime(&computeTime, start, stop);
+	*kernel_time_ms = (double)computeTime;
+	
+	printf("[Stencil5-Coarsened] Kernel time: %.3f ms\n", computeTime);
+	
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	CUDA_CHECK(cudaMemcpy(y, dY_coarsened, size_vec, cudaMemcpyDeviceToHost));
+
+	double check_sum = 0.0;
+	for (int i = 0; i < ellpack_matrix.grid_size * ellpack_matrix.grid_size; i++) {
+		check_sum += y[i];
+	}
+	printf("check_sum %e\n", check_sum);
+
+	return 0;
+}
+
+void stencil5_coarsened_free() {
+	printf("[STENCIL5-COARSENED] Cleaning up\n");
+	CUDA_CHECK(cudaFree(d_values_coarsened));
+	CUDA_CHECK(cudaFree(d_indices_coarsened));
+	CUDA_CHECK(cudaFree(dX_coarsened));
+	CUDA_CHECK(cudaFree(dY_coarsened));
+}
+
+int ellpack_naive_init(MatrixData* mat) {
+	// Ensure ELLPACK structure is built (shared across all kernels)
+	ensure_ellpack_structure_built(mat);
+
+	size_t size_values = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+	size_t size_indices = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
+	size_t size_vec = ellpack_matrix.nb_rows * sizeof(double);
+
+	CUDA_CHECK(cudaMalloc((void**)&d_values_naive, size_values));
+	CUDA_CHECK(cudaMalloc((void**)&d_indices_naive, size_indices));
+	CUDA_CHECK(cudaMalloc((void**)&dX_naive, size_vec));
+	CUDA_CHECK(cudaMalloc((void**)&dY_naive, size_vec));
+
+	CUDA_CHECK(cudaMemcpy(d_values_naive, ellpack_matrix.values, size_values, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_indices_naive, ellpack_matrix.indices, size_indices, cudaMemcpyHostToDevice));
+	
+	CUDA_CHECK(cudaDeviceSynchronize());
+	
+	return 0;
+}
+
+int ellpack_naive_run_timed(const double* x, double* y, double* kernel_time_ms) {
+	size_t size_vec = ellpack_matrix.grid_size * ellpack_matrix.grid_size * sizeof(double);
+	
+	CUDA_CHECK(cudaMemset(dY_naive, 0, size_vec));
+	CUDA_CHECK(cudaMemcpy(dX_naive, x, size_vec, cudaMemcpyHostToDevice));
+
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	cudaEventRecord(start);
+	
+	dim3 block_size(256);
+	dim3 grid_size((ellpack_matrix.nb_rows + block_size.x - 1) / block_size.x);
+	
+	ellpack_naive_kernel<<<grid_size, block_size>>>(d_values_naive, d_indices_naive, dX_naive, dY_naive, 
+	                                                 ellpack_matrix.nb_rows, ellpack_matrix.ell_width, 
+	                                                 alpha, beta);
+
+	CUDA_CHECK(cudaDeviceSynchronize());
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	
+	float computeTime;
+	cudaEventElapsedTime(&computeTime, start, stop);
+	*kernel_time_ms = (double)computeTime;
+	
+	printf("[ELLPACK-Naive] Kernel time: %.3f ms\n", computeTime);
+	
+	cudaEventDestroy(start);
+	cudaEventDestroy(stop);
+
+	CUDA_CHECK(cudaMemcpy(y, dY_naive, size_vec, cudaMemcpyDeviceToHost));
+
+	double check_sum = 0.0;
+	for (int i = 0; i < ellpack_matrix.grid_size * ellpack_matrix.grid_size; i++) {
+		check_sum += y[i];
+	}
+	printf("check_sum %e\n", check_sum);
+
+	return 0;
+}
+
+void ellpack_naive_free() {
+	printf("[ELLPACK-NAIVE] Cleaning up\n");
+	CUDA_CHECK(cudaFree(d_values_naive));
+	CUDA_CHECK(cudaFree(d_indices_naive));
+	CUDA_CHECK(cudaFree(dX_naive));
+	CUDA_CHECK(cudaFree(dY_naive));
+}
+
+SpmvOperator SPMV_STENCIL5_COARSENED = {
+	.name = "stencil5-coarsened",
+	.init = stencil5_coarsened_init,
+	.run_timed = stencil5_coarsened_run_timed,
+	.free = stencil5_coarsened_free
+};
+
+SpmvOperator SPMV_ELLPACK_NAIVE = {
+	.name = "ellpack-naive",
+	.init = ellpack_naive_init,
+	.run_timed = ellpack_naive_run_timed,
+	.free = ellpack_naive_free
+};
+
 

@@ -44,19 +44,20 @@
 int main(int argc, char* argv[]) {
     // Check for correct number of command-line arguments
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<csr|ellpack|stencil> [--output-format=<human|json|csv>] [--output-file=<filename>]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<mode1[,mode2,...]> [--output-format=<human|json|csv>] [--output-file=<filename>]\n", argv[0]);
+        fprintf(stderr, "Available modes: csr, ellpack-naive, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened\n");
         return EXIT_FAILURE;
     }
 
     const char* matrix_file = argv[1];        ///< Path to Matrix Market file containing sparse matrix
-    const char* mode = NULL;                  ///< SpMV implementation mode (csr, ellpack, or stencil)
+    const char* modes_string = NULL;          ///< SpMV implementation modes (comma-separated)
     const char* output_format = "human";      ///< Output format for metrics (default: human-readable)
     const char* output_file = NULL;           ///< Output file for metrics (default: stdout)
 
     // Parse command-line arguments to find mode, output format, and output file
     for (int i = 2; i < argc; ++i) {
         if (strncmp(argv[i], "--mode=", 7) == 0) {
-            mode = argv[i] + 7;  // Get mode value after "--mode="
+            modes_string = argv[i] + 7;  // Get modes value after "--mode="
         } else if (strncmp(argv[i], "--output-format=", 16) == 0) {
             output_format = argv[i] + 16;  // Get format value after "--output-format="
         } else if (strncmp(argv[i], "--output-file=", 14) == 0) {
@@ -64,22 +65,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Validate that mode was specified
-    if (mode == NULL) {
-        fprintf(stderr, "Error: mode not specified. Use --mode=<csr|ellpack|stencil>\n");
+    // Validate that modes were specified
+    if (modes_string == NULL) {
+        fprintf(stderr, "Error: mode not specified. Use --mode=<mode1[,mode2,...]>\n");
         return EXIT_FAILURE;
     }
 
     // Validate output format
     if (strcmp(output_format, "human") != 0 && strcmp(output_format, "json") != 0 && strcmp(output_format, "csv") != 0) {
         fprintf(stderr, "Error: Invalid output format '%s'. Use --output-format=<human|json|csv>\n", output_format);
-        return EXIT_FAILURE;
-    }
-
-    // Select the corresponding SpMV operator (CSR, ELLPACK, STENCIL)
-    SpmvOperator* op = get_operator(mode);
-    if (op == NULL) {
-        fprintf(stderr, "Error: Unknown mode '%s'. Available modes: csr, ellpack, stencil\n", mode);
         return EXIT_FAILURE;
     }
 
@@ -91,14 +85,27 @@ int main(int argc, char* argv[]) {
     }
 
     printf("Matrix loaded: %d rows, %d cols, %d nonzeros\n", mat.rows, mat.cols, mat.nnz);
-
-    // Initialize the selected SpMV operator (allocate GPU structures, transfer matrix)
-    if (op->init(&mat) != 0) {
-        fprintf(stderr, "Failed to initialize operator '%s'\n", op->name);
-        return EXIT_FAILURE;
+    
+    // Parse modes (split by comma)
+    char modes_buffer[256];
+    strncpy(modes_buffer, modes_string, sizeof(modes_buffer) - 1);
+    modes_buffer[sizeof(modes_buffer) - 1] = '\0';
+    
+    const char* mode_tokens[10];  // Support up to 10 modes
+    int num_modes = 0;
+    
+    char* token = strtok(modes_buffer, ",");
+    while (token != NULL && num_modes < 10) {
+        mode_tokens[num_modes++] = token;
+        token = strtok(NULL, ",");
+    }
+    
+    printf("Testing %d mode(s): ", num_modes);
+    for (int i = 0; i < num_modes; i++) {
+        printf("%s%s", mode_tokens[i], (i < num_modes - 1) ? ", " : "\n");
     }
 
-    // Allocate and initialize input/output vectors on the host
+    // Allocate and initialize input/output vectors on the host (shared across modes)
     double* x = (double*)malloc(mat.cols * sizeof(double)); ///< Input vector for SpMV operation (x in y = A*x)
     double* y = (double*)malloc(mat.rows * sizeof(double)); ///< Output vector for SpMV operation (y in y = A*x)
     if (!x || !y) {
@@ -108,60 +115,87 @@ int main(int argc, char* argv[]) {
 
     // Initialize vectors with appropriate values
     for (int i = 0; i < mat.cols; i++) x[i] = 1.0; // Fill input vector with 1.0
-    memset(y, 0, mat.rows * sizeof(double));       // Initialize output vector to 0
-
-    // Statistical benchmark with outlier detection
-    printf("Running statistical benchmark (10 iterations)...\n");
-    BenchmarkStats bench_stats;
-    if (benchmark_with_stats(op->run_timed, x, y, 10, &bench_stats) != 0) {
-        fprintf(stderr, "Statistical benchmark failed for mode '%s'\n", op->name);
-        return EXIT_FAILURE;
-    }
     
-    printf("Completed: %d valid runs, %d outliers removed\n", 
-           bench_stats.valid_runs, bench_stats.outliers_removed);
-    
-    // Calculate performance metrics using median time
-    BenchmarkMetrics metrics;
-    calculate_spmv_metrics(bench_stats.median_ms, &mat, op->name, &metrics);
-    
-    // Add GPU specifications to metrics
-    if (get_gpu_properties(&metrics) != 0) {
-        fprintf(stderr, "Warning: Could not retrieve GPU properties\n");
-    }
-    
-    // Open output file if specified
-    FILE* output_fp = stdout;  // Default to stdout
-    if (output_file != NULL) {
-        output_fp = fopen(output_file, "w");
-        if (output_fp == NULL) {
-            fprintf(stderr, "Error: Could not open output file '%s' for writing\n", output_file);
-            return EXIT_FAILURE;
+    // Loop through all requested modes
+    for (int mode_idx = 0; mode_idx < num_modes; mode_idx++) {
+        const char* current_mode = mode_tokens[mode_idx];
+        
+        printf("\n=== Testing mode: %s ===\n", current_mode);
+        
+        // Select the corresponding SpMV operator
+        SpmvOperator* op = get_operator(current_mode);
+        if (op == NULL) {
+            fprintf(stderr, "Error: Unknown mode '%s'\n", current_mode);
+            continue;  // Skip invalid mode, continue with others
         }
-        printf("Writing metrics to file: %s\n", output_file);
+        
+        // Initialize the SpMV operator (ELLPACK reused if already built)
+        if (op->init(&mat) != 0) {
+            fprintf(stderr, "Failed to initialize operator '%s'\n", op->name);
+            continue;
+        }
+        
+        // Reset output vector for this mode
+        memset(y, 0, mat.rows * sizeof(double));
+        
+        // Statistical benchmark with outlier detection
+        printf("Running statistical benchmark (10 iterations)...\n");
+        BenchmarkStats bench_stats;
+        if (benchmark_with_stats(op->run_timed, x, y, 10, &bench_stats) != 0) {
+            fprintf(stderr, "Statistical benchmark failed for mode '%s'\n", op->name);
+            op->free();
+            continue;
+        }
+        
+        printf("Completed: %d valid runs, %d outliers removed\n", 
+               bench_stats.valid_runs, bench_stats.outliers_removed);
+        
+        // Calculate performance metrics using median time
+        BenchmarkMetrics metrics;
+        calculate_spmv_metrics(bench_stats.median_ms, &mat, op->name, &metrics);
+        
+        // Add GPU specifications to metrics
+        if (get_gpu_properties(&metrics) != 0) {
+            fprintf(stderr, "Warning: Could not retrieve GPU properties\n");
+        }
+        
+        // Output metrics (for multi-mode: human to stdout, for single-mode: support file output)
+        if (num_modes == 1) {
+            // Single mode: support file output as before
+            FILE* output_fp = stdout;
+            if (output_file != NULL) {
+                output_fp = fopen(output_file, "w");
+                if (output_fp == NULL) {
+                    fprintf(stderr, "Error: Could not open output file '%s' for writing\n", output_file);
+                    op->free();
+                    continue;
+                }
+                printf("Writing metrics to file: %s\n", output_file);
+            }
+            
+            if (strcmp(output_format, "json") == 0) {
+                print_metrics_json(&metrics, output_fp);
+            } else if (strcmp(output_format, "csv") == 0) {
+                print_metrics_csv(&metrics, output_fp);
+            } else {
+                print_benchmark_metrics(&metrics, output_fp);
+            }
+            
+            if (output_fp != stdout) {
+                fclose(output_fp);
+                printf("Metrics successfully written to: %s\n", output_file);
+            }
+        } else {
+            // Multi-mode: human output to stdout for comparison
+            print_benchmark_metrics(&metrics, stdout);
+        }
+        
+        printf("SpMV completed successfully using mode: %s\n", op->name);
+        
+        // Note: GPU cleanup deferred to end to avoid benchmark interference
     }
     
-    // Output metrics in requested format
-    if (strcmp(output_format, "json") == 0) {
-        print_metrics_json(&metrics, output_fp);
-    } else if (strcmp(output_format, "csv") == 0) {
-        print_metrics_csv(&metrics, output_fp);
-    } else {
-        print_benchmark_metrics(&metrics, output_fp);  // Default human-readable format
-    }
-    
-    // Close output file if it was opened
-    if (output_fp != stdout) {
-        fclose(output_fp);
-        printf("Metrics successfully written to: %s\n", output_file);
-    }
-    
-    printf("SpMV completed successfully using mode: %s\n", op->name);
-
-    // Free GPU resources used by the selected operator
-    if (op->free) {
-        op->free();
-    }
+    printf("\n=== Multi-mode benchmark completed ===\n");
 
     // Free host memory for vectors and matrix data
     free(x);

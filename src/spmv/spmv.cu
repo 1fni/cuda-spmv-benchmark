@@ -25,9 +25,13 @@
 #include "spmv.h"
 
 SpmvOperator* get_operator(const char* mode) {
-    if (strcmp(mode, "csr") == 0) return &SPMV_CSR; //cusparse csr
-    if (strcmp(mode, "stencil5") == 0) return &SPMV_STENCIL5; //kernel ellpack optimized for stencil
-    if (strcmp(mode, "ellpack") == 0) return &SPMV_ELLPACK; //cusparse using csr struct to build ellpack
+    if (strcmp(mode, "csr") == 0) return &SPMV_CSR;
+    if (strcmp(mode, "stencil5") == 0) return &SPMV_STENCIL5;
+    if (strcmp(mode, "stencil5-opt") == 0) return &SPMV_STENCIL5_OPTIMIZED;
+    if (strcmp(mode, "stencil5-shared") == 0) return &SPMV_STENCIL5_SHARED;
+    if (strcmp(mode, "stencil5-coarsened") == 0) return &SPMV_STENCIL5_COARSENED;
+    if (strcmp(mode, "ellpack-naive") == 0) return &SPMV_ELLPACK_NAIVE;
+    if (strcmp(mode, "ellpack") == 0) return &SPMV_ELLPACK;
     return NULL;
 }
 

@@ -29,6 +29,10 @@ extern "C" {
 
 /** @brief Global CSR and ELLPACK matrix structures used by operators. */
 extern CSRMatrix csr_mat;
+
+// Local ELLPACK utilities
+int build_ellpack_from_csr_local(CSRMatrix *csr_matrix);
+int ensure_ellpack_structure_built(MatrixData* mat);
 extern ELLPACKMatrix ellpack_matrix;
 
 #ifdef __cplusplus
@@ -120,6 +124,10 @@ typedef struct {
 /** @brief External operator declarations for different formats. */
 extern SpmvOperator SPMV_CSR;
 extern SpmvOperator SPMV_STENCIL5;
+extern SpmvOperator SPMV_STENCIL5_OPTIMIZED;
+extern SpmvOperator SPMV_STENCIL5_SHARED;
+extern SpmvOperator SPMV_STENCIL5_COARSENED;
+extern SpmvOperator SPMV_ELLPACK_NAIVE;
 extern SpmvOperator SPMV_ELLPACK;
 
 #ifdef __cplusplus
