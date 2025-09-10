@@ -306,6 +306,12 @@ __global__ void stencil5_coarsened_ellpack_kernel(const double* __restrict__ dat
  * @return int 0 on success, non-zero on failure
  */
 int build_ellpack_from_csr_local(CSRMatrix *csr_matrix){
+	printf("🔄 Converting CSR to ELLPACK format...\n");
+	fflush(stdout);
+	
+	printf("   ➤ Finding maximum row width...\n");
+	fflush(stdout);
+	
 	int max_nonzeros = 0;
 	for (int i = 0; i < csr_matrix->nb_rows; ++i) {
 		int row_nonzeros = csr_matrix->row_ptr[i + 1] - csr_matrix->row_ptr[i];
@@ -314,13 +320,18 @@ int build_ellpack_from_csr_local(CSRMatrix *csr_matrix){
 		}
 	}
 	ellpack_matrix.ell_width = (max_nonzeros > MAX_WIDTH) ? MAX_WIDTH : max_nonzeros;
-	printf("ELL WIDTH %d\n", ellpack_matrix.ell_width);
+	printf("   ➤ ELLPACK width determined: %d\n", ellpack_matrix.ell_width);
+	fflush(stdout);
 
 	ellpack_matrix.nb_rows = csr_matrix->nb_rows;
 	ellpack_matrix.nb_cols = csr_matrix->nb_cols;
 	ellpack_matrix.nb_nonzeros = csr_matrix->nb_nonzeros;
 	// grid_size will be assigned in stencil5_init
 
+	printf("   ➤ Allocating ELLPACK arrays (%d x %d elements)...\n", 
+		   csr_matrix->nb_rows, ellpack_matrix.ell_width);
+	fflush(stdout);
+	
 	int total_ell_elements = csr_matrix->nb_rows * ellpack_matrix.ell_width;
 	ellpack_matrix.indices = (int *)calloc(total_ell_elements, sizeof(int));
 	ellpack_matrix.values = (double *)calloc(total_ell_elements, sizeof(double));
@@ -334,6 +345,9 @@ int build_ellpack_from_csr_local(CSRMatrix *csr_matrix){
 	//	}
 	//	printf("\n");
 	//}
+	
+	printf("   ➤ Populating ELLPACK format from CSR data...\n");
+	fflush(stdout);
 	
 	//populate ELLPACK format
 	for (int i = 0; i < csr_matrix->nb_rows; ++i) {
@@ -356,6 +370,8 @@ int build_ellpack_from_csr_local(CSRMatrix *csr_matrix){
 	//	}
 	//	printf("\n");
 	//}
+	printf("✅ ELLPACK conversion completed successfully\n");
+	fflush(stdout);
 	return 0;
 }
 

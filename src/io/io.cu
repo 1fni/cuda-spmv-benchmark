@@ -335,7 +335,8 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 
 	// Write values with progress indication
 	int total_points = n * n;
-	int progress_step = total_points / 20; // Print every 5%
+	int progress_step = total_points / 100; // Print every 1%
+	if (progress_step == 0) progress_step = 1; // Ensure progress for small matrices
 	
 	printf("Writing matrix entries: 0%%");
 	fflush(stdout);
@@ -345,8 +346,8 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 			int idx = row * n + col + 1;  // 1-based index
 			int current_point = row * n + col;
 			
-			// Progress indicator
-			if (progress_step > 0 && current_point % progress_step == 0) {
+			// Progress indicator - update every 1% or every 1000 points (whichever is smaller)
+			if (current_point % progress_step == 0 || current_point % 1000 == 0) {
 				int percent = (current_point * 100) / total_points;
 				printf("\rWriting matrix entries: %d%%", percent);
 				fflush(stdout);

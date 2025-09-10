@@ -61,6 +61,9 @@ static double beta  = 0.0;           ///< Weight for existing Y
  */
 int build_csr_struct(MatrixData* mat)
 {
+    printf("🔄 Building CSR structure (%dx%d, %d nnz)...\n", mat->rows, mat->cols, mat->nnz);
+    fflush(stdout);
+    
     // Allocate row pointer array
     int *row_ptr = (int*)calloc(mat->rows + 1, sizeof(int));
     if (!row_ptr) {
@@ -68,17 +71,26 @@ int build_csr_struct(MatrixData* mat)
         return EXIT_FAILURE;
     }
 
+    printf("   ➤ Counting non-zeros per row...\n");
+    fflush(stdout);
+    
     // Count non-zeros per row
     for (int i = 0; i < mat->nnz; ++i) {
         int r = mat->entries[i].row;
         row_ptr[r + 1]++;
     }
 
+    printf("   ➤ Building row offset prefix sums...\n");
+    fflush(stdout);
+    
     // Build prefix sum for row offsets
     for (int i = 1; i <= mat->rows; ++i) {
         row_ptr[i] += row_ptr[i - 1];
     }
 
+    printf("   ➤ Allocating column indices and values arrays...\n");
+    fflush(stdout);
+    
     // Allocate column indices and values arrays
     int *col_indices = (int*)malloc(mat->nnz * sizeof(int));
     if (!col_indices) { free(row_ptr); return EXIT_FAILURE; }
@@ -89,6 +101,9 @@ int build_csr_struct(MatrixData* mat)
     int *local_count = (int*)calloc(mat->rows, sizeof(int));
     if (!local_count) { free(row_ptr); free(col_indices); free(values); return EXIT_FAILURE; }
 
+    printf("   ➤ Populating CSR arrays...\n");
+    fflush(stdout);
+    
     // Populate CSR arrays
     for (int i = 0; i < mat->nnz; ++i) {
         int r = mat->entries[i].row;
@@ -106,6 +121,8 @@ int build_csr_struct(MatrixData* mat)
     csr_mat.nb_nonzeros = mat->nnz;
 
     free(local_count);
+    printf("✅ CSR structure built successfully\n");
+    fflush(stdout);
     return EXIT_SUCCESS;
 }
 
