@@ -80,3 +80,51 @@ ls results/
 ```
 
 **Note**: Do NOT merge the pull request - keep results branches separate from main codebase.
+
+## Multimode Benchmark (NEW - Optimized)
+
+For faster benchmarks that test all 6 SpMV implementations with a single matrix load:
+
+```bash
+# 1. Setup instance (same as above)
+curl -s https://raw.githubusercontent.com/1fni/cuda-spmv-benchmark/main/scripts/vastai_setup.sh | bash
+
+# 2. Navigate and build
+cd cuda-spmv-benchmark
+git pull && make
+
+# 3. Run multimode benchmark (single matrix load, all 6 modes)
+./scripts/vastai_multimode_benchmark.sh
+```
+
+### Multimode Advantages
+
+- **⚡ Faster**: Single matrix load vs 6 separate loads
+- **🔧 Efficient**: No I/O overhead between mode switches  
+- **📊 Fair**: All modes use identical matrix in memory
+- **🎯 Complete**: Tests all 6 implementations in one run
+
+### Expected Runtime (Multimode)
+
+- **A100-40GB**: ~2-3 minutes total (vs 5+ minutes separate)
+- **H100-80GB**: ~1-2 minutes total (vs 4+ minutes separate)
+- **RTX 4090**: ~3-5 minutes total (vs 8+ minutes separate)
+
+### Multimode Output Files
+
+```
+results/
+├── vastai_multimode_YYYYMMDD_HHMM_multimode_report.txt  # Full comparison
+├── vastai_multimode_YYYYMMDD_HHMM_summary.csv          # CSV summary
+├── vastai_multimode_YYYYMMDD_HHMM_json/                # Individual JSONs
+├── vastai_multimode_YYYYMMDD_HHMM_performance.*        # Charts
+```
+
+### Standard vs Multimode
+
+| Method | Matrix Loads | Runtime | Use Case |
+|--------|--------------|---------|----------|
+| **Standard** (`vastai_benchmark.sh`) | 1 per mode (6 total) | Longer | Single mode focus |
+| **Multimode** (`vastai_multimode_benchmark.sh`) | 1 total | Faster | Complete comparison |
+
+Choose **multimode** for comprehensive benchmarks, **standard** for individual mode analysis.
