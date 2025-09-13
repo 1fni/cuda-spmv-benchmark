@@ -52,6 +52,7 @@ MATRIX_FILE="matrix/vastai_multimode_${MAX_MATRIX_SIZE}x${MAX_MATRIX_SIZE}.mtx"
 echo ""
 echo -e "${BLUE}🔧 Step 2: Matrix Generation${NC}"
 
+MATRIX_FILE="matrix/example1000x1000.mtx"
 if [ -f "$MATRIX_FILE" ]; then
     echo "Matrix file already exists: $MATRIX_FILE"
     MATRIX_SIZE_MB=$(du -m "$MATRIX_FILE" | cut -f1)
@@ -122,10 +123,10 @@ if [ $? -eq 0 ]; then
         JSON_FILE="${JSON_DIR}/${mode}_results.json"
         
         # Extract metrics from multimode report using grep and awk
-        # Look for the section corresponding to this mode
-        EXEC_TIME=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "Execution time:" | awk '{print $3}' | sed 's/ms//')
-        GFLOPS=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "GFLOPS:" | awk '{print $2}')
-        BANDWIDTH=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "Memory bandwidth:" | awk '{print $3}')
+        # Look for the performance metrics section for this operator
+        EXEC_TIME=$(grep -A 10 "Operator: $mode" "$HUMAN_OUTPUT_FILE" | grep "Execution time:" | awk '{print $3}' | sed 's/ms//')
+        GFLOPS=$(grep -A 10 "Operator: $mode" "$HUMAN_OUTPUT_FILE" | grep "GFLOPS:" | awk '{print $2}')
+        BANDWIDTH=$(grep -A 10 "Operator: $mode" "$HUMAN_OUTPUT_FILE" | grep "Memory bandwidth:" | awk '{print $3}' | sed 's/GB\/s//')
         
         # Use default values if extraction fails
         EXEC_TIME=${EXEC_TIME:-0.0}
