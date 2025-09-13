@@ -52,7 +52,6 @@ MATRIX_FILE="matrix/vastai_multimode_${MAX_MATRIX_SIZE}x${MAX_MATRIX_SIZE}.mtx"
 echo ""
 echo -e "${BLUE}🔧 Step 2: Matrix Generation${NC}"
 
-MATRIX_FILE="matrix/example1000x1000.mtx"
 if [ -f "$MATRIX_FILE" ]; then
     echo "Matrix file already exists: $MATRIX_FILE"
     MATRIX_SIZE_MB=$(du -m "$MATRIX_FILE" | cut -f1)
