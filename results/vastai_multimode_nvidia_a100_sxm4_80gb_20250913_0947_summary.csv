@@ -1,0 +1,7 @@
+operator,time_ms,gflops,bandwidth
+csr,17.849,148.849,0.0
+ellpack-naive,13.400,198.263,0.0
+stencil5,9.012,294.810,0.0
+stencil5-opt,13.015,0.0,0.0
+stencil5-shared,0.0,0.0,0.0
+stencil5-coarsened,0.0,0.0,0.0
