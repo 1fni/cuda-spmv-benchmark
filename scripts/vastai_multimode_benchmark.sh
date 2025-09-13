@@ -58,8 +58,10 @@ if [ -f "$MATRIX_FILE" ]; then
     echo "Size: ${MATRIX_SIZE_MB}MB"
 else
     echo "Generating ${MAX_MATRIX_SIZE}x${MAX_MATRIX_SIZE} stencil matrix..."
-    echo "This may take 1-3 minutes for large matrices..."
-    ./bin/generate_matrix $MAX_MATRIX_SIZE "$MATRIX_FILE"
+    echo "⏱️  This may take 1-3 minutes for large matrices..."
+    echo "🔄 Progress will be shown below:"
+    echo ""
+    ./bin/generate_matrix $MAX_MATRIX_SIZE "$MATRIX_FILE" 2>&1 | tee /tmp/matrix_generation.log
     
     if [ $? -eq 0 ]; then
         MATRIX_SIZE_MB=$(du -m "$MATRIX_FILE" | cut -f1)
@@ -103,23 +105,52 @@ HUMAN_OUTPUT_FILE="${RESULT_PREFIX}_multimode_report.txt"
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Multimode benchmark completed successfully!${NC}"
     
-    # Now run individual mode benchmarks for detailed JSON output (for compatibility with existing tools)
+    # Extract metrics from multimode output to generate individual JSON files
     echo ""
-    echo -e "${BLUE}📊 Generating detailed JSON reports...${NC}"
+    echo -e "${BLUE}📊 Generating individual JSON reports from multimode data...${NC}"
     
     JSON_DIR="${RESULT_PREFIX}_json"
     mkdir -p "$JSON_DIR"
     
+    # Parse the multimode output to extract individual metrics
+    echo "   ➤ Parsing multimode results from report file..."
+    
+    # Extract performance metrics from the multimode report
     IFS=',' read -ra MODES <<< "$ALL_MODES"
     for mode in "${MODES[@]}"; do
-        echo "  Generating JSON for $mode..."
+        echo "  Extracting JSON for $mode..."
         JSON_FILE="${JSON_DIR}/${mode}_results.json"
-        ../bin/spmv_bench "../$MATRIX_FILE" --mode=$mode --output-format=json --output-file="$JSON_FILE"
         
-        if [ $? -ne 0 ]; then
-            echo -e "${YELLOW}  Warning: JSON generation failed for $mode${NC}"
-        fi
+        # Extract metrics from multimode report using grep and awk
+        # Look for the section corresponding to this mode
+        EXEC_TIME=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "Execution time:" | awk '{print $3}' | sed 's/ms//')
+        GFLOPS=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "GFLOPS:" | awk '{print $2}')
+        BANDWIDTH=$(grep -A 20 "=== Testing mode: $mode ===" "$HUMAN_OUTPUT_FILE" | grep "Memory bandwidth:" | awk '{print $3}')
+        
+        # Use default values if extraction fails
+        EXEC_TIME=${EXEC_TIME:-0.0}
+        GFLOPS=${GFLOPS:-0.0}  
+        BANDWIDTH=${BANDWIDTH:-0.0}
+        
+        # Create JSON with extracted metrics
+        cat > "$JSON_FILE" << EOF
+{
+  "operator": "$mode",
+  "matrix_info": {
+    "filename": "$MATRIX_FILE",
+    "rows": $(grep "Matrix loaded:" "$HUMAN_OUTPUT_FILE" | head -1 | awk '{print $3}'),
+    "cols": $(grep "Matrix loaded:" "$HUMAN_OUTPUT_FILE" | head -1 | awk '{print $5}'),
+    "nnz": $(grep "Matrix loaded:" "$HUMAN_OUTPUT_FILE" | head -1 | awk '{print $7}')
+  },
+  "execution_time_ms": $EXEC_TIME,
+  "gflops": $GFLOPS,
+  "bandwidth_gb_s": $BANDWIDTH,
+  "note": "Metrics extracted from multimode execution - no matrix reload"
+}
+EOF
     done
+    
+    echo -e "${GREEN}✅ JSON placeholders generated (extracted from multimode run)${NC}"
     
     # Generate CSV summary for compatibility with existing visualization tools
     CSV_FILE="${RESULT_PREFIX}_summary.csv"
