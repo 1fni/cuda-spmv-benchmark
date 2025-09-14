@@ -1,0 +1,230 @@
+Loading matrix: ../matrix/vastai_multimode_16300x16300.mtx
+Matrix loaded: 265690000 rows, 265690000 cols, 1328384800 nonzeros
+Testing 5 mode(s): csr, ellpack-naive, stencil5, stencil5-opt, stencil5-coarsened
+
+=== Testing mode: csr ===
+🔄 Building CSR structure (265690000x265690000, 1328384800 nnz)...
+   ➤ Counting non-zeros per row...
+   ➤ Building row offset prefix sums...
+   ➤ Allocating column indices and values arrays...
+   ➤ Populating CSR arrays...
+✅ CSR structure built successfully
+Running statistical benchmark (10 iterations)...
+[cuSPARSE CSR] Kernel time: 25.494 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 18.653 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 18.154 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.818 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.835 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.870 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.829 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.887 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.844 ms
+[CSR] checksum: -2.125455e+09
+[cuSPARSE CSR] Kernel time: 17.918 ms
+[CSR] checksum: -2.125455e+09
+Completed: 9 valid runs, 1 outliers removed
+
+=== SpMV Performance Metrics ===
+Operator: csr
+
+--- Matrix Characteristics ---
+Grid size: 16300 x 16300 (2D stencil)
+Matrix dimensions: 265690000 x 265690000 (grid²)
+Non-zeros: 1328384800
+Sparsity ratio: 0.000000 (0.0000% non-zero)
+
+--- Performance Metrics ---
+Execution time: 17.870 ms (17869.8 μs)
+GFLOPS: 148.674
+Memory bandwidth: 1189.405 GB/s
+
+--- Performance Analysis ---
+Arithmetic intensity: 0.104 FLOP/byte
+Classification: Memory-bound (low arithmetic intensity)
+Optimization focus: Memory access patterns, data locality
+=============================
+
+SpMV completed successfully using mode: csr
+
+=== Testing mode: ellpack-naive ===
+Building ELLPACK structure (CSR conversion)...
+🔄 Building CSR structure (265690000x265690000, 1328384800 nnz)...
+   ➤ Counting non-zeros per row...
+   ➤ Building row offset prefix sums...
+   ➤ Allocating column indices and values arrays...
+   ➤ Populating CSR arrays...
+✅ CSR structure built successfully
+🔄 Converting CSR to ELLPACK format...
+   ➤ Finding maximum row width...
+   ➤ ELLPACK width determined: 5
+   ➤ Allocating ELLPACK arrays (265690000 x 5 elements)...
+   ➤ Populating ELLPACK format from CSR data...
+✅ ELLPACK conversion completed successfully
+ELLPACK structure built: 265690000 rows, width 5
+Running statistical benchmark (10 iterations)...
+[ELLPACK-Naive] Kernel time: 119.512 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.583 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.531 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.494 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.476 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.397 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.326 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.343 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.332 ms
+check_sum -2.125455e+09
+[ELLPACK-Naive] Kernel time: 13.353 ms
+check_sum -2.125455e+09
+Completed: 9 valid runs, 1 outliers removed
+
+=== SpMV Performance Metrics ===
+Operator: ellpack-naive
+
+--- Matrix Characteristics ---
+Grid size: 16300 x 16300 (2D stencil)
+Matrix dimensions: 265690000 x 265690000 (grid²)
+Non-zeros: 1328384800
+Sparsity ratio: 0.000000 (0.0000% non-zero)
+
+--- Performance Metrics ---
+Execution time: 13.397 ms (13397.1 μs)
+GFLOPS: 198.309
+Memory bandwidth: 1903.787 GB/s
+
+--- Performance Analysis ---
+Arithmetic intensity: 0.104 FLOP/byte
+Classification: Memory-bound (low arithmetic intensity)
+Optimization focus: Memory access patterns, data locality
+=============================
+
+SpMV completed successfully using mode: ellpack-naive
+
+=== Testing mode: stencil5 ===
+Running statistical benchmark (10 iterations)...
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.173 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.049 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.062 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.014 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.010 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.062 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.042 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.012 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 8.989 ms
+Result:
+check_sum -2.125455e+09
+Matrix rows: 265690000, Grid size: 16300
+[Stencil5] Kernel time: 9.050 ms
+Result:
+check_sum -2.125455e+09
+Completed: 9 valid runs, 1 outliers removed
+
+=== SpMV Performance Metrics ===
+Operator: stencil5
+
+--- Matrix Characteristics ---
+Grid size: 16300 x 16300 (2D stencil)
+Matrix dimensions: 265690000 x 265690000 (grid²)
+Non-zeros: 1328384800
+Sparsity ratio: 0.000000 (0.0000% non-zero)
+
+--- Performance Metrics ---
+Execution time: 9.042 ms (9042.0 μs)
+GFLOPS: 293.825
+Memory bandwidth: 2233.179 GB/s
+
+--- Performance Analysis ---
+Arithmetic intensity: 0.104 FLOP/byte
+Classification: Memory-bound (low arithmetic intensity)
+Optimization focus: Memory access patterns, data locality
+=============================
+
+SpMV completed successfully using mode: stencil5
+
+=== Testing mode: stencil5-opt ===
+Running statistical benchmark (10 iterations)...
+[Stencil5-Optimized] Kernel time: 13.245 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.158 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.141 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.113 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.074 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.002 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.008 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.017 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.001 ms
+check_sum -2.125455e+09
+[Stencil5-Optimized] Kernel time: 13.010 ms
+check_sum -2.125455e+09
+Completed: 9 valid runs, 1 outliers removed
+
+=== SpMV Performance Metrics ===
+Operator: stencil5-opt
+
+--- Matrix Characteristics CUDA error: out of memory, line 761
+---
+Grid size: 16300 x 16300 (2D stencil)
+Matrix dimensions: 265690000 x 265690000 (grid²)
+Non-zeros: 1328384800
+Sparsity ratio: 0.000000 (0.0000% non-zero)
+
+--- Performance Metrics ---
+Execution time: 13.017 ms (13016.6 μs)
+GFLOPS: 204.106
+Memory bandwidth: 1959.435 GB/s
+
+--- Performance Analysis ---
+Arithmetic intensity: 0.104 FLOP/byte
+Classification: Memory-bound (low arithmetic intensity)
+Optimization focus: Memory access patterns, data locality
+=============================
+
+SpMV completed successfully using mode: stencil5-opt
+
+=== Testing mode: stencil5-coarsened ===

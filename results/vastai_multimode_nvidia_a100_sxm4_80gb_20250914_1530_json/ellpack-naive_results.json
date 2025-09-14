@@ -1,0 +1,13 @@
+{
+  "operator": "ellpack-naive",
+  "matrix_info": {
+    "filename": "matrix/vastai_multimode_16300x16300.mtx",
+    "rows": 265690000,
+    "cols": 265690000,
+    "nnz": 1328384800
+  },
+  "execution_time_ms": 13.397,
+  "gflops": 198.309,
+  "bandwidth_gb_s": 0.0,
+  "note": "Metrics extracted from multimode execution - no matrix reload"
+}
