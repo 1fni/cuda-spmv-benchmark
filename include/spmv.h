@@ -60,6 +60,8 @@ extern ELLPACKMatrix ellpack_matrix;
     }                                                                          \
 }
 
+/** @brief AmgX error checking macro (use built-in if available) */
+
 /**
  * @struct BenchmarkMetrics
  * @brief Performance metrics collected during SpMV benchmarking.
@@ -129,6 +131,7 @@ extern SpmvOperator SPMV_STENCIL5_SHARED;
 extern SpmvOperator SPMV_STENCIL5_COARSENED;
 extern SpmvOperator SPMV_ELLPACK_NAIVE;
 extern SpmvOperator SPMV_ELLPACK;
+extern SpmvOperator SPMV_AMGX_STENCIL;
 
 #ifdef __cplusplus
 extern "C" {

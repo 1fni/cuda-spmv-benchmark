@@ -13,13 +13,26 @@ BUILD_TYPE ?= release
 NVCC := nvcc
 
 ifeq ($(BUILD_TYPE),debug)
-    NVCCFLAGS := -g -G -O0
+    NVCCFLAGS := -g -G -O0 -std=c++11
 else
-    NVCCFLAGS := -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true
+    NVCCFLAGS := -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true -std=c++11
 endif
 
+# Base includes and libraries
 INCLUDES := -I$(INC_DIR)
 LDFLAGS := -lcusparse -lcublas
+
+# AmgX integration (optional)
+AMGX_DIR ?= /usr/local
+ifneq ($(wildcard $(AMGX_DIR)/include/amgx_c.h),)
+    INCLUDES += -I$(AMGX_DIR)/include
+    LDFLAGS += -lcusolver -lamgx -L$(AMGX_DIR)/lib
+    NVCCFLAGS += -DWITH_AMGX
+    $(info AmgX found at $(AMGX_DIR) - enabling amgx-stencil mode)
+else
+    $(warning AmgX not found at $(AMGX_DIR) - skipping amgx-stencil mode)
+    $(warning To enable AmgX: run ./scripts/install_amgx.sh or set AMGX_DIR)
+endif
 
 # Sources / objets
 CU_SRCS := $(shell find $(SRC_DIR) -name '*.cu')

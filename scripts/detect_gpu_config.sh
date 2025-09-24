@@ -24,10 +24,18 @@ detect_gpu_capabilities() {
     # Simplified: size^2 * 40 + size * 16 < available_bytes
     VRAM_BYTES=$(echo "$VRAM_GB * 1024^3 * $MEMORY_SAFETY_FACTOR" | bc -l)
     
-    # Solve quadratic: 40*size^2 + 16*size - VRAM_BYTES = 0
-    # size = (-16 + sqrt(16^2 + 4*40*VRAM_BYTES)) / (2*40)
-    DISCRIMINANT=$(echo "256 + 160 * $VRAM_BYTES" | bc -l)
-    MAX_SIZE_EXACT=$(echo "(-16 + sqrt($DISCRIMINANT)) / 80" | bc -l)
+    # Check if bc is available, fallback to safer approach
+    if ! command -v bc &> /dev/null; then
+        echo "Warning: bc not available, using conservative matrix size calculation"
+        # Conservative fallback: 1000 * sqrt(VRAM_GB)
+        MAX_SIZE_APPROX=$((1000 * VRAM_GB / 2))  # Very conservative
+        MAX_SIZE_EXACT=$MAX_SIZE_APPROX
+    else
+        # Solve quadratic: 40*size^2 + 16*size - VRAM_BYTES = 0
+        # size = (-16 + sqrt(16^2 + 4*40*VRAM_BYTES)) / (2*40)
+        DISCRIMINANT=$(echo "256 + 160 * $VRAM_BYTES" | bc -l)
+        MAX_SIZE_EXACT=$(echo "(-16 + sqrt($DISCRIMINANT)) / 80" | bc -l)
+    fi
     MAX_SIZE=$(echo "$MAX_SIZE_EXACT" | cut -d. -f1)
     
     # Check disk space constraint
