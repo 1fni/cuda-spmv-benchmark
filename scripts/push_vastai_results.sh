@@ -14,21 +14,26 @@ if [ ! -d "results" ]; then
     exit 1
 fi
 
-# Generate branch name with timestamp
+# Detect GPU architecture for branch naming
+GPU_ARCH=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1 | sed 's/ /_/g' | tr '[:upper:]' '[:lower:]')
 TIMESTAMP=$(date +%Y%m%d_%H%M)
-BRANCH_NAME="vastai-results-${TIMESTAMP}"
+BRANCH_NAME="vastai-results-${GPU_ARCH}-${TIMESTAMP}"
 
 echo "🌟 Creating results branch: $BRANCH_NAME"
 
 # Create and switch to new branch
 git checkout -b "$BRANCH_NAME"
 
-# Add results directory
-git add results/
-git commit -m "Add VastAI benchmark results - $TIMESTAMP"
+# Configure git user for this commit
+git config user.email "bouhrour.stephane@gmail.com"
+git config user.name "1fni"
 
-# Push to remote
-git push origin "$BRANCH_NAME"
+# Add results directory with force flag (ignore gitignore)
+git add -f results/
+git commit -m "Add VastAI benchmark results - $GPU_ARCH - $TIMESTAMP"
+
+# Push to remote with force flag
+git push origin "$BRANCH_NAME" -f
 
 echo ""
 echo "🎉 Results pushed to GitHub!"

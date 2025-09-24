@@ -80,8 +80,8 @@ echo "Testing all SpMV implementations with single matrix load..."
 # Generate result prefix with GPU name and timestamp
 RESULT_PREFIX="vastai_multimode_$(echo "$GPU_NAME" | tr ' -' '_' | tr '[:upper:]' '[:lower:]')_$(date +%Y%m%d_%H%M)"
 
-# All available modes (from main.cu analysis)
-ALL_MODES="csr,ellpack-naive,stencil5,stencil5-opt,stencil5-shared,stencil5-coarsened"
+# Available modes (stencil5-shared excluded due to shared memory issues on large matrices)
+ALL_MODES="csr,ellpack-naive,stencil5,stencil5-opt,stencil5-coarsened"
 
 echo "Testing modes: $ALL_MODES"
 echo "Matrix: $MATRIX_FILE"
@@ -94,7 +94,7 @@ cd results
 
 # Run multimode benchmark (loads matrix once, tests all modes)
 echo -e "${YELLOW}Running multimode benchmark...${NC}"
-echo "This will test all 6 SpMV implementations with a single matrix load."
+echo "This will test all 5 SpMV implementations with a single matrix load."
 
 JSON_OUTPUT_FILE="${RESULT_PREFIX}_multimode.json"
 HUMAN_OUTPUT_FILE="${RESULT_PREFIX}_multimode_report.txt"
@@ -200,7 +200,7 @@ echo ""
 echo -e "${YELLOW}📊 Results Summary:${NC}"
 echo "- Matrix: ${MAX_MATRIX_SIZE}x${MAX_MATRIX_SIZE} (${MATRIX_SIZE_MB}MB)"
 echo "- GPU: $GPU_NAME"
-echo "- Modes tested: 6 ($(echo $ALL_MODES | tr ',' ' '))"
+echo "- Modes tested: 5 ($(echo $ALL_MODES | tr ',' ' '))"
 echo "- Single matrix load: ✅ (no reloading between modes)"
 echo ""
 

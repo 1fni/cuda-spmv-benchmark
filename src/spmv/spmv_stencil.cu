@@ -99,11 +99,12 @@ __global__ void ellpack_matvec_optimized_diffusion_pattern_middle_and_else(const
 																//if ((row < num_rows - size_arcfile) && (row > size_arcfile - 1) && (row % size_arcfile != 0) && (row % (size_arcfile - 1) != 0)) {//milieu
 			double sum = 0.0f;
 			int offset = row * max_nonzero_per_row;
-			sum += data[offset] * vec[row - grid_size];  // North neighbor
-			sum += data[offset + 1] * vec[row - 1];      // West neighbor
-			sum += data[offset + 2] * vec[row];          // Center point
-			sum += data[offset + 3] * vec[row + 1];      // East neighbor
-			sum += data[offset + 4] * vec[row + grid_size]; // South neighbor
+			// Optimized memory access order: group spatially adjacent vec[] accesses first
+			sum += data[offset + 1] * vec[row - 1];      // West neighbor (stride -1)
+			sum += data[offset + 2] * vec[row];          // Center point (stride 0)
+			sum += data[offset + 3] * vec[row + 1];      // East neighbor (stride +1)
+			sum += data[offset] * vec[row - grid_size];  // North neighbor (stride -grid_size)
+			sum += data[offset + 4] * vec[row + grid_size]; // South neighbor (stride +grid_size)
 			result[row] = alpha*sum;
 			//printf("row %d %lf %lf, %lf %lf, %lf %lf, %lf %lf, %lf %lf\n", row, data[offset] , vec[row - size_grid],data[offset+1] , vec[row - 1],data[offset+2] , vec[row],data[offset+3] , vec[row + 1],data[offset+4] , vec[row + size_grid]);
 		}
