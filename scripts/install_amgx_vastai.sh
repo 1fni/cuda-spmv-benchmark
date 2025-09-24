@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AMGX_VERSION="v2.3.0"  # Stable version
+AMGX_VERSION="main"  # Latest version compatible with CUDA 12.x
 INSTALL_PREFIX="$HOME/amgx_local"
 TEMP_DIR="/tmp/amgx_build_$$"
 
@@ -75,19 +75,25 @@ check_dependencies() {
     command -v make >/dev/null 2>&1 || missing_deps+=("make")
     command -v g++ >/dev/null 2>&1 || missing_deps+=("g++")
     command -v git >/dev/null 2>&1 || missing_deps+=("git")
+    command -v bc >/dev/null 2>&1 || missing_deps+=("bc")
     
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         print_warning "Missing dependencies: ${missing_deps[*]}"
         print_status "Attempting to install dependencies..."
         
-        # Try different package managers
-        if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y cmake build-essential git
-        elif command -v yum >/dev/null 2>&1; then
-            sudo yum install -y cmake gcc-c++ make git
+        # Try different package managers (only if sudo available)
+        if sudo -n true 2>/dev/null; then
+            if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update && sudo apt-get install -y cmake build-essential git bc
+            elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y cmake gcc-c++ make git bc
+            else
+                print_warning "Package manager not supported, continuing with manual installation"
+            fi
         else
-            print_error "Cannot install dependencies. Please install manually: ${missing_deps[*]}"
-            exit 1
+            print_warning "No sudo access - cannot auto-install dependencies"
+            print_status "Please install manually: ${missing_deps[*]}"
+            print_status "Continuing anyway - some dependencies might be available..."
         fi
     else
         print_success "All dependencies found"
@@ -200,10 +206,11 @@ update_makefile() {
         # Create backup
         cp "$makefile" "$makefile.backup"
         
-        # Update AMGX_DIR in Makefile
+        # Update AMGX_DIR in Makefile with absolute path (not variable)
         sed -i "s|AMGX_DIR ?= /usr/local|AMGX_DIR ?= $INSTALL_PREFIX|g" "$makefile"
         
-        print_success "Makefile updated (backup saved as Makefile.backup)"
+        print_success "Makefile updated with AmgX path: $INSTALL_PREFIX"
+        print_success "Backup saved as Makefile.backup"
     else
         print_warning "Project Makefile not found - you'll need to set AMGX_DIR manually"
     fi
