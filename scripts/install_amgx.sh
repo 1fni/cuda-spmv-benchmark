@@ -1,6 +1,6 @@
 #!/bin/bash
-# AmgX Installation Script for VastAI GPU Instances
-# Handles various VastAI environments and permission constraints
+# AmgX Installation Script for Linux/CUDA Environments
+# Handles various platforms and permission constraints
 # Author: Bouhrour Stephane
 # Date: 2025-09-24
 
@@ -34,10 +34,13 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if running on VastAI (common indicators)
-detect_vastai() {
+# Detect cloud GPU environment (optional detection for optimizations)
+detect_cloud_environment() {
     if [[ -n "$VAST_CONTAINERNAME" ]] || [[ -n "$RUNPOD_POD_ID" ]] || [[ "$PWD" =~ "/workspace" ]] || [[ "$HOME" =~ "/root" ]]; then
         print_status "Detected cloud GPU environment (VastAI/RunPod/similar)"
+        return 0
+    elif [[ -n "$COLAB_GPU" ]] || [[ -n "$KAGGLE_KERNEL_RUN_TYPE" ]]; then
+        print_status "Detected notebook environment (Colab/Kaggle)"
         return 0
     fi
     return 1
@@ -174,8 +177,8 @@ build_amgx() {
     )
     
     # Add CUDA architecture flags for better compatibility
-    if detect_vastai; then
-        # Common VastAI GPU architectures
+    if detect_cloud_environment; then
+        # Common cloud GPU architectures
         cmake_args+=(-DCUDA_ARCH="70;75;80;86;89;90")
         print_status "Using multi-architecture CUDA build for cloud GPU compatibility"
     fi
@@ -277,12 +280,12 @@ cleanup_temp() {
 # Main installation process
 main() {
     echo "=================================================="
-    echo "  AmgX Installation Script for VastAI/Cloud GPU  "
+    echo "  AmgX Installation Script for Linux/CUDA        "  
     echo "=================================================="
     echo
     
     # Environment detection
-    detect_vastai && print_status "Cloud GPU environment detected"
+    detect_cloud_environment && print_status "Cloud GPU environment detected"
     
     # Pre-installation checks
     check_cuda

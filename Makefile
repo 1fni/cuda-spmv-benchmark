@@ -18,10 +18,21 @@ else
     NVCCFLAGS := -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true -std=c++11
 endif
 
-# AmgX integration
+# Base includes and libraries
+INCLUDES := -I$(INC_DIR)
+LDFLAGS := -lcusparse -lcublas
+
+# AmgX integration (optional)
 AMGX_DIR ?= /usr/local
-INCLUDES := -I$(INC_DIR) -I$(AMGX_DIR)/include
-LDFLAGS := -lcusparse -lcublas -lcusolver -lamgx -L$(AMGX_DIR)/lib
+ifneq ($(wildcard $(AMGX_DIR)/include/amgx_c.h),)
+    INCLUDES += -I$(AMGX_DIR)/include
+    LDFLAGS += -lcusolver -lamgx -L$(AMGX_DIR)/lib
+    NVCCFLAGS += -DWITH_AMGX
+    $(info AmgX found at $(AMGX_DIR) - enabling amgx-stencil mode)
+else
+    $(warning AmgX not found at $(AMGX_DIR) - skipping amgx-stencil mode)
+    $(warning To enable AmgX: run ./scripts/install_amgx.sh or set AMGX_DIR)
+endif
 
 # Sources / objets
 CU_SRCS := $(shell find $(SRC_DIR) -name '*.cu')

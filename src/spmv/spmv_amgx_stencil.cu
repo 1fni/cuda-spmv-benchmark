@@ -15,11 +15,12 @@
 #include <stdlib.h>
 #include <cuda_runtime.h>
 
-// AmgX C++ headers
-#include <amgx_c.h>
-
 #include "spmv.h" 
 #include "io.h"
+
+#ifdef WITH_AMGX
+// AmgX C++ headers
+#include <amgx_c.h>
 
 // AmgX resources and matrix structures
 static AMGX_config_handle cfg = NULL;
@@ -218,3 +219,26 @@ SpmvOperator SPMV_AMGX_STENCIL = {
     .run_timed = amgx_stencil_run_timed,
     .free = amgx_stencil_free
 };
+
+#else
+// Stub implementation when AmgX not available
+static int amgx_stencil_init_stub(MatrixData* mat) {
+    printf("AmgX not available - compile with AmgX support to use amgx-stencil mode\n");
+    return EXIT_FAILURE;
+}
+
+static int amgx_stencil_run_timed_stub(const double* h_x, double* h_y, double* kernel_time_ms) {
+    return EXIT_FAILURE;
+}
+
+static void amgx_stencil_free_stub() {
+    // Nothing to free
+}
+
+SpmvOperator SPMV_AMGX_STENCIL = {
+    .name = "amgx-stencil",
+    .init = amgx_stencil_init_stub,
+    .run_timed = amgx_stencil_run_timed_stub,
+    .free = amgx_stencil_free_stub
+};
+#endif
