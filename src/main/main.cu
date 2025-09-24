@@ -192,7 +192,8 @@ int main(int argc, char* argv[]) {
         
         printf("SpMV completed successfully using mode: %s\n", op->name);
         
-        // Note: GPU cleanup deferred to end to avoid benchmark interference
+        // Free GPU memory after each mode to prevent accumulation on large matrices
+        op->free();
     }
     
     printf("\n=== Multi-mode benchmark completed ===\n");
