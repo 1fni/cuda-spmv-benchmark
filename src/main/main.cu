@@ -77,16 +77,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Load the matrix from Matrix Market file into a generic structure
-    MatrixData mat; ///< Container for matrix data loaded from file
-    if (load_matrix_market(matrix_file, &mat) != 0) {
-        fprintf(stderr, "Failed to load matrix %s\n", matrix_file);
-        return EXIT_FAILURE;
-    }
-
-    printf("Matrix loaded: %d rows, %d cols, %d nonzeros\n", mat.rows, mat.cols, mat.nnz);
-    
-    // Parse modes (split by comma)
+    // Parse modes (split by comma) BEFORE loading matrix
     char modes_buffer[256];
     strncpy(modes_buffer, modes_string, sizeof(modes_buffer) - 1);
     modes_buffer[sizeof(modes_buffer) - 1] = '\0';
@@ -100,6 +91,28 @@ int main(int argc, char* argv[]) {
         token = strtok(NULL, ",");
     }
     
+    // Validate all modes BEFORE loading matrix (saves time on invalid modes)
+    printf("Validating %d mode(s): ", num_modes);
+    for (int i = 0; i < num_modes; i++) {
+        printf("%s%s", mode_tokens[i], (i < num_modes - 1) ? ", " : "\n");
+        
+        SpmvOperator* op = get_operator(mode_tokens[i]);
+        if (op == NULL) {
+            fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
+            fprintf(stderr, "Available modes: csr, ellpack-naive, ellpack, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened, stencil5-mgpu, stencil5-no-colindices, stencil5-no-colindices-opt, amgx-stencil\n");
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Load the matrix from Matrix Market file into a generic structure (AFTER mode validation)
+    printf("\nLoading matrix: %s\n", matrix_file);
+    MatrixData mat; ///< Container for matrix data loaded from file
+    if (load_matrix_market(matrix_file, &mat) != 0) {
+        fprintf(stderr, "Failed to load matrix %s\n", matrix_file);
+        return EXIT_FAILURE;
+    }
+
+    printf("Matrix loaded: %d rows, %d cols, %d nonzeros\n", mat.rows, mat.cols, mat.nnz);
     printf("Testing %d mode(s): ", num_modes);
     for (int i = 0; i < num_modes; i++) {
         printf("%s%s", mode_tokens[i], (i < num_modes - 1) ? ", " : "\n");
@@ -122,12 +135,8 @@ int main(int argc, char* argv[]) {
         
         printf("\n=== Testing mode: %s ===\n", current_mode);
         
-        // Select the corresponding SpMV operator
+        // Select the corresponding SpMV operator (already validated)
         SpmvOperator* op = get_operator(current_mode);
-        if (op == NULL) {
-            fprintf(stderr, "Error: Unknown mode '%s'\n", current_mode);
-            continue;  // Skip invalid mode, continue with others
-        }
         
         // Initialize the SpMV operator (ELLPACK reused if already built)
         if (op->init(&mat) != 0) {
