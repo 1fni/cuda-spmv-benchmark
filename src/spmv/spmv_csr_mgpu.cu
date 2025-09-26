@@ -53,6 +53,8 @@ typedef struct {
     cusparseSpMatDescr_t mat_descr[8];
     cusparseDnVecDescr_t vec_x_descr[8];
     cusparseDnVecDescr_t vec_y_descr[8];
+    void *d_buffers[8];                   // Pre-allocated buffers per GPU
+    size_t buffer_sizes[8];               // Buffer sizes per GPU
     
     // CUDA resources
     cudaStream_t compute_streams[8];
@@ -228,6 +230,25 @@ static int multi_gpu_csr_init(MatrixData* mat) {
         CHECK_CUSPARSE(cusparseCreateDnVec(&mgpu_csr_ctx.vec_y_descr[gpu],
                                           local_rows,
                                           mgpu_csr_ctx.d_local_y[gpu], CUDA_R_64F));
+                                          
+        // Pre-allocate cuSPARSE buffer for this GPU
+        const double alpha = 1.0, beta = 0.0;
+        CHECK_CUSPARSE(cusparseSpMV_bufferSize(mgpu_csr_ctx.cusparse_handles[gpu],
+                                              CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                              &alpha,
+                                              mgpu_csr_ctx.mat_descr[gpu],
+                                              mgpu_csr_ctx.vec_x_descr[gpu],
+                                              &beta,
+                                              mgpu_csr_ctx.vec_y_descr[gpu],
+                                              CUDA_R_64F,
+                                              CUSPARSE_SPMV_ALG_DEFAULT,
+                                              &mgpu_csr_ctx.buffer_sizes[gpu]));
+        
+        if (mgpu_csr_ctx.buffer_sizes[gpu] > 0) {
+            CUDA_CHECK(cudaMalloc(&mgpu_csr_ctx.d_buffers[gpu], mgpu_csr_ctx.buffer_sizes[gpu]));
+        } else {
+            mgpu_csr_ctx.d_buffers[gpu] = NULL;
+        }
     }
     
     csr_context_initialized = true;
@@ -269,29 +290,11 @@ static int multi_gpu_csr_run_timed(const double* h_x, double* h_y, double* kerne
     
     // Launch cuSPARSE SpMV on all GPUs in parallel
     const double alpha = 1.0, beta = 0.0;
-    size_t buffer_size = 0;
-    void *d_buffer = NULL;
     
     for (int gpu = 0; gpu < mgpu_csr_ctx.gpu_count; gpu++) {
         CUDA_CHECK(cudaSetDevice(mgpu_csr_ctx.gpu_ids[gpu]));
         
-        // Get buffer size (only once per GPU)
-        CHECK_CUSPARSE(cusparseSpMV_bufferSize(mgpu_csr_ctx.cusparse_handles[gpu],
-                                              CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                              &alpha,
-                                              mgpu_csr_ctx.mat_descr[gpu],
-                                              mgpu_csr_ctx.vec_x_descr[gpu],
-                                              &beta,
-                                              mgpu_csr_ctx.vec_y_descr[gpu],
-                                              CUDA_R_64F,
-                                              CUSPARSE_SPMV_ALG_DEFAULT,
-                                              &buffer_size));
-        
-        if (buffer_size > 0) {
-            CUDA_CHECK(cudaMalloc(&d_buffer, buffer_size));
-        }
-        
-        // Execute SpMV: y = alpha * A * x + beta * y
+        // Execute SpMV using pre-allocated buffer: y = alpha * A * x + beta * y
         CHECK_CUSPARSE(cusparseSpMV(mgpu_csr_ctx.cusparse_handles[gpu],
                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
                                    &alpha,
@@ -301,12 +304,7 @@ static int multi_gpu_csr_run_timed(const double* h_x, double* h_y, double* kerne
                                    mgpu_csr_ctx.vec_y_descr[gpu],
                                    CUDA_R_64F,
                                    CUSPARSE_SPMV_ALG_DEFAULT,
-                                   d_buffer));
-        
-        if (d_buffer) {
-            cudaFree(d_buffer);
-            d_buffer = NULL;
-        }
+                                   mgpu_csr_ctx.d_buffers[gpu]));
     }
     
     // Synchronize all compute streams
@@ -368,6 +366,7 @@ static void multi_gpu_csr_free() {
         if (mgpu_csr_ctx.d_local_row_ptr[gpu]) cudaFree(mgpu_csr_ctx.d_local_row_ptr[gpu]);
         if (mgpu_csr_ctx.d_full_x[gpu]) cudaFree(mgpu_csr_ctx.d_full_x[gpu]);
         if (mgpu_csr_ctx.d_local_y[gpu]) cudaFree(mgpu_csr_ctx.d_local_y[gpu]);
+        if (mgpu_csr_ctx.d_buffers[gpu]) cudaFree(mgpu_csr_ctx.d_buffers[gpu]);
         
         // Destroy cuSPARSE descriptors
         if (mgpu_csr_ctx.mat_descr[gpu]) cusparseDestroySpMat(mgpu_csr_ctx.mat_descr[gpu]);
