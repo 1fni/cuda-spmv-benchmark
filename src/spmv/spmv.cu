@@ -35,6 +35,7 @@ SpmvOperator* get_operator(const char* mode) {
     if (strcmp(mode, "stencil5-no-colindices") == 0) return &SPMV_STENCIL5_NO_COLINDICES;
     if (strcmp(mode, "stencil5-no-colindices-opt") == 0) return &SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED;
     if (strcmp(mode, "stencil5-mgpu") == 0) return &SPMV_STENCIL5_MULTI_GPU;
+    if (strcmp(mode, "csr-mgpu") == 0) return &SPMV_CSR_MULTI_GPU;
     if (strcmp(mode, "amgx-stencil") == 0) return &SPMV_AMGX_STENCIL;
     return NULL;
 }
