@@ -73,7 +73,7 @@ int ensure_ellpack_structure_built(MatrixData* mat) {
  * @param alpha Scalar multiplier for matrix-vector product
  * @param beta Scalar multiplier for existing result vector (not used in current implementation)
  */
-__global__ void ellpack_matvec_optimized_diffusion_pattern_middle_and_else(const double * data, const int* col_indices, const double * vec, double * result, int num_rows, int max_nonzero_per_row, const double alpha,  const double beta, int grid_size) {
+extern "C" __global__ void stencil5_ellpack_kernel(const double * data, const int* col_indices, const double * vec, double * result, int num_rows, int max_nonzero_per_row, const double alpha,  const double beta, int grid_size) {
 	int row = blockIdx.x * blockDim.x + threadIdx.x;
 	if(row < num_rows){
 
@@ -535,7 +535,7 @@ int stencil5_run_timed(const double* x, double* y, double* kernel_time_ms) {
 	int blocks = (ellpack_matrix.nb_rows + threads - 1) / threads;
 	//ellpack_matvec_optimized_diffusion<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta);
 	printf("Matrix rows: %d, Grid size: %d\n", ellpack_matrix.nb_rows, ellpack_matrix.grid_size);
-	ellpack_matvec_optimized_diffusion_pattern_middle_and_else<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta, ellpack_matrix.grid_size);
+	stencil5_ellpack_kernel<<<blocks, threads>>>(d_values, d_indices, dX, dY,ellpack_matrix.nb_rows, ellpack_matrix.ell_width, alpha, beta, ellpack_matrix.grid_size);
 
 	cudaDeviceSynchronize();
 	cudaEventRecord(stop);
@@ -906,6 +906,325 @@ SpmvOperator SPMV_ELLPACK_NAIVE = {
 	.init = ellpack_naive_init,
 	.run_timed = ellpack_naive_run_timed,
 	.free = ellpack_naive_free
+};
+
+// Variables for stencil without column indices (standard ELLPACK layout)
+static double *dX_no_colindices = nullptr;
+static double *dY_no_colindices = nullptr;
+
+// Variables for stencil without column indices (optimized layout)  
+static double *d_values_optimized = nullptr;
+static double *dX_no_colindices_opt = nullptr;
+static double *dY_no_colindices_opt = nullptr;
+
+/**
+ * @brief CUDA kernel for stencil without column indices using standard ELLPACK layout.
+ * Uses existing ELLPACK values order but eliminates column indices array.
+ */
+__global__ void stencil5_no_colindices_standard_kernel(
+    const double* ellpack_values, const double* x, double* y, 
+    int num_rows, int N, int max_nonzero_per_row) {
+    
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < num_rows) {
+        int i = row / N;  // row in 2D grid
+        int j = row % N;  // column in 2D grid
+        
+        // Check if interior point (same logic as existing kernel)
+        if (i > 0 && i < N-1 && j > 0 && j < N-1) {
+            double sum = 0.0;
+            int offset = row * max_nonzero_per_row;
+            
+            // Use existing ELLPACK order (from your optimized kernel)
+            sum += ellpack_values[offset + 1] * x[row - 1];      // West neighbor
+            sum += ellpack_values[offset + 2] * x[row];          // Center point  
+            sum += ellpack_values[offset + 3] * x[row + 1];      // East neighbor
+            sum += ellpack_values[offset + 0] * x[row - N];      // North neighbor
+            sum += ellpack_values[offset + 4] * x[row + N];      // South neighbor
+            
+            y[row] = sum;
+        } else {
+            // Boundary points - use general loop but without col_indices
+            double sum = 0.0;
+            int offset = row * max_nonzero_per_row;
+            
+            // Hardcode the stencil pattern for boundaries
+            if (j > 0) sum += ellpack_values[offset + 1] * x[row - 1];      // West
+            sum += ellpack_values[offset + 2] * x[row];                     // Center
+            if (j < N - 1) sum += ellpack_values[offset + 3] * x[row + 1];  // East  
+            if (i > 0) sum += ellpack_values[offset + 0] * x[row - N];      // North
+            if (i < N - 1) sum += ellpack_values[offset + 4] * x[row + N];  // South
+            
+            y[row] = sum;
+        }
+    }
+}
+
+/**
+ * @brief CUDA kernel for stencil without column indices using optimized values layout.
+ * Values are reordered for sequential access aligned with x vector accesses.
+ */
+__global__ void stencil5_no_colindices_optimized_kernel(
+    const double* optimized_values, const double* x, double* y, 
+    int num_rows, int N, int max_nonzero_per_row) {
+    
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < num_rows) {
+        int i = row / N;  // row in 2D grid
+        int j = row % N;  // column in 2D grid
+        
+        double sum = 0.0;
+        int offset = row * max_nonzero_per_row;
+        
+        // Optimized order: values aligned with sequential x accesses
+        if (j > 0) sum += optimized_values[offset + 0] * x[row - 1];      // West
+        sum += optimized_values[offset + 1] * x[row];                     // Center
+        if (j < N - 1) sum += optimized_values[offset + 2] * x[row + 1];  // East
+        if (i > 0) sum += optimized_values[offset + 3] * x[row - N];      // North  
+        if (i < N - 1) sum += optimized_values[offset + 4] * x[row + N];  // South
+        
+        y[row] = sum;
+    }
+}
+
+/**
+ * @brief Creates optimized values layout from standard ELLPACK format.
+ * Reorders: [North, West, Center, East, South] → [West, Center, East, North, South]
+ */
+static int create_optimized_values_layout() {
+    printf("   ➤ Creating optimized values layout for SpMV...\n");
+    
+    size_t values_size = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
+    double *h_values_optimized = (double*)malloc(values_size);
+    if (!h_values_optimized) {
+        fprintf(stderr, "[ERROR] Failed to allocate optimized values array\n");
+        return EXIT_FAILURE;
+    }
+    
+    // Reorder values: standard [0,1,2,3,4] = [North,West,Center,East,South]
+    //                optimized [0,1,2,3,4] = [West,Center,East,North,South]
+    for (int row = 0; row < ellpack_matrix.nb_rows; row++) {
+        int src_offset = row * ellpack_matrix.ell_width;
+        int dst_offset = row * ellpack_matrix.ell_width;
+        
+        h_values_optimized[dst_offset + 0] = ellpack_matrix.values[src_offset + 1]; // West
+        h_values_optimized[dst_offset + 1] = ellpack_matrix.values[src_offset + 2]; // Center
+        h_values_optimized[dst_offset + 2] = ellpack_matrix.values[src_offset + 3]; // East
+        h_values_optimized[dst_offset + 3] = ellpack_matrix.values[src_offset + 0]; // North
+        h_values_optimized[dst_offset + 4] = ellpack_matrix.values[src_offset + 4]; // South
+    }
+    
+    // Copy optimized layout to GPU
+    CUDA_CHECK(cudaMalloc(&d_values_optimized, values_size));
+    CUDA_CHECK(cudaMemcpy(d_values_optimized, h_values_optimized, values_size, cudaMemcpyHostToDevice));
+    
+    free(h_values_optimized);
+    printf("   ➤ Optimized layout ready (reordered for sequential x access)\n");
+    
+    return EXIT_SUCCESS;
+}
+
+// Standard ELLPACK layout (no column indices)
+int stencil5_no_colindices_init(MatrixData* mat) {
+    if (!mat) {
+        fprintf(stderr, "[ERROR] Invalid matrix data\n");
+        return EXIT_FAILURE;
+    }
+    
+    printf("🔧 Initializing stencil5_no_colindices (standard ELLPACK layout)...\n");
+    printf("   ➤ Matrix: %dx%d\n", mat->rows, mat->cols);
+    fflush(stdout);
+    
+    // Ensure ELLPACK structure is built
+    if (ensure_ellpack_structure_built(mat) != EXIT_SUCCESS) {
+        fprintf(stderr, "[ERROR] Failed to build ELLPACK structure\n");
+        return EXIT_FAILURE;
+    }
+    
+    // Allocate vectors only (reuse existing ELLPACK values)
+    size_t vec_size = ellpack_matrix.nb_rows * sizeof(double);
+    CUDA_CHECK(cudaMalloc(&dX_no_colindices, vec_size));
+    CUDA_CHECK(cudaMalloc(&dY_no_colindices, vec_size));
+    
+    printf("✅ Standard layout initialized (reuses ELLPACK values, eliminates col_indices)\n");
+    printf("   ➤ Memory saved: %.2f MB (no column indices array)\n",
+           (ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int)) / 1024.0 / 1024.0);
+    fflush(stdout);
+    
+    return EXIT_SUCCESS;
+}
+
+int stencil5_no_colindices_run_timed(const double* h_x, double* h_y, double* kernel_time_ms) {
+    if (!dX_no_colindices || !dY_no_colindices || !h_x || !h_y || !kernel_time_ms) {
+        fprintf(stderr, "[ERROR] Invalid parameters or uninitialized operator\n");
+        return EXIT_FAILURE;
+    }
+    
+    size_t vec_size = ellpack_matrix.nb_rows * sizeof(double);
+    
+    // Copy input and initialize output
+    CUDA_CHECK(cudaMemcpy(dX_no_colindices, h_x, vec_size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(dY_no_colindices, 0, vec_size));
+    
+    // Configure kernel
+    int block_size = 256;
+    int grid_size = (ellpack_matrix.nb_rows + block_size - 1) / block_size;
+    
+    // Warm-up run
+    stencil5_no_colindices_standard_kernel<<<grid_size, block_size>>>(
+        ellpack_matrix.values, dX_no_colindices, dY_no_colindices,
+        ellpack_matrix.nb_rows, ellpack_matrix.grid_size, ellpack_matrix.ell_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    // Timed execution
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    
+    CUDA_CHECK(cudaEventRecord(start));
+    stencil5_no_colindices_standard_kernel<<<grid_size, block_size>>>(
+        ellpack_matrix.values, dX_no_colindices, dY_no_colindices,
+        ellpack_matrix.nb_rows, ellpack_matrix.grid_size, ellpack_matrix.ell_width);
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    
+    float elapsed_ms;
+    CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, start, stop));
+    *kernel_time_ms = (double)elapsed_ms;
+    
+    printf("[Stencil5_no_colindices] Kernel time: %.3f ms\n", elapsed_ms);
+    
+    // Copy result back
+    CUDA_CHECK(cudaMemcpy(h_y, dY_no_colindices, vec_size, cudaMemcpyDeviceToHost));
+    
+    // Checksum validation
+    double checksum = 0.0;
+    for (int i = 0; i < ellpack_matrix.nb_rows; i++) {
+        checksum += h_y[i];
+    }
+    printf("[Stencil5_no_colindices] checksum: %e\n", checksum);
+    
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    
+    return EXIT_SUCCESS;
+}
+
+void stencil5_no_colindices_free() {
+    printf("[STENCIL5-NO-COLINDICES] Cleaning up\n");
+    if (dX_no_colindices) { cudaFree(dX_no_colindices); dX_no_colindices = nullptr; }
+    if (dY_no_colindices) { cudaFree(dY_no_colindices); dY_no_colindices = nullptr; }
+}
+
+// Optimized layout (reordered values)
+int stencil5_no_colindices_optimized_init(MatrixData* mat) {
+    if (!mat) {
+        fprintf(stderr, "[ERROR] Invalid matrix data\n");
+        return EXIT_FAILURE;
+    }
+    
+    printf("🔧 Initializing stencil5_no_colindices_optimized (reordered layout)...\n");
+    printf("   ➤ Matrix: %dx%d\n", mat->rows, mat->cols);
+    fflush(stdout);
+    
+    // Ensure ELLPACK structure is built
+    if (ensure_ellpack_structure_built(mat) != EXIT_SUCCESS) {
+        fprintf(stderr, "[ERROR] Failed to build ELLPACK structure\n");
+        return EXIT_FAILURE;
+    }
+    
+    // Create optimized values layout
+    if (create_optimized_values_layout() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    
+    // Allocate vectors
+    size_t vec_size = ellpack_matrix.nb_rows * sizeof(double);
+    CUDA_CHECK(cudaMalloc(&dX_no_colindices_opt, vec_size));
+    CUDA_CHECK(cudaMalloc(&dY_no_colindices_opt, vec_size));
+    
+    printf("✅ Optimized layout initialized (values reordered for SpMV performance)\n");
+    fflush(stdout);
+    
+    return EXIT_SUCCESS;
+}
+
+int stencil5_no_colindices_optimized_run_timed(const double* h_x, double* h_y, double* kernel_time_ms) {
+    if (!d_values_optimized || !dX_no_colindices_opt || !dY_no_colindices_opt || !h_x || !h_y || !kernel_time_ms) {
+        fprintf(stderr, "[ERROR] Invalid parameters or uninitialized operator\n");
+        return EXIT_FAILURE;
+    }
+    
+    size_t vec_size = ellpack_matrix.nb_rows * sizeof(double);
+    
+    // Copy input and initialize output
+    CUDA_CHECK(cudaMemcpy(dX_no_colindices_opt, h_x, vec_size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(dY_no_colindices_opt, 0, vec_size));
+    
+    // Configure kernel
+    int block_size = 256;
+    int grid_size = (ellpack_matrix.nb_rows + block_size - 1) / block_size;
+    
+    // Warm-up run
+    stencil5_no_colindices_optimized_kernel<<<grid_size, block_size>>>(
+        d_values_optimized, dX_no_colindices_opt, dY_no_colindices_opt,
+        ellpack_matrix.nb_rows, ellpack_matrix.grid_size, ellpack_matrix.ell_width);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    // Timed execution
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    
+    CUDA_CHECK(cudaEventRecord(start));
+    stencil5_no_colindices_optimized_kernel<<<grid_size, block_size>>>(
+        d_values_optimized, dX_no_colindices_opt, dY_no_colindices_opt,
+        ellpack_matrix.nb_rows, ellpack_matrix.grid_size, ellpack_matrix.ell_width);
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    
+    float elapsed_ms;
+    CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, start, stop));
+    *kernel_time_ms = (double)elapsed_ms;
+    
+    printf("[Stencil5_no_colindices_opt] Kernel time: %.3f ms\n", elapsed_ms);
+    
+    // Copy result back
+    CUDA_CHECK(cudaMemcpy(h_y, dY_no_colindices_opt, vec_size, cudaMemcpyDeviceToHost));
+    
+    // Checksum validation
+    double checksum = 0.0;
+    for (int i = 0; i < ellpack_matrix.nb_rows; i++) {
+        checksum += h_y[i];
+    }
+    printf("[Stencil5_no_colindices_opt] checksum: %e\n", checksum);
+    
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    
+    return EXIT_SUCCESS;
+}
+
+void stencil5_no_colindices_optimized_free() {
+    printf("[STENCIL5-NO-COLINDICES-OPT] Cleaning up\n");
+    if (d_values_optimized) { cudaFree(d_values_optimized); d_values_optimized = nullptr; }
+    if (dX_no_colindices_opt) { cudaFree(dX_no_colindices_opt); dX_no_colindices_opt = nullptr; }
+    if (dY_no_colindices_opt) { cudaFree(dY_no_colindices_opt); dY_no_colindices_opt = nullptr; }
+}
+
+// Operator definitions
+SpmvOperator SPMV_STENCIL5_NO_COLINDICES = {
+	.name = "stencil5-no-colindices",
+	.init = stencil5_no_colindices_init,
+	.run_timed = stencil5_no_colindices_run_timed,
+	.free = stencil5_no_colindices_free
+};
+
+SpmvOperator SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED = {
+	.name = "stencil5-no-colindices-opt",
+	.init = stencil5_no_colindices_optimized_init,
+	.run_timed = stencil5_no_colindices_optimized_run_timed,
+	.free = stencil5_no_colindices_optimized_free
 };
 
 

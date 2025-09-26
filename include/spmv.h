@@ -131,6 +131,9 @@ extern SpmvOperator SPMV_STENCIL5_SHARED;
 extern SpmvOperator SPMV_STENCIL5_COARSENED;
 extern SpmvOperator SPMV_ELLPACK_NAIVE;
 extern SpmvOperator SPMV_ELLPACK;
+extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES;
+extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED;
+extern SpmvOperator SPMV_STENCIL5_MULTI_GPU;
 extern SpmvOperator SPMV_AMGX_STENCIL;
 
 #ifdef __cplusplus
