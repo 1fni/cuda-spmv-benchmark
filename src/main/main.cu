@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
         SpmvOperator* op = get_operator(mode_tokens[i]);
         if (op == NULL) {
             fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
-            fprintf(stderr, "Available modes: csr, ellpack-naive, ellpack, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened, stencil5-mgpu, stencil5-no-colindices, stencil5-no-colindices-opt, amgx-stencil\n");
+            fprintf(stderr, "Available modes: csr, ellpack-naive, ellpack, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened, stencil5-mgpu, stencil5-no-colindices, stencil5-no-colindices-opt\n");
             return EXIT_FAILURE;
         }
     }

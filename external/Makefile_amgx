@@ -1,0 +1,15 @@
+AMGX_DIR = /home/stephane/cuda_train/dev_spmv/external/amgx
+
+CXX = nvcc
+CXXFLAGS = -std=c++17 -O3 --ptxas-options=-O3 --ptxas-options=-allow-expensive-optimizations=true -I$(AMGX_DIR)/include
+LDFLAGS = -L$(AMGX_DIR)/lib -lamgx -lcudart -lcusparse -lcublas -lcuda
+
+all: amgx_bench
+
+amgx_bench: amgx_spmv_stencil.cpp
+	$(CXX) $(CXXFLAGS) $< -o $@ $(LDFLAGS)
+
+clean:
+	rm -f amgx_bench
+
+.PHONY: all clean

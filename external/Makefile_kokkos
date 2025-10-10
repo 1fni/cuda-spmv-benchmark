@@ -1,0 +1,20 @@
+KOKKOS_PATH = /home/stephane/cuda_train/dev_spmv/external/kokkos-install
+KOKKOSKERNELS_PATH = /home/stephane/cuda_train/dev_spmv/external/kokkos-kernels-install
+
+CXX = nvcc
+CXXFLAGS = -std=c++17 -O3 -x cu --expt-extended-lambda -arch=sm_70 -I$(KOKKOS_PATH)/include -I$(KOKKOSKERNELS_PATH)/include -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/test_common
+NVCCFLAGS = --ptxas-options=-O3 --ptxas-options=-allow-expensive-optimizations=true
+LDFLAGS = -L$(KOKKOS_PATH)/lib -L$(KOKKOSKERNELS_PATH)/lib -lkokkoskernels -lkokkoscontainers -lkokkoscore -lkokkossimd -lcudart -lcusparse -lcublas -lcuda -lpthread -ldl
+
+all: kokkos_bench kokkos_struct
+
+kokkos_bench: kokkos_spmv_bench.cpp
+	$(CXX) $(CXXFLAGS) $(NVCCFLAGS) $< -o $@ $(LDFLAGS)
+
+kokkos_struct: kokkos_spmv_struct.cpp
+	$(CXX) $(CXXFLAGS) $(NVCCFLAGS) $< -o $@ $(LDFLAGS)
+
+clean:
+	rm -f kokkos_bench kokkos_struct
+
+.PHONY: all clean
