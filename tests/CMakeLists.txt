@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.18)
+
+# Set CUDA architecture BEFORE project() for CI compatibility
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 70)
+endif()
+
 project(SpMVTests LANGUAGES CXX CUDA)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Set CUDA architecture (required for CI without GPU detection)
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 70)  # Minimum compute capability
-endif()
 
 # Build type (default: Release, matching Makefile default)
 if(NOT CMAKE_BUILD_TYPE)
