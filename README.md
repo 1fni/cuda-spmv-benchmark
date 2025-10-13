@@ -66,6 +66,45 @@ make
 - Regular sparsity patterns using cuSPARSE
 - Memory-aligned storage for consistent row widths
 
+## Multi-GPU Architecture
+
+Scalable implementations for stencil and CSR formats across multiple GPUs.
+
+### Features
+
+- **Peer-to-peer communication** - Direct GPU-to-GPU transfers without CPU bounce
+- **1D row-band decomposition** - Each GPU handles contiguous row bands
+- **Minimal overhead** - Halo exchange for stencil boundary conditions only
+- **Automatic GPU detection** - Runtime device enumeration and validation
+
+### Usage
+
+```bash
+# Multi-GPU stencil (2 GPUs)
+./bin/spmv_bench matrix/stencil_large.mtx --mode=stencil5-mgpu
+
+# Multi-GPU CSR
+./bin/spmv_bench matrix/large_sparse.mtx --mode=csr-mgpu
+```
+
+### Architecture Details
+
+**Row-band decomposition:**
+```
+GPU 0: rows [0, N/2)         ┐
+GPU 1: rows [N/2, N)         ┘ Peer-to-peer halo exchange
+```
+
+Each GPU:
+1. Computes local SpMV on its row band
+2. Exchanges boundary data via P2P
+3. Synchronizes results
+
+**Performance considerations:**
+- Best for large matrices where computation dominates communication
+- Requires CUDA-capable peer access between GPUs
+- Halo size: 1 row for 5-point stencil
+
 ## Architecture
 
 ```
