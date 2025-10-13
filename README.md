@@ -17,6 +17,14 @@ Matrix: 265M×265M with 1.33B non-zeros (0.002% sparsity)
 
 *Kernel-level measurements via CUDA events*
 
+## Technical Highlights
+
+- **Optimized Stencil Kernels** - Custom CUDA implementation outperforms cuSPARSE CSR by 1.49× on H100 NVL
+- **Multi-GPU Scaling** - Peer-to-peer communication with 1D row-band decomposition
+- **Comprehensive Metrics** - GFLOPS, memory bandwidth, arithmetic intensity analysis
+- **Fair Benchmarking** - Unified compilation flags (-O3) for credible industry comparisons (AmgX, Kokkos)
+- **Export Formats** - JSON/CSV output for automated analysis and CI/CD integration
+
 ## Features
 
 - **Multiple SpMV Formats**: CSR, ELLPACK, 5-point stencil with cuSPARSE and custom CUDA kernels
