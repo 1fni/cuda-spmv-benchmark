@@ -29,13 +29,7 @@ jobs:
       with:
         cuda: '11.8.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart"]'
-    
-    - name: Install additional CUDA libraries and headers
-      run: |
-        echo "Installing cuSPARSE and cuBLAS libraries and headers..."
-        sudo apt-get update
-        sudo apt-get install -y cuda-headers-11-8 libcusparse-dev libcublas-dev || echo "Using system CUDA libraries"
+        sub-packages: '["nvcc", "cudart", "cusparse", "cublas", "cusparse_dev", "cublas_dev"]'
     
     - name: Cache build artifacts
       uses: actions/cache@v3
