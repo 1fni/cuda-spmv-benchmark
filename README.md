@@ -162,6 +162,34 @@ Classification: Memory-bound (low arithmetic intensity)
 Optimization focus: Memory access patterns, data locality
 ```
 
+### Nsight Compute Profiling
+
+Advanced kernel-level profiling with NVIDIA Nsight Compute for detailed performance analysis.
+
+```bash
+# Profile a specific kernel
+./scripts/profile_kernel.sh stencil5-opt matrix/stencil_512x512.mtx
+
+# Generates:
+# - profiling_results/stencil5-opt_YYYYMMDD_HHMMSS.ncu-rep (GUI report)
+# - profiling_results/stencil5-opt_YYYYMMDD_HHMMSS.log (text summary)
+```
+
+**View results:**
+```bash
+# Launch Nsight Compute UI
+ncu-ui profiling_results/stencil5-opt_*.ncu-rep
+```
+
+**Key metrics analyzed:**
+- **SM Throughput** - GPU compute utilization
+- **DRAM Throughput** - Memory bandwidth usage vs peak
+- **Memory Efficiency** - L1/L2 cache hit rates
+- **Occupancy** - Active warps per SM
+- **Roofline Analysis** - Memory-bound vs compute-bound classification
+
+**Requirements:** NVIDIA Nsight Compute (included with CUDA Toolkit 11.0+)
+
 ## Usage Examples
 
 ### Basic Benchmarking
