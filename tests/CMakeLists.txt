@@ -5,6 +5,11 @@ project(SpMVTests LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Set CUDA architecture (required for CI without GPU detection)
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 70)  # Minimum compute capability
+endif()
+
 # Build type (default: Release, matching Makefile default)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
