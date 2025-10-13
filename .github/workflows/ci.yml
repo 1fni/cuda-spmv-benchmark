@@ -29,7 +29,7 @@ jobs:
       with:
         cuda: '11.8.0'
         method: 'network'
-        sub-packages: '["nvcc", "cudart", "cusparse", "cublas", "cusparse_dev", "cublas_dev"]'
+        sub-packages: '["nvcc", "cudart", "libraries", "libraries-dev"]'
     
     - name: Cache build artifacts
       uses: actions/cache@v3
