@@ -1,0 +1,225 @@
+/**
+ * @file spmv_stencil_csr_direct.cu
+ * @brief SpMV for 5-point stencil using CSR with geometric structure exploitation
+ *
+ * @details
+ * CG-friendly stencil SpMV operating directly on CSR without format conversion.
+ * Exploits geometric structure to calculate CSR offsets and column indices directly,
+ * eliminating indirection for interior points.
+ *
+ * Key optimizations:
+ * - Direct CSR offset calculation from grid coordinates (no row_ptr lookup)
+ * - Direct column index calculation (no col_idx lookup)
+ * - Optimized memory access order: grouped spatially adjacent accesses (W-C-E, then N-S)
+ * - Eliminates memory indirection for 90%+ of points on large grids
+ * - Maintains CSR format compatibility for CG iterations
+ *
+ * Author: Bouhrour Stephane
+ * Date: 2025-10-14
+ */
+
+#include <stdio.h>
+#include "spmv.h"
+#include "io.h"
+
+// Device memory
+static int *d_row_ptr = nullptr;
+static int *d_col_idx = nullptr;
+static double *d_values = nullptr;
+static double *dX = nullptr;
+static double *dY = nullptr;
+
+static const double alpha = 1.0;
+static const double beta = 0.0;
+
+// Store grid_size from init
+static int grid_size_stored = 0;
+
+/**
+ * @brief Calculate CSR offset for interior stencil point
+ * @details Exploits regular 5-point stencil structure:
+ * - Row 0: corner(3) + edges(4 each) + corner(3)
+ * - Rows 1..(grid-2): edge(4) + interior(5 each) + edge(4)
+ * - Row (grid-1): corner(3) + edges(4 each) + corner(3)
+ *
+ * @param row Global row index (1D)
+ * @param grid_size Grid dimension
+ * @return CSR offset for this row's data
+ */
+__device__ inline int calculate_interior_csr_offset(int row, int grid_size) {
+    int i = row / grid_size;  // Grid row
+    int j = row % grid_size;  // Grid column
+
+    // Row 0: corner + edges + corner
+    int row0_nnz = 3 + (grid_size - 2) * 4 + 3;
+
+    // Interior rows [1..(i-1)]: edge + interiors + edge
+    int interior_row_nnz = 4 + (grid_size - 2) * 5 + 4;
+
+    // Offset before row i
+    int offset = row0_nnz + (i - 1) * interior_row_nnz;
+
+    // Within row i: left edge (4) + interior points before j
+    offset += 4 + (j - 1) * 5;
+
+    return offset;
+}
+
+/**
+ * @brief CUDA kernel: CSR-direct stencil SpMV with calculated offsets
+ *
+ * @details Interior points: calculate CSR offset and column indices directly
+ *          Boundary points: standard CSR traversal
+ *          Memory access pattern optimized: West-Center-East (contiguous), then North-South
+ */
+__global__ void stencil5_csr_direct_kernel(
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_idx,
+    const double* __restrict__ values,
+    const double* __restrict__ x,
+    double* __restrict__ y,
+    int N,
+    int grid_size,
+    double alpha
+) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= N) return;
+
+    int i = row / grid_size;
+    int j = row % grid_size;
+
+    double sum = 0.0;
+
+    // Interior: direct offset and column calculation
+    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
+        // Calculate CSR offset directly (no row_ptr lookup)
+        int csr_offset = calculate_interior_csr_offset(row, grid_size);
+
+        // Column indices known from stencil structure (no col_idx lookup)
+        // CSR order after sorting: [north, west, center, east, south]
+        int idx_west = row - 1;
+        int idx_center = row;
+        int idx_east = row + 1;
+        int idx_north = row - grid_size;
+        int idx_south = row + grid_size;
+
+        // Optimized memory access order: group spatially adjacent vec[] accesses
+        // West-Center-East (stride 1, contiguous) first, then North-South (stride grid_size)
+        sum = values[csr_offset + 1] * x[idx_west]      // West (row-1)
+            + values[csr_offset + 2] * x[idx_center]    // Center (row)
+            + values[csr_offset + 3] * x[idx_east]      // East (row+1)
+            + values[csr_offset + 0] * x[idx_north]     // North (row-grid_size)
+            + values[csr_offset + 4] * x[idx_south];    // South (row+grid_size)
+    }
+    // Boundary/corner: standard CSR traversal
+    else {
+        int row_start = row_ptr[row];
+        int row_end = row_ptr[row + 1];
+
+        #pragma unroll 8
+        for (int k = row_start; k < row_end; k++) {
+            sum += values[k] * x[col_idx[k]];
+        }
+    }
+
+    y[row] = alpha * sum;
+}
+
+/**
+ * @brief Initialize CSR-direct stencil operator
+ */
+int stencil_csr_direct_init(MatrixData* mat) {
+    printf("[STENCIL-CSR-DIRECT] Initializing (CG-friendly, calculated offsets)\n");
+
+    // Build CSR if needed
+    if (!csr_mat.values) {
+        printf("Building CSR structure...\n");
+        build_csr_struct(mat);
+    }
+
+    // Allocate device CSR arrays
+    CUDA_CHECK(cudaMalloc(&d_row_ptr, (csr_mat.nb_rows + 1) * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_col_idx, csr_mat.nb_nonzeros * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_values, csr_mat.nb_nonzeros * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&dX, csr_mat.nb_cols * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&dY, csr_mat.nb_rows * sizeof(double)));
+
+    // Transfer CSR to device
+    CUDA_CHECK(cudaMemcpy(d_row_ptr, csr_mat.row_ptr,
+                          (csr_mat.nb_rows + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_col_idx, csr_mat.col_indices,
+                          csr_mat.nb_nonzeros * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_values, csr_mat.values,
+                          csr_mat.nb_nonzeros * sizeof(double), cudaMemcpyHostToDevice));
+
+    // Store grid_size for kernel
+    grid_size_stored = mat->grid_size;
+
+    printf("CSR-direct initialized: %d rows, %d nnz, grid %dx%d\n",
+           csr_mat.nb_rows, csr_mat.nb_nonzeros, mat->grid_size, mat->grid_size);
+
+    return 0;
+}
+
+/**
+ * @brief Execute CSR-direct SpMV
+ */
+int stencil_csr_direct_run_timed(const double* x, double* y, double* kernel_time_ms) {
+    CUDA_CHECK(cudaMemcpy(dX, x, csr_mat.nb_cols * sizeof(double), cudaMemcpyHostToDevice));
+
+    int threads = 256;
+    int blocks = (csr_mat.nb_rows + threads - 1) / threads;
+
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+
+    CUDA_CHECK(cudaEventRecord(start));
+
+    stencil5_csr_direct_kernel<<<blocks, threads>>>(
+        d_row_ptr, d_col_idx, d_values, dX, dY,
+        csr_mat.nb_rows, grid_size_stored, alpha
+    );
+
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+
+    float milliseconds = 0;
+    CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
+    *kernel_time_ms = (double)milliseconds;
+
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+
+    CUDA_CHECK(cudaMemcpy(y, dY, csr_mat.nb_rows * sizeof(double), cudaMemcpyDeviceToHost));
+
+    // Compute checksum for validation
+    double checksum = 0.0;
+    for (int i = 0; i < csr_mat.nb_rows; i++) {
+        checksum += y[i];
+    }
+    printf("[STENCIL-CSR-DIRECT] checksum: %e\n", checksum);
+
+    return 0;
+}
+
+/**
+ * @brief Cleanup
+ */
+void stencil_csr_direct_free() {
+    printf("[STENCIL-CSR-DIRECT] Cleaning up\n");
+
+    if (d_row_ptr) { cudaFree(d_row_ptr); d_row_ptr = nullptr; }
+    if (d_col_idx) { cudaFree(d_col_idx); d_col_idx = nullptr; }
+    if (d_values) { cudaFree(d_values); d_values = nullptr; }
+    if (dX) { cudaFree(dX); dX = nullptr; }
+    if (dY) { cudaFree(dY); dY = nullptr; }
+}
+
+// Operator structure
+SpmvOperator SPMV_STENCIL5_CSR_DIRECT = {
+    "stencil5-csr-direct",
+    stencil_csr_direct_init,
+    stencil_csr_direct_run_timed,
+    stencil_csr_direct_free
+};
