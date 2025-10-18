@@ -238,19 +238,15 @@ int csr_run_timed(const double* x, double* y, double* kernel_time_ms)
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&time_ms, start, stop);
-    
+
     // Return precise kernel timing for metrics calculation
     *kernel_time_ms = (double)time_ms;
-    printf("[cuSPARSE CSR] Kernel time: %.3f ms\n", time_ms);
-    
+
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 
-    // Copy and verify result
+    // Copy result
     CUDA_CHECK(cudaMemcpy(y, dY, csr_mat.nb_rows * sizeof(double), cudaMemcpyDeviceToHost));
-    double checksum = 0.0;
-    for (int i = 0; i < csr_mat.nb_rows; ++i) checksum += y[i];
-    printf("[CSR] checksum: %le\n", checksum);
 
     return EXIT_SUCCESS;
 }

@@ -194,13 +194,6 @@ int stencil_csr_direct_run_timed(const double* x, double* y, double* kernel_time
 
     CUDA_CHECK(cudaMemcpy(y, dY, csr_mat.nb_rows * sizeof(double), cudaMemcpyDeviceToHost));
 
-    // Compute checksum for validation
-    double checksum = 0.0;
-    for (int i = 0; i < csr_mat.nb_rows; i++) {
-        checksum += y[i];
-    }
-    printf("[STENCIL-CSR-DIRECT] checksum: %e\n", checksum);
-
     return 0;
 }
 
