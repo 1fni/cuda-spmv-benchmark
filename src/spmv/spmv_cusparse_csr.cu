@@ -112,6 +112,31 @@ int build_csr_struct(MatrixData* mat)
         values[dst]      = mat->entries[i].value;
     }
 
+    free(local_count);
+
+    printf("   ➤ Sorting CSR entries by column index...\n");
+    fflush(stdout);
+
+    // Sort each row by column index (insertion sort, rows are small ~5 entries)
+    for (int r = 0; r < mat->rows; ++r) {
+        int row_start = row_ptr[r];
+        int row_end = row_ptr[r + 1];
+
+        for (int i = row_start + 1; i < row_end; ++i) {
+            int key_col = col_indices[i];
+            double key_val = values[i];
+            int j = i - 1;
+
+            while (j >= row_start && col_indices[j] > key_col) {
+                col_indices[j + 1] = col_indices[j];
+                values[j + 1] = values[j];
+                j--;
+            }
+            col_indices[j + 1] = key_col;
+            values[j + 1] = key_val;
+        }
+    }
+
     // Store into global CSRMatrix
     csr_mat.row_ptr     = row_ptr;
     csr_mat.col_indices = col_indices;
@@ -120,7 +145,6 @@ int build_csr_struct(MatrixData* mat)
     csr_mat.nb_cols     = mat->cols;
     csr_mat.nb_nonzeros = mat->nnz;
 
-    free(local_count);
     printf("✅ CSR structure built successfully\n");
     fflush(stdout);
     return EXIT_SUCCESS;

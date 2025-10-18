@@ -40,8 +40,8 @@ int main(int argc, char* argv[]) {
             // Left (-1)
             if (col > 0)
                 fprintf(f, "%d %d -1.0\n", idx, idx - 1);
-            // Center (0)
-            fprintf(f, "%d %d -4.0\n", idx, idx);
+            // Center (SPD for CG: Laplacian + mass term)
+            fprintf(f, "%d %d 5.0\n", idx, idx);
             // Right (+1)
             if (col < n - 1)
                 fprintf(f, "%d %d -1.0\n", idx, idx + 1);

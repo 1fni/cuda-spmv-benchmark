@@ -353,8 +353,8 @@ int write_matrix_market_stencil5 (int n, const char* filename){
 				fflush(stdout);
 			}
 
-			// Center
-			fprintf(f, "%d %d -4.0\n", idx, idx);
+			// Center (SPD: Laplacian + mass term, well-conditioned for CG)
+			fprintf(f, "%d %d 5.0\n", idx, idx);
 
 			// Left
 			if (col > 0)

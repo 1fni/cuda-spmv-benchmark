@@ -5,14 +5,15 @@
  * @details
  * CG-friendly stencil SpMV operating directly on CSR without format conversion.
  * Exploits geometric structure to calculate CSR offsets and column indices directly,
- * eliminating indirection for interior points.
+ * eliminating memory indirection for interior points.
  *
  * Key optimizations:
- * - Direct CSR offset calculation from grid coordinates (no row_ptr lookup)
- * - Direct column index calculation (no col_idx lookup)
- * - Optimized memory access order: grouped spatially adjacent accesses (W-C-E, then N-S)
- * - Eliminates memory indirection for 90%+ of points on large grids
+ * - Direct CSR offset calculation from grid coordinates (zero row_ptr indirection)
+ * - Direct column index calculation (zero col_idx indirection)
+ * - Optimized memory access: W-C-E (stride-1) then N-S (stride-grid_size)
+ * - Eliminates indirection for 90%+ of points on large grids
  * - Maintains CSR format compatibility for CG iterations
+ * - Requires sorted CSR (by column index within each row)
  *
  * Author: Bouhrour Stephane
  * Date: 2025-10-14
@@ -90,13 +91,13 @@ __global__ void stencil5_csr_direct_kernel(
 
     double sum = 0.0;
 
-    // Interior: direct offset and column calculation
+    // Interior: direct offset and column calculation (zero indirection)
     if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
-        // Calculate CSR offset directly (no row_ptr lookup)
+        // Calculate CSR offset directly from grid coordinates (no row_ptr lookup)
         int csr_offset = calculate_interior_csr_offset(row, grid_size);
 
         // Column indices known from stencil structure (no col_idx lookup)
-        // CSR order after sorting: [north, west, center, east, south]
+        // CSR order after sorting: [North, West, Center, East, South] at offsets [0,1,2,3,4]
         int idx_west = row - 1;
         int idx_center = row;
         int idx_east = row + 1;
@@ -105,11 +106,11 @@ __global__ void stencil5_csr_direct_kernel(
 
         // Optimized memory access order: group spatially adjacent vec[] accesses
         // West-Center-East (stride 1, contiguous) first, then North-South (stride grid_size)
-        sum = values[csr_offset + 1] * x[idx_west]      // West (row-1)
-            + values[csr_offset + 2] * x[idx_center]    // Center (row)
-            + values[csr_offset + 3] * x[idx_east]      // East (row+1)
-            + values[csr_offset + 0] * x[idx_north]     // North (row-grid_size)
-            + values[csr_offset + 4] * x[idx_south];    // South (row+grid_size)
+        sum = values[csr_offset + 1] * x[idx_west]      // West (CSR offset 1)
+            + values[csr_offset + 2] * x[idx_center]    // Center (CSR offset 2)
+            + values[csr_offset + 3] * x[idx_east]      // East (CSR offset 3)
+            + values[csr_offset + 0] * x[idx_north]     // North (CSR offset 0)
+            + values[csr_offset + 4] * x[idx_south];    // South (CSR offset 4)
     }
     // Boundary/corner: standard CSR traversal
     else {

@@ -19,15 +19,15 @@ else
 endif
 
 # Base includes and libraries
-INCLUDES := -I$(INC_DIR)
+INCLUDES := -I$(INC_DIR) -I$(INC_DIR)/solvers
 LDFLAGS := -lcusparse -lcublas
 
 # Sources / objets
 CU_SRCS := $(shell find $(SRC_DIR) -name '*.cu')
 CU_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SRCS))
 
-# SpMV : exclut generate_matrix
-CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu, $(CU_SRCS))
+# SpMV : exclut generate_matrix et cg_test
+CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_test.cu, $(CU_SRCS))
 CU_SPMV_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SPMV_SRCS))
 
 # Générateur : juste generate_matrix + io
@@ -37,12 +37,17 @@ CU_GEN_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_GEN_SRCS))
 # Binaries
 BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
+BIN_CG   := $(BIN_DIR)/cg_test
+
+# CG test: exclut generate_matrix et spmv_bench main
+CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu, $(CU_SRCS))
+CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY
 .PHONY: all clean run
 
 # Main target
-all: $(BIN_SPMV) $(BIN_GEN)
+all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
 
 # Link SpMV
 $(BIN_SPMV): $(CU_SPMV_OBJS)
@@ -53,6 +58,11 @@ $(BIN_SPMV): $(CU_SPMV_OBJS)
 $(BIN_GEN): $(CU_GEN_OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $^ -o $@
+
+# Link CG test
+$(BIN_CG): $(CU_CG_OBJS)
+	@mkdir -p $(BIN_DIR)
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $^ -o $@ $(LDFLAGS)
 
 # Compile objects
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
