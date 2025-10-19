@@ -617,6 +617,8 @@ SpmvOperator SPMV_STENCIL5 = {
 	.name = "stencil5",
 	.init = stencil5_init,
 	.run_timed = stencil5_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_free
 };
 
@@ -624,6 +626,8 @@ SpmvOperator SPMV_STENCIL5_OPTIMIZED = {
 	.name = "stencil5-opt",
 	.init = stencil5_optimized_init,
 	.run_timed = stencil5_optimized_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_optimized_free
 };
 
@@ -711,6 +715,8 @@ SpmvOperator SPMV_STENCIL5_SHARED = {
 	.name = "stencil5-shared",
 	.init = stencil5_shared_init,
 	.run_timed = stencil5_shared_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_shared_free
 };
 
@@ -898,6 +904,8 @@ SpmvOperator SPMV_STENCIL5_COARSENED = {
 	.name = "stencil5-coarsened",
 	.init = stencil5_coarsened_init,
 	.run_timed = stencil5_coarsened_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_coarsened_free
 };
 
@@ -905,6 +913,8 @@ SpmvOperator SPMV_ELLPACK_NAIVE = {
 	.name = "ellpack-naive",
 	.init = ellpack_naive_init,
 	.run_timed = ellpack_naive_run_timed,
+	.run_device = NULL,
+
 	.free = ellpack_naive_free
 };
 
@@ -1217,6 +1227,8 @@ SpmvOperator SPMV_STENCIL5_NO_COLINDICES = {
 	.name = "stencil5-no-colindices",
 	.init = stencil5_no_colindices_init,
 	.run_timed = stencil5_no_colindices_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_no_colindices_free
 };
 
@@ -1224,6 +1236,8 @@ SpmvOperator SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED = {
 	.name = "stencil5-no-colindices-opt",
 	.init = stencil5_no_colindices_optimized_init,
 	.run_timed = stencil5_no_colindices_optimized_run_timed,
+	.run_device = NULL,
+
 	.free = stencil5_no_colindices_optimized_free
 };
 

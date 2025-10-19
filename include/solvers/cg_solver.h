@@ -38,7 +38,10 @@ typedef struct {
 } CGStats;
 
 /**
- * @brief Solve linear system Ax=b using Conjugate Gradient
+ * @brief Solve linear system Ax=b using Conjugate Gradient (host interface)
+ *
+ * Uses SpMV operators with host pointers (includes GPU↔CPU transfers per iteration).
+ * MPI-compatible interface suitable for distributed computing.
  *
  * @param spmv_op SpMV operator for matrix A
  * @param mat Matrix data (for dimensions)
@@ -54,5 +57,26 @@ int cg_solve(SpmvOperator* spmv_op,
              double* x,
              CGConfig config,
              CGStats* stats);
+
+/**
+ * @brief Solve linear system Ax=b using Conjugate Gradient (device-native interface)
+ *
+ * GPU-native implementation with zero host transfers during iterations.
+ * Requires SpMV operator with run_device support. Optimal for single-GPU workloads.
+ *
+ * @param spmv_op SpMV operator for matrix A (must have run_device != NULL)
+ * @param mat Matrix data (for dimensions)
+ * @param b Right-hand side vector
+ * @param x Solution vector (input: initial guess, output: solution)
+ * @param config CG configuration
+ * @param stats Output statistics
+ * @return 0 on success, non-zero on error
+ */
+int cg_solve_device(SpmvOperator* spmv_op,
+                    MatrixData* mat,
+                    const double* b,
+                    double* x,
+                    CGConfig config,
+                    CGStats* stats);
 
 #endif // CG_SOLVER_H

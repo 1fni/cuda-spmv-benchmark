@@ -198,6 +198,27 @@ int stencil_csr_direct_run_timed(const double* x, double* y, double* kernel_time
 }
 
 /**
+ * @brief Execute CSR-direct SpMV with device pointers (GPU-native, zero-copy)
+ * @details
+ *   Device-native interface for CG solver - no host transfers.
+ *   Directly launches kernel with provided device pointers.
+ * @param d_x Device input vector pointer
+ * @param d_y Device output vector pointer
+ * @return 0 on success
+ */
+int stencil_csr_direct_run_device(const double* d_x, double* d_y) {
+    int threads = 256;
+    int blocks = (csr_mat.nb_rows + threads - 1) / threads;
+
+    stencil5_csr_direct_kernel<<<blocks, threads>>>(
+        d_row_ptr, d_col_idx, d_values, d_x, d_y,
+        csr_mat.nb_rows, grid_size_stored, alpha
+    );
+
+    return 0;
+}
+
+/**
  * @brief Cleanup
  */
 void stencil_csr_direct_free() {
@@ -215,5 +236,6 @@ SpmvOperator SPMV_STENCIL5_CSR_DIRECT = {
     "stencil5-csr-direct",
     stencil_csr_direct_init,
     stencil_csr_direct_run_timed,
+    stencil_csr_direct_run_device,
     stencil_csr_direct_free
 };

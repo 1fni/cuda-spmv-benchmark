@@ -18,18 +18,24 @@
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>]\n", argv[0]);
-        printf("Example: %s matrix/stencil_512x512.mtx --mode=stencil5-csr-direct\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>] [--device]\n", argv[0]);
+        printf("Example: %s matrix/stencil_512x512.mtx --mode=stencil5-csr-direct --device\n", argv[0]);
+        printf("\nOptions:\n");
+        printf("  --mode=<mode>  SpMV operator (default: stencil5-csr-direct)\n");
+        printf("  --device       Use device-native CG (zero host transfers)\n");
         return 1;
     }
 
     const char* matrix_file = argv[1];
     const char* mode = "stencil5-csr-direct";  // Default
+    bool use_device = false;
 
-    // Parse mode argument
+    // Parse arguments
     for (int i = 2; i < argc; i++) {
         if (strncmp(argv[i], "--mode=", 7) == 0) {
             mode = argv[i] + 7;
+        } else if (strcmp(argv[i], "--device") == 0) {
+            use_device = true;
         }
     }
 
@@ -38,6 +44,7 @@ int main(int argc, char** argv) {
     printf("========================================\n");
     printf("Matrix: %s\n", matrix_file);
     printf("SpMV mode: %s\n", mode);
+    printf("Interface: %s\n", use_device ? "Device-native (GPU)" : "Host (MPI-compatible)");
     printf("\n");
 
     // Load matrix
@@ -85,7 +92,18 @@ int main(int argc, char** argv) {
     CGStats stats;
     printf("Starting CG solver...\n");
     printf("========================================\n");
-    cg_solve(spmv_op, &mat, b, x, config, &stats);
+
+    if (use_device) {
+        if (!spmv_op->run_device) {
+            fprintf(stderr, "ERROR: Operator '%s' does not support device-native interface\n", mode);
+            fprintf(stderr, "Supported operators: csr, stencil5-csr-direct\n");
+            return 1;
+        }
+        cg_solve_device(spmv_op, &mat, b, x, config, &stats);
+    } else {
+        cg_solve(spmv_op, &mat, b, x, config, &stats);
+    }
+
     printf("========================================\n");
     printf("\n");
 

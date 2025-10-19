@@ -111,13 +111,15 @@ typedef struct {
  * Each operator provides:
  *  - `name`: Identifier of the method (e.g., CSR, ELLPACK, stencil).
  *  - `init`: Function pointer for initialization with a given matrix.
- *  - `run_timed`: Function pointer to execute SpMV with kernel-level timing.
+ *  - `run_timed`: Function pointer to execute SpMV with kernel-level timing (host interface).
+ *  - `run_device`: Function pointer to execute SpMV with device pointers (GPU-native, optional).
  *  - `free`: Function pointer to release associated resources.
  */
 typedef struct {
     const char* name;                                      ///< Operator name (e.g., "csr", "ellpack").
     int (*init)(MatrixData* mat);                          ///< Initialization function for matrix data.
-    int (*run_timed)(const double* x, double* y, double* kernel_time_ms); ///< SpMV with kernel timing.
+    int (*run_timed)(const double* x, double* y, double* kernel_time_ms); ///< SpMV with kernel timing (host pointers).
+    int (*run_device)(const double* d_x, double* d_y);    ///< SpMV device-native (GPU pointers, optional, NULL if not supported).
     void (*free)();                                        ///< Resource cleanup function.
 } SpmvOperator;
 

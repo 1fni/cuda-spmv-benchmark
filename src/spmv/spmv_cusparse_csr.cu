@@ -252,6 +252,30 @@ int csr_run_timed(const double* x, double* y, double* kernel_time_ms)
 }
 
 /**
+ * @brief Executes CSR SpMV with device pointers (GPU-native, zero-copy).
+ * @details
+ *   Device-native interface for CG solver - no host transfers.
+ *   Uses cuSPARSE descriptors created during init.
+ * @param d_x Device input vector pointer (length nb_cols)
+ * @param d_y Device output vector pointer (length nb_rows)
+ * @return EXIT_SUCCESS on success
+ */
+int csr_run_device(const double* d_x, double* d_y)
+{
+    // Update vector descriptors to point to provided device pointers
+    CHECK_CUSPARSE(cusparseDnVecSetValues(vecX, (void*)d_x));
+    CHECK_CUSPARSE(cusparseDnVecSetValues(vecY, (void*)d_y));
+
+    // Execute SpMV on GPU (zero host transfer)
+    CHECK_CUSPARSE(cusparseSpMV(
+        handle, CUSPARSE_OPERATION_NON_TRANSPOSE,
+        &alpha, matA, vecX, &beta, vecY,
+        CUDA_R_64F, CUSPARSE_SPMV_ALG_DEFAULT, dBuffer));
+
+    return EXIT_SUCCESS;
+}
+
+/**
  * @brief Frees GPU memory and destroys cuSPARSE resources.
  * @details
  *   - Releases device buffers and workspace
@@ -260,7 +284,7 @@ int csr_run_timed(const double* x, double* y, double* kernel_time_ms)
 void csr_free()
 {
     printf("[CSR] Cleaning up\n");
-    
+
     // Free GPU memory
     CUDA_CHECK(cudaFree(dA_values));
     CUDA_CHECK(cudaFree(dA_columns));
@@ -274,7 +298,7 @@ void csr_free()
     if (vecY) cusparseDestroyDnVec(vecY);
     if (matA) cusparseDestroySpMat(matA);
     if (handle) cusparseDestroy(handle);
-    
+
     // Free host CSR arrays
     if (csr_mat.row_ptr) {
         free(csr_mat.row_ptr);
@@ -299,5 +323,6 @@ SpmvOperator SPMV_CSR = {
     .name = "csr",
     .init = csr_init,
     .run_timed = csr_run_timed,
+    .run_device = csr_run_device,
     .free = csr_free
 };

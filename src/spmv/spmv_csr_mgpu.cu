@@ -391,5 +391,6 @@ SpmvOperator SPMV_CSR_MULTI_GPU = {
     .name = "csr-mgpu",
     .init = multi_gpu_csr_init,
     .run_timed = multi_gpu_csr_run_timed,
+    .run_device = NULL,
     .free = multi_gpu_csr_free
 };

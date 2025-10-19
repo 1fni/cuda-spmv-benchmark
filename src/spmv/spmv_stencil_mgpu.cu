@@ -330,5 +330,7 @@ SpmvOperator SPMV_STENCIL5_MULTI_GPU = {
     .name = "stencil5-mgpu",
     .init = multi_gpu_stencil_init,
     .run_timed = multi_gpu_stencil_run_timed,
+    .run_device = NULL,
+
     .free = multi_gpu_stencil_free
 };

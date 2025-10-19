@@ -182,6 +182,7 @@ SpmvOperator SPMV_ELLPACK = {
 	.name = "ellpack",
 	.init = ellpack_init,
 	.run_timed = ellpack_run_timed,
+	.run_device = NULL,
 	.free = ellpack_free
 };
 
