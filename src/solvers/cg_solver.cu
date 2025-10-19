@@ -331,20 +331,24 @@ int cg_solve(SpmvOperator* spmv_op,
 
 /**
  * @brief Device-native reduction: sums GPU array to single scalar on GPU
+ * Handles large arrays by grid-stride loop
  */
 __global__ void final_sum_kernel(const double* block_results, int num_blocks, double* result) {
     extern __shared__ double sdata[];
 
     int tid = threadIdx.x;
-    int i = threadIdx.x;
 
-    // Load block results into shared memory
-    sdata[tid] = (i < num_blocks) ? block_results[i] : 0.0;
+    // Grid-stride loop to accumulate all block results
+    double thread_sum = 0.0;
+    for (int i = tid; i < num_blocks; i += blockDim.x) {
+        thread_sum += block_results[i];
+    }
+    sdata[tid] = thread_sum;
     __syncthreads();
 
     // Reduction in shared memory
     for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s && (tid + s) < num_blocks) {
+        if (tid < s) {
             sdata[tid] += sdata[tid + s];
         }
         __syncthreads();
