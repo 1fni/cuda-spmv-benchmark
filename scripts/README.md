@@ -46,15 +46,15 @@ scripts/
 
 **Complete setup (VastAI, RunPod, AWS, etc.):**
 ```bash
-# Main project only (default)
-./scripts/setup/full_setup.sh
+# Clone project first
+git clone https://github.com/1fni/cuda-spmv-benchmark.git
+cd cuda-spmv-benchmark
 
-# With all benchmarks
-./scripts/setup/full_setup.sh --all
-
-# With specific benchmarks
-./scripts/setup/full_setup.sh --kokkos
-./scripts/setup/full_setup.sh --amgx
+# Then run setup with desired options
+./scripts/setup/full_setup.sh              # Main project only (default)
+./scripts/setup/full_setup.sh --all        # With all benchmarks
+./scripts/setup/full_setup.sh --kokkos     # Main + Kokkos
+./scripts/setup/full_setup.sh --amgx       # Main + AMGX
 ```
 
 **Run multi-mode benchmark:**

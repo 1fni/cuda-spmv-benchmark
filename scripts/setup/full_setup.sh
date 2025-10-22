@@ -56,31 +56,27 @@ esac
 echo "Kokkos architecture: $KOKKOS_ARCH"
 echo ""
 
+# Verify we're in project root
+if [ ! -f "Makefile" ] || [ ! -d "src" ]; then
+    echo "Error: Must be run from project root directory"
+    echo "Usage: cd cuda-spmv-benchmark && ./scripts/setup/full_setup.sh"
+    exit 1
+fi
+
 # 1. Install system dependencies
 echo "Step 1: Installing system dependencies..."
 apt-get update -qq
 apt-get install -y build-essential git cmake wget nsight-systems-cli
 
-# 2. Clone/update project
-if [ ! -d "cuda-spmv-benchmark" ]; then
-    echo "Step 2: Cloning project..."
-    git clone https://github.com/1fni/cuda-spmv-benchmark.git
-    cd cuda-spmv-benchmark
-else
-    echo "Step 2: Updating project..."
-    cd cuda-spmv-benchmark
-    git pull
-fi
-
-# 3. Build main project
+# 2. Build main project
 echo ""
-echo "Step 3: Building main project..."
+echo "Step 2: Building main project..."
 make clean && make BUILD_TYPE=release
 
-# 4. Install Kokkos + Kokkos-Kernels (optional)
+# 3. Install Kokkos + Kokkos-Kernels (optional)
 if [ "$INSTALL_KOKKOS" = true ]; then
     echo ""
-    echo "Step 4: Setting up Kokkos..."
+    echo "Step 3: Setting up Kokkos..."
 
     cd external
 
@@ -125,9 +121,9 @@ if [ ! -d "kokkos-kernels-install" ]; then
     echo "✅ Kokkos-Kernels installed"
 fi
 
-    # 5. Build Kokkos benchmarks
+    # Build Kokkos benchmarks
     echo ""
-    echo "Step 5: Building Kokkos benchmarks..."
+    echo "Building Kokkos benchmarks..."
     cd benchmarks/kokkos
     make clean && make BUILD_TYPE=release
     cd ../..
@@ -135,15 +131,15 @@ fi
     cd ../..
 fi
 
-# 6. Install AMGX (optional)
+# 4. Install AMGX (optional)
 if [ "$INSTALL_AMGX" = true ]; then
     echo ""
-    echo "Step 6: Installing AMGX..."
+    echo "Step 4: Installing AMGX..."
     ./scripts/setup/install_amgx.sh
 
-    # 7. Build AMGX benchmarks
+    # Build AMGX benchmarks
     echo ""
-    echo "Step 7: Building AMGX benchmarks..."
+    echo "Building AMGX benchmarks..."
     cd external/benchmarks/amgx
     make clean && make
     cd ../../..
