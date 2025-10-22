@@ -1,9 +1,18 @@
 KOKKOS_PATH = $(CURDIR)/kokkos-install
 KOKKOSKERNELS_PATH = $(CURDIR)/kokkos-kernels-install
 
+# Build type (default: release)
+BUILD_TYPE ?= release
+
 CXX = nvcc
-CXXFLAGS = -std=c++17 -O3 -x cu --expt-extended-lambda -arch=sm_70 -I$(KOKKOS_PATH)/include -I$(KOKKOSKERNELS_PATH)/include -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/test_common -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/perf_test/sparse
-NVCCFLAGS = --ptxas-options=-O3 --ptxas-options=-allow-expensive-optimizations=true
+
+ifeq ($(BUILD_TYPE),debug)
+    CXXFLAGS = -std=c++17 -g -G -O0 -x cu --expt-extended-lambda -arch=sm_70 -I$(KOKKOS_PATH)/include -I$(KOKKOSKERNELS_PATH)/include -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/test_common -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/perf_test/sparse
+    NVCCFLAGS =
+else
+    CXXFLAGS = -std=c++17 -O3 -x cu --expt-extended-lambda -arch=sm_70 -I$(KOKKOS_PATH)/include -I$(KOKKOSKERNELS_PATH)/include -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/test_common -I$(KOKKOSKERNELS_PATH)/../kokkos-kernels/perf_test/sparse
+    NVCCFLAGS = --ptxas-options=-O3 --ptxas-options=-allow-expensive-optimizations=true
+endif
 LDFLAGS = -L$(KOKKOS_PATH)/lib -L$(KOKKOSKERNELS_PATH)/lib -lkokkoskernels -lkokkoscontainers -lkokkoscore -lkokkossimd -lcudart -lcusparse -lcublas -lcuda -lpthread -ldl
 
 all: kokkos_bench kokkos_struct kokkos_cg_baseline kokkos_cg_struct generate_kokkos_matrix
