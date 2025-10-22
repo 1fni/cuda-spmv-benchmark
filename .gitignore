@@ -10,6 +10,13 @@ tags
 *.tmp
 *.swp
 
+# External benchmarks compiled binaries
+external/benchmarks/amgx/amgx_*
+external/benchmarks/kokkos/kokkos_*
+external/benchmarks/kokkos/generate_kokkos_matrix
+!external/benchmarks/amgx/*.cpp
+!external/benchmarks/kokkos/*.cpp
+
 # Scripts for results management (keep out of main)
 scripts/save_results_to_git.sh
 
