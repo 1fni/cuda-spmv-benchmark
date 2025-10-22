@@ -16,8 +16,12 @@ scripts/
 ## Quick Reference
 
 ### Setup
-- `setup/full_setup.sh` - Complete setup (project + Kokkos + AMGX)
-- `setup/remote_setup.sh` - Basic setup (project only)
+- `setup/full_setup.sh` - Modular setup with options:
+  - `./full_setup.sh` - Main project only (default)
+  - `./full_setup.sh --all` - Everything (main + Kokkos + AMGX)
+  - `./full_setup.sh --kokkos` - Main + Kokkos
+  - `./full_setup.sh --amgx` - Main + AMGX
+- `setup/remote_setup.sh` - Basic setup (project only, deprecated - use full_setup.sh)
 - `setup/install_amgx.sh` - Install NVIDIA AMGX library
 - `setup/detect_gpu_config.sh` - Detect GPU architecture and capabilities
 
@@ -42,7 +46,15 @@ scripts/
 
 **Complete setup (VastAI, RunPod, AWS, etc.):**
 ```bash
+# Main project only (default)
 ./scripts/setup/full_setup.sh
+
+# With all benchmarks
+./scripts/setup/full_setup.sh --all
+
+# With specific benchmarks
+./scripts/setup/full_setup.sh --kokkos
+./scripts/setup/full_setup.sh --amgx
 ```
 
 **Run multi-mode benchmark:**

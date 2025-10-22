@@ -1,12 +1,40 @@
 #!/bin/bash
-# Complete VastAI setup: CUDA project + Kokkos + AMGX
+# Complete setup: CUDA project + optional Kokkos + AMGX
 # Auto-detects GPU architecture
+#
+# Usage:
+#   ./full_setup.sh                    # Install main project only (default)
+#   ./full_setup.sh --all              # Install everything (main + Kokkos + AMGX)
+#   ./full_setup.sh --kokkos           # Install main + Kokkos
+#   ./full_setup.sh --amgx             # Install main + AMGX
+#   ./full_setup.sh --kokkos --amgx    # Install main + both externals
 
 set -e
 
+# Parse arguments - default: no externals
+INSTALL_KOKKOS=false
+INSTALL_AMGX=false
+
+for arg in "$@"; do
+    case $arg in
+        --all)
+            INSTALL_KOKKOS=true
+            INSTALL_AMGX=true
+            ;;
+        --kokkos) INSTALL_KOKKOS=true ;;
+        --amgx) INSTALL_AMGX=true ;;
+        *) echo "Unknown option: $arg"; echo "Use: --all, --kokkos, or --amgx"; exit 1 ;;
+    esac
+done
+
 echo "=========================================="
-echo "VastAI Full Setup (Project + Kokkos + AMGX)"
+echo "Setup Configuration"
 echo "=========================================="
+echo "Main project: YES"
+echo "Kokkos:       $($INSTALL_KOKKOS && echo YES || echo NO)"
+echo "AMGX:         $($INSTALL_AMGX && echo YES || echo NO)"
+echo "=========================================="
+echo ""
 
 # Detect GPU architecture
 echo "Detecting GPU..."
@@ -49,11 +77,12 @@ echo ""
 echo "Step 3: Building main project..."
 make clean && make BUILD_TYPE=release
 
-# 4. Install Kokkos + Kokkos-Kernels
-echo ""
-echo "Step 4: Setting up Kokkos..."
+# 4. Install Kokkos + Kokkos-Kernels (optional)
+if [ "$INSTALL_KOKKOS" = true ]; then
+    echo ""
+    echo "Step 4: Setting up Kokkos..."
 
-cd external
+    cd external
 
 # Clone Kokkos
 if [ ! -d "kokkos" ]; then
@@ -96,26 +125,29 @@ if [ ! -d "kokkos-kernels-install" ]; then
     echo "✅ Kokkos-Kernels installed"
 fi
 
-# 5. Build Kokkos benchmarks
-echo ""
-echo "Step 5: Building Kokkos benchmarks..."
-cd benchmarks/kokkos
-make clean && make BUILD_TYPE=release
-cd ../..
+    # 5. Build Kokkos benchmarks
+    echo ""
+    echo "Step 5: Building Kokkos benchmarks..."
+    cd benchmarks/kokkos
+    make clean && make BUILD_TYPE=release
+    cd ../..
 
-# 6. Install AMGX
-echo ""
-echo "Step 6: Installing AMGX..."
-../../scripts/setup/install_amgx.sh
+    cd ../..
+fi
 
-# 7. Build AMGX benchmarks
-echo ""
-echo "Step 7: Building AMGX benchmarks..."
-cd benchmarks/amgx
-make clean && make
-cd ../..
+# 6. Install AMGX (optional)
+if [ "$INSTALL_AMGX" = true ]; then
+    echo ""
+    echo "Step 6: Installing AMGX..."
+    ./scripts/setup/install_amgx.sh
 
-cd ../..
+    # 7. Build AMGX benchmarks
+    echo ""
+    echo "Step 7: Building AMGX benchmarks..."
+    cd external/benchmarks/amgx
+    make clean && make
+    cd ../../..
+fi
 
 # Verification
 echo ""
@@ -125,21 +157,35 @@ echo "=========================================="
 echo "GPU: $GPU_NAME (SM $GPU_ARCH)"
 echo ""
 echo "Built executables:"
-ls -lh bin/release/cg_test \
-       external/benchmarks/kokkos/kokkos_cg_baseline \
-       external/benchmarks/amgx/amgx_cg_solver 2>/dev/null || echo "Some builds may have failed"
+ls -lh bin/release/cg_test 2>/dev/null || echo "Main build may have failed"
+
+if [ "$INSTALL_KOKKOS" = true ]; then
+    ls -lh external/benchmarks/kokkos/kokkos_cg_baseline 2>/dev/null || echo "Kokkos build may have failed"
+fi
+
+if [ "$INSTALL_AMGX" = true ]; then
+    ls -lh external/benchmarks/amgx/amgx_cg_solver 2>/dev/null || echo "AMGX build may have failed"
+fi
+
 echo ""
 echo "=========================================="
 echo "Quick test commands:"
 echo ""
 echo "# Our CG solver:"
 echo "./bin/release/cg_test matrix/stencil_5000x5000.mtx --mode=stencil5-csr-direct --device"
-echo ""
-echo "# Kokkos baseline:"
-echo "./external/benchmarks/kokkos/kokkos_cg_baseline matrix/stencil_5000x5000_kokkos.mtx"
-echo ""
-echo "# AMGX solver:"
-echo "./external/benchmarks/amgx/amgx_cg_solver matrix/stencil_5000x5000.mtx"
+
+if [ "$INSTALL_KOKKOS" = true ]; then
+    echo ""
+    echo "# Kokkos baseline:"
+    echo "./external/benchmarks/kokkos/kokkos_cg_baseline matrix/stencil_5000x5000_kokkos.mtx"
+fi
+
+if [ "$INSTALL_AMGX" = true ]; then
+    echo ""
+    echo "# AMGX solver:"
+    echo "./external/benchmarks/amgx/amgx_cg_solver matrix/stencil_5000x5000.mtx"
+fi
+
 echo ""
 echo "# Profile with nsys:"
 echo "nsys profile -o results ./bin/release/cg_test matrix/stencil_5000x5000.mtx --mode=stencil5-csr-direct --device"
