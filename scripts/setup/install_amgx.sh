@@ -15,7 +15,11 @@ NC='\033[0m' # No Color
 
 # Configuration
 AMGX_VERSION="main"  # Latest version compatible with CUDA 12.x
-INSTALL_PREFIX="$HOME/amgx_local"
+
+# Determine project root and install location
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+INSTALL_PREFIX="$PROJECT_ROOT/external/amgx"
 TEMP_DIR="/tmp/amgx_build_$$"
 
 print_status() {
@@ -197,25 +201,23 @@ build_amgx() {
     print_success "AmgX build completed successfully"
 }
 
-# Update project Makefile
+# Update AMGX benchmark Makefile
 update_makefile() {
-    local project_root
-    project_root=$(cd "$(dirname "$0")/.." && pwd)
-    local makefile="$project_root/Makefile"
-    
-    if [[ -f "$makefile" ]]; then
-        print_status "Updating project Makefile..."
-        
+    local amgx_makefile="$PROJECT_ROOT/external/benchmarks/amgx/Makefile"
+
+    if [[ -f "$amgx_makefile" ]]; then
+        print_status "Updating AMGX benchmark Makefile..."
+
         # Create backup
-        cp "$makefile" "$makefile.backup"
-        
-        # Update AMGX_DIR in Makefile with absolute path (not variable)
-        sed -i "s|AMGX_DIR ?= /usr/local|AMGX_DIR ?= $INSTALL_PREFIX|g" "$makefile"
-        
+        cp "$amgx_makefile" "$amgx_makefile.backup"
+
+        # Update AMGX_DIR to point to installation
+        sed -i "s|^AMGX_DIR = .*|AMGX_DIR = $INSTALL_PREFIX|g" "$amgx_makefile"
+
         print_success "Makefile updated with AmgX path: $INSTALL_PREFIX"
         print_success "Backup saved as Makefile.backup"
     else
-        print_warning "Project Makefile not found - you'll need to set AMGX_DIR manually"
+        print_warning "AMGX benchmark Makefile not found at $amgx_makefile"
     fi
 }
 

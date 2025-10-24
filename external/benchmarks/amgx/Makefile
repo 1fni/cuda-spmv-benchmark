@@ -1,4 +1,4 @@
-AMGX_DIR = $(CURDIR)/../../amgx
+AMGX_DIR ?= $(CURDIR)/../../amgx
 
 CXX = nvcc
 CXXFLAGS = -std=c++17 -O3 --ptxas-options=-O3 --ptxas-options=-allow-expensive-optimizations=true -I$(AMGX_DIR)/include
