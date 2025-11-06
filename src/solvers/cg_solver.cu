@@ -54,6 +54,47 @@ __global__ void axpby_kernel(int n, double alpha, const double* x,
 }
 
 /**
+ * @brief AXPY device-pointer version: y = y + (*alpha)*x
+ */
+__global__ void axpy_kernel_device(int n, const double* d_alpha, const double* x, double* y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] += (*d_alpha) * x[i];
+    }
+}
+
+/**
+ * @brief AXPY subtract device-pointer version: y = y - (*alpha)*x
+ */
+__global__ void axpy_sub_kernel_device(int n, const double* d_alpha, const double* x, double* y) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        y[i] -= (*d_alpha) * x[i];
+    }
+}
+
+/**
+ * @brief AXPBY device-pointer version: z = (*alpha)*x + (*beta)*y
+ */
+__global__ void axpby_kernel_device(int n, const double* d_alpha, const double* x,
+                                     const double* d_beta, const double* y, double* z) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        z[i] = (*d_alpha) * x[i] + (*d_beta) * y[i];
+    }
+}
+
+/**
+ * @brief Update direction: p = r + (*beta)*p
+ */
+__global__ void update_p_kernel(int n, const double* r, const double* d_beta, double* p) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        p[i] = r[i] + (*d_beta) * p[i];
+    }
+}
+
+/**
  * @brief Copy: y = x
  */
 __global__ void copy_kernel(int n, const double* x, double* y) {
@@ -361,6 +402,27 @@ __global__ void final_sum_kernel(const double* block_results, int num_blocks, do
 }
 
 /**
+ * @brief GPU-side scalar division: result = numerator / denominator
+ */
+__global__ void scalar_divide_kernel(const double* numerator, const double* denominator, double* result) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *result = (*numerator) / (*denominator);
+    }
+}
+
+/**
+ * @brief GPU-side convergence check: converged = (sqrt(rr_new) / b_norm) < tolerance
+ */
+__global__ void check_convergence_kernel(const double* rr_new, double b_norm, double tolerance,
+                                          int* converged, double* residual_norm) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        *residual_norm = sqrt(*rr_new);
+        double rel_residual = (*residual_norm) / b_norm;
+        *converged = (rel_residual < tolerance) ? 1 : 0;
+    }
+}
+
+/**
  * @brief CG solver device-native implementation (zero host transfers)
  */
 int cg_solve_device(SpmvOperator* spmv_op,
@@ -384,7 +446,9 @@ int cg_solve_device(SpmvOperator* spmv_op,
 
     // Allocate device vectors
     double *d_x, *d_b, *d_r, *d_p, *d_Ap, *d_block_results;
-    double *d_rr_old, *d_rr_new, *d_pAp;  // Device scalars
+    double *d_rr_old, *d_rr_new, *d_pAp;  // Device scalars for dot products
+    double *d_alpha, *d_beta, *d_residual_norm;  // Device scalars for CG coefficients
+    int *d_converged;  // Device convergence flag
 
     CUDA_CHECK(cudaMalloc(&d_x, n * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_b, n * sizeof(double)));
@@ -395,6 +459,10 @@ int cg_solve_device(SpmvOperator* spmv_op,
     CUDA_CHECK(cudaMalloc(&d_rr_old, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_rr_new, sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_pAp, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_alpha, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_beta, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_residual_norm, sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_converged, sizeof(int)));
 
     // Transfer initial data
     CUDA_CHECK(cudaMemcpy(d_x, x, n * sizeof(double), cudaMemcpyHostToDevice));
@@ -443,9 +511,11 @@ int cg_solve_device(SpmvOperator* spmv_op,
     dot_kernel<<<blocks, threads, threads * sizeof(double)>>>(n, d_r, d_r, d_block_results);
     final_sum_kernel<<<1, 256, 256 * sizeof(double)>>>(d_block_results, blocks, d_rr_old);
     CUDA_CHECK(cudaEventRecord(stop_reduce));
-    CUDA_CHECK(cudaEventSynchronize(stop_reduce));
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
-    time_reduce += ms;
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventSynchronize(stop_reduce));
+        CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
+        time_reduce += ms;
+    }
 
     // Get initial residual for convergence check (one-time transfer)
     double h_rr_old;
@@ -458,86 +528,104 @@ int cg_solve_device(SpmvOperator* spmv_op,
 
     // CG iterations (fully on GPU)
     int iter;
-    double residual_norm = b_norm;
-    double h_rr_new;
+    double final_residual_norm = b_norm;  // Track for stats
 
     for (iter = 0; iter < config.max_iters; iter++) {
         // alpha = (r,r) / (A*p, p)
         CUDA_CHECK(cudaEventRecord(start_spmv));
         spmv_op->run_device(d_p, d_Ap);  // d_Ap = A*p (device-native)
         CUDA_CHECK(cudaEventRecord(stop_spmv));
-        CUDA_CHECK(cudaEventSynchronize(stop_spmv));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_spmv, stop_spmv));
-        time_spmv += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_spmv));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_spmv, stop_spmv));
+            time_spmv += ms;
+        }
 
         CUDA_CHECK(cudaEventRecord(start_reduce));
         dot_kernel<<<blocks, threads, threads * sizeof(double)>>>(n, d_Ap, d_p, d_block_results);
         final_sum_kernel<<<1, 256, 256 * sizeof(double)>>>(d_block_results, blocks, d_pAp);
         CUDA_CHECK(cudaEventRecord(stop_reduce));
-        CUDA_CHECK(cudaEventSynchronize(stop_reduce));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
-        time_reduce += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_reduce));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
+            time_reduce += ms;
+        }
 
-        // Compute alpha on CPU (one small transfer)
-        double h_pAp;
-        CUDA_CHECK(cudaMemcpy(&h_pAp, d_pAp, sizeof(double), cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(&h_rr_old, d_rr_old, sizeof(double), cudaMemcpyDeviceToHost));
-        double alpha = h_rr_old / h_pAp;
+        // Compute alpha on GPU: alpha = rr_old / pAp
+        scalar_divide_kernel<<<1, 1>>>(d_rr_old, d_pAp, d_alpha);
 
         // x = x + alpha*p
         CUDA_CHECK(cudaEventRecord(start_blas));
-        axpy_kernel<<<blocks, threads>>>(n, alpha, d_p, d_x);
+        axpy_kernel_device<<<blocks, threads>>>(n, d_alpha, d_p, d_x);
         CUDA_CHECK(cudaEventRecord(stop_blas));
-        CUDA_CHECK(cudaEventSynchronize(stop_blas));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
-        time_blas += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_blas));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
+            time_blas += ms;
+        }
 
         // r = r - alpha*A*p
         CUDA_CHECK(cudaEventRecord(start_blas));
-        axpy_kernel<<<blocks, threads>>>(n, -alpha, d_Ap, d_r);
+        axpy_sub_kernel_device<<<blocks, threads>>>(n, d_alpha, d_Ap, d_r);
         CUDA_CHECK(cudaEventRecord(stop_blas));
-        CUDA_CHECK(cudaEventSynchronize(stop_blas));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
-        time_blas += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_blas));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
+            time_blas += ms;
+        }
 
         // (r_new, r_new)
         CUDA_CHECK(cudaEventRecord(start_reduce));
         dot_kernel<<<blocks, threads, threads * sizeof(double)>>>(n, d_r, d_r, d_block_results);
         final_sum_kernel<<<1, 256, 256 * sizeof(double)>>>(d_block_results, blocks, d_rr_new);
         CUDA_CHECK(cudaEventRecord(stop_reduce));
-        CUDA_CHECK(cudaEventSynchronize(stop_reduce));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
-        time_reduce += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_reduce));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_reduce, stop_reduce));
+            time_reduce += ms;
+        }
 
-        // Check convergence (one small transfer)
-        CUDA_CHECK(cudaMemcpy(&h_rr_new, d_rr_new, sizeof(double), cudaMemcpyDeviceToHost));
-        residual_norm = sqrt(h_rr_new);
-        double rel_residual = residual_norm / b_norm;
+        // Check convergence on GPU
+        check_convergence_kernel<<<1, 1>>>(d_rr_new, b_norm, config.tolerance, d_converged, d_residual_norm);
+
+        // Poll convergence flag (async, non-blocking check)
+        int h_converged;
+        CUDA_CHECK(cudaMemcpy(&h_converged, d_converged, sizeof(int), cudaMemcpyDeviceToHost));
 
         if (config.verbose >= 2) {
-            printf("[CG-DEVICE] Iter %3d: residual = %e (rel = %e)\n", iter + 1, residual_norm, rel_residual);
+            // For verbose output, transfer residual norm
+            double h_residual_norm;
+            CUDA_CHECK(cudaMemcpy(&h_residual_norm, d_residual_norm, sizeof(double), cudaMemcpyDeviceToHost));
+            double rel_residual = h_residual_norm / b_norm;
+            printf("[CG-DEVICE] Iter %3d: residual = %e (rel = %e)\n", iter + 1, h_residual_norm, rel_residual);
+            final_residual_norm = h_residual_norm;
         }
 
         // Check convergence
-        if (rel_residual < config.tolerance) {
+        if (h_converged) {
+            // Transfer final residual for stats
+            if (config.verbose < 2) {
+                CUDA_CHECK(cudaMemcpy(&final_residual_norm, d_residual_norm, sizeof(double), cudaMemcpyDeviceToHost));
+            }
             iter++;
             break;
         }
 
-        // beta = (r_new, r_new) / (r_old, r_old)
-        double beta = h_rr_new / h_rr_old;
+        // beta = rr_new / rr_old (on GPU)
+        scalar_divide_kernel<<<1, 1>>>(d_rr_new, d_rr_old, d_beta);
 
         // p = r + beta*p
         CUDA_CHECK(cudaEventRecord(start_blas));
-        axpby_kernel<<<blocks, threads>>>(n, 1.0, d_r, beta, d_p, d_p);
+        update_p_kernel<<<blocks, threads>>>(n, d_r, d_beta, d_p);
         CUDA_CHECK(cudaEventRecord(stop_blas));
-        CUDA_CHECK(cudaEventSynchronize(stop_blas));
-        CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
-        time_blas += ms;
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventSynchronize(stop_blas));
+            CUDA_CHECK(cudaEventElapsedTime(&ms, start_blas, stop_blas));
+            time_blas += ms;
+        }
 
-        // Update rr_old
+        // Update rr_old (device-to-device copy)
         CUDA_CHECK(cudaMemcpy(d_rr_old, d_rr_new, sizeof(double), cudaMemcpyDeviceToDevice));
-        h_rr_old = h_rr_new;
     }
 
     CUDA_CHECK(cudaEventRecord(stop_total));
@@ -551,12 +639,12 @@ int cg_solve_device(SpmvOperator* spmv_op,
 
     // Fill statistics
     stats->iterations = iter;
-    stats->residual_norm = residual_norm;
+    stats->residual_norm = final_residual_norm;
     stats->time_total_ms = total_ms;
     stats->time_spmv_ms = time_spmv;
     stats->time_blas1_ms = time_blas;
     stats->time_reductions_ms = time_reduce;
-    stats->converged = (residual_norm / b_norm < config.tolerance) ? 1 : 0;
+    stats->converged = (final_residual_norm / b_norm < config.tolerance) ? 1 : 0;
 
     if (config.verbose >= 1) {
         printf("[CG-DEVICE] Converged: %s\n", stats->converged ? "YES" : "NO");
@@ -582,6 +670,10 @@ int cg_solve_device(SpmvOperator* spmv_op,
     cudaFree(d_rr_old);
     cudaFree(d_rr_new);
     cudaFree(d_pAp);
+    cudaFree(d_alpha);
+    cudaFree(d_beta);
+    cudaFree(d_residual_norm);
+    cudaFree(d_converged);
 
     cudaEventDestroy(start_total);
     cudaEventDestroy(stop_total);

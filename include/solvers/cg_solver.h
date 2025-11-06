@@ -19,9 +19,10 @@
  * @brief CG solver configuration
  */
 typedef struct {
-    int max_iters;        ///< Maximum iterations
-    double tolerance;     ///< Convergence tolerance (relative residual)
-    int verbose;          ///< Print iteration info (0=silent, 1=summary, 2=per-iter)
+    int max_iters;              ///< Maximum iterations
+    double tolerance;           ///< Convergence tolerance (relative residual)
+    int verbose;                ///< Print iteration info (0=silent, 1=summary, 2=per-iter)
+    int enable_detailed_timers; ///< Enable per-category timing (adds ~50-100ms sync overhead)
 } CGConfig;
 
 /**

@@ -18,17 +18,19 @@
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>] [--device]\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>] [--device] [--no-detailed-timers]\n", argv[0]);
         printf("Example: %s matrix/stencil_512x512.mtx --mode=stencil5-csr-direct --device\n", argv[0]);
         printf("\nOptions:\n");
-        printf("  --mode=<mode>  SpMV operator (default: stencil5-csr-direct)\n");
-        printf("  --device       Use device-native CG (zero host transfers)\n");
+        printf("  --mode=<mode>          SpMV operator (default: stencil5-csr-direct)\n");
+        printf("  --device               Use device-native CG (zero host transfers)\n");
+        printf("  --no-detailed-timers   Disable per-category timing (removes sync overhead)\n");
         return 1;
     }
 
     const char* matrix_file = argv[1];
     const char* mode = "stencil5-csr-direct";  // Default
     bool use_device = false;
+    bool enable_detailed_timers = true;  // Default: timers enabled
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -36,6 +38,8 @@ int main(int argc, char** argv) {
             mode = argv[i] + 7;
         } else if (strcmp(argv[i], "--device") == 0) {
             use_device = true;
+        } else if (strcmp(argv[i], "--no-detailed-timers") == 0) {
+            enable_detailed_timers = false;
         }
     }
 
@@ -87,6 +91,7 @@ int main(int argc, char** argv) {
     config.max_iters = 1000;
     config.tolerance = 1e-6;
     config.verbose = 2;  // Per-iteration output
+    config.enable_detailed_timers = enable_detailed_timers;
 
     // Solve
     CGStats stats;
