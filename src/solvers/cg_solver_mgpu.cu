@@ -362,6 +362,11 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     CUDA_CHECK(cudaMalloc(&d_p, n * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_Ap, n * sizeof(double)));
 
+    // Initialize to zero (critical for multi-GPU)
+    CUDA_CHECK(cudaMemset(d_r, 0, n * sizeof(double)));
+    CUDA_CHECK(cudaMemset(d_p, 0, n * sizeof(double)));
+    CUDA_CHECK(cudaMemset(d_Ap, 0, n * sizeof(double)));
+
     // Local output buffers for SpMV (size = n_local)
     double *d_Ap_local;
     CUDA_CHECK(cudaMalloc(&d_Ap_local, n_local * sizeof(double)));
