@@ -435,12 +435,12 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         CHECK_NCCL(ncclGroupEnd());
+        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     } else {
         // Single GPU: just copy local to full
         CUDA_CHECK(cudaMemcpy(d_Ap, d_Ap_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaStreamSynchronize(stream));
     }
-
-    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     // r_local = b_local - Ap_local (compute only local segment)
     // Step 1: r = Ap
@@ -466,6 +466,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             }
         }
         CHECK_NCCL(ncclGroupEnd());
+        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     }
 
     // p_local = r_local
@@ -489,6 +490,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             }
         }
         CHECK_NCCL(ncclGroupEnd());
+        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     }
 
     // rs_old = r^T * r (global dot product)
@@ -573,6 +575,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         // r_local = r_local - alpha * Ap_local (update only local segment)
@@ -596,6 +599,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         // rs_new = r^T * r
@@ -649,6 +653,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         rs_old = rs_new;
