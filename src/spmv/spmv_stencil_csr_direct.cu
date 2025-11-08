@@ -67,7 +67,7 @@ __device__ inline int calculate_interior_csr_offset(int row, int grid_size) {
 }
 
 /**
- * @brief CUDA kernel: CSR-direct stencil SpMV with calculated offsets
+ * @brief CUDA kernel: CSR-direct stencil SpMV with calculated offsets (single-GPU)
  *
  * @details Interior points: calculate CSR offset and column indices directly
  *          Boundary points: standard CSR traversal
@@ -124,6 +124,78 @@ __global__ void stencil5_csr_direct_kernel(
     }
 
     y[row] = alpha * sum;
+}
+
+/**
+ * @brief CUDA kernel: CSR-direct stencil SpMV for multi-GPU with row partitioning
+ *
+ * @details Multi-GPU version with row-band decomposition:
+ *  - Each GPU processes rows [row_offset : row_offset + local_rows)
+ *  - Full input vector x replicated on all GPUs (required for stencil neighbors)
+ *  - Output y_local contains only local partition results
+ *  - Zero communication during kernel execution (NCCL used only for CG dot products)
+ *
+ * @param row_ptr CSR row pointers (full matrix, but only local rows accessed)
+ * @param col_idx CSR column indices (full matrix)
+ * @param values CSR values (full matrix)
+ * @param x Input vector (full, replicated on all GPUs)
+ * @param y_local Output vector (local partition only, size = local_rows)
+ * @param row_offset Starting row for this GPU's partition
+ * @param local_rows Number of rows to process on this GPU
+ * @param grid_size 2D grid dimension (sqrt of matrix size)
+ * @param alpha Scalar multiplier
+ */
+__global__ void stencil5_csr_direct_mgpu_kernel(
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_idx,
+    const double* __restrict__ values,
+    const double* __restrict__ x,
+    double* __restrict__ y_local,
+    int row_offset,
+    int local_rows,
+    int grid_size,
+    double alpha
+) {
+    int local_row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (local_row >= local_rows) return;
+
+    // Global row index in full matrix
+    int row = row_offset + local_row;
+
+    int i = row / grid_size;
+    int j = row % grid_size;
+
+    double sum = 0.0;
+
+    // Interior: direct offset and column calculation
+    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
+        int csr_offset = calculate_interior_csr_offset(row, grid_size);
+
+        int idx_west = row - 1;
+        int idx_center = row;
+        int idx_east = row + 1;
+        int idx_north = row - grid_size;
+        int idx_south = row + grid_size;
+
+        sum = values[csr_offset + 1] * x[idx_west]
+            + values[csr_offset + 2] * x[idx_center]
+            + values[csr_offset + 3] * x[idx_east]
+            + values[csr_offset + 0] * x[idx_north]
+            + values[csr_offset + 4] * x[idx_south];
+    }
+    // Boundary/corner: standard CSR traversal
+    else {
+        int row_start = row_ptr[row];
+        int row_end = row_ptr[row + 1];
+
+        #pragma unroll 8
+        for (int k = row_start; k < row_end; k++) {
+            sum += values[k] * x[col_idx[k]];
+        }
+    }
+
+    // Write to local output (indexed by local_row, not global row)
+    y_local[local_row] = alpha * sum;
 }
 
 /**

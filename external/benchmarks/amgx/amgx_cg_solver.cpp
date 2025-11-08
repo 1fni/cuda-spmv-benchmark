@@ -174,25 +174,16 @@ int main(int argc, char* argv[]) {
     AMGX_CHECK(AMGX_matrix_upload_all(A, mat.rows, mat.nnz, 1, 1,
                                       mat.row_ptr, mat.col_idx, mat.values, NULL));
 
-    // Create RHS: b = A * ones
-    printf("RHS created (b = A*ones)\n");
+    // Create RHS: b = ones (for consistency across all solvers)
+    printf("RHS created (b = ones)\n");
     printf("Initial guess: x0 = 0\n\n");
 
-    double *h_ones = (double*)malloc(mat.rows * sizeof(double));
     double *h_b = (double*)malloc(mat.rows * sizeof(double));
     double *h_x = (double*)malloc(mat.rows * sizeof(double));
 
     for (int i = 0; i < mat.rows; i++) {
-        h_ones[i] = 1.0;
+        h_b[i] = 1.0;
         h_x[i] = 0.0;
-    }
-
-    // Compute b = A * ones on CPU (simple reference)
-    for (int i = 0; i < mat.rows; i++) {
-        h_b[i] = 0.0;
-        for (int j = mat.row_ptr[i]; j < mat.row_ptr[i+1]; j++) {
-            h_b[i] += mat.values[j] * h_ones[mat.col_idx[j]];
-        }
     }
 
     // Upload vectors
@@ -232,16 +223,6 @@ int main(int argc, char* argv[]) {
     AMGX_CHECK(AMGX_vector_download(x, d_x));
     CUDA_CHECK(cudaMemcpy(h_x, d_x, mat.rows * sizeof(double), cudaMemcpyDeviceToHost));
 
-    // Verify solution (should be all 1.0)
-    double error = 0.0;
-    for (int i = 0; i < mat.rows; i++) {
-        double diff = h_x[i] - 1.0;
-        error += diff * diff;
-    }
-    error = sqrt(error / mat.rows);
-
-    printf("Solution error (RMS vs exact=1): %.6e\n\n", error);
-
     // Summary
     printf("========================================\n");
     printf("Summary\n");
@@ -252,7 +233,6 @@ int main(int argc, char* argv[]) {
     printf("========================================\n");
 
     // Cleanup
-    free(h_ones);
     free(h_b);
     free(h_x);
     CUDA_CHECK(cudaFree(d_b));

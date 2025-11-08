@@ -70,19 +70,15 @@ int main(int argc, char** argv) {
     // Initialize SpMV operator
     spmv_op->init(&mat);
 
-    // Create RHS: b = A * ones (so solution should be x = ones)
-    double* ones = (double*)malloc(mat.cols * sizeof(double));
+    // Create RHS: b = ones (for consistency with multi-GPU and AMGX tests)
     double* b = (double*)malloc(mat.rows * sizeof(double));
     double* x = (double*)calloc(mat.rows, sizeof(double));  // Initial guess x0 = 0
 
-    for (int i = 0; i < mat.cols; i++) {
-        ones[i] = 1.0;
+    for (int i = 0; i < mat.rows; i++) {
+        b[i] = 1.0;
     }
 
-    double dummy_time;
-    spmv_op->run_timed(ones, b, &dummy_time);  // b = A * ones
-
-    printf("RHS created (b = A*ones)\n");
+    printf("RHS created (b = ones)\n");
     printf("Initial guess: x0 = 0\n");
     printf("\n");
 
@@ -140,7 +136,6 @@ int main(int argc, char** argv) {
 
     // Cleanup
     spmv_op->free();
-    free(ones);
     free(b);
     free(x);
     free(mat.entries);
