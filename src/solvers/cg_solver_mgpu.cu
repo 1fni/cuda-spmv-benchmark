@@ -387,11 +387,9 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         CHECK_NCCL(ncclGroupEnd());
-        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     } else {
         // Single GPU: just copy local to full
         CUDA_CHECK(cudaMemcpy(d_Ap, d_Ap_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
-        CUDA_CHECK(cudaStreamSynchronize(stream));
     }
 
     // r_local = b_local - Ap_local (compute only local segment)
@@ -418,7 +416,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             }
         }
         CHECK_NCCL(ncclGroupEnd());
-        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     }
 
     // p_local = r_local
@@ -442,7 +439,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             }
         }
         CHECK_NCCL(ncclGroupEnd());
-        CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
     }
 
     // rs_old = r^T * r (global dot product)
@@ -490,8 +486,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaMemcpy(d_Ap, d_Ap_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
         }
 
-        CUDA_CHECK(cudaStreamSynchronize(stream));
-
         // alpha = rs_old / (p^T * Ap)
         double pAp_local = compute_local_dot(d_p + row_offset, d_Ap + row_offset, n_local, d_work, stream);
         double pAp;
@@ -527,7 +521,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
-            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         // r_local = r_local - alpha * Ap_local (update only local segment)
@@ -551,7 +544,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
-            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         // rs_new = r^T * r
@@ -605,7 +597,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
-            CUDA_CHECK(cudaStreamSynchronize(stream));  // Wait for AllGather to complete
         }
 
         rs_old = rs_new;
