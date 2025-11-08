@@ -399,6 +399,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
 
     int threads = 256;
     int blocks_full = (n + threads - 1) / threads;
+    int blocks_local = (n_local + threads - 1) / threads;  // For local BLAS1 operations
     int threads_spmv = 256;
     int blocks_spmv = (n_local + threads_spmv - 1) / threads_spmv;
 
@@ -510,11 +511,51 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
 
         double alpha = rs_old / pAp;
 
-        // x = x + alpha * p (each rank updates full vector)
-        axpy_kernel<<<blocks_full, threads, 0, stream>>>(alpha, d_p, d_x, n);
+        // x_local = x_local + alpha * p_local (update only local segment)
+        axpy_kernel<<<blocks_local, threads, 0, stream>>>(alpha, d_p + row_offset, d_x + row_offset, n_local);
 
-        // r = r - alpha * Ap
-        axpy_kernel<<<blocks_full, threads, 0, stream>>>(-alpha, d_Ap, d_r, n);
+        // AllGather x (each rank broadcasts its segment)
+        if (world_size > 1) {
+            CHECK_NCCL(ncclGroupStart());
+            for (int r = 0; r < world_size; r++) {
+                int r_base_rows = n / world_size;
+                int r_remainder = n % world_size;
+                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
+                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
+
+                if (r == rank) {
+                    CHECK_NCCL(ncclBroadcast(d_x + r_offset, d_x + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                } else {
+                    CHECK_NCCL(ncclBroadcast(d_x + r_offset, d_x + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                }
+            }
+            CHECK_NCCL(ncclGroupEnd());
+        }
+
+        // r_local = r_local - alpha * Ap_local (update only local segment)
+        axpy_kernel<<<blocks_local, threads, 0, stream>>>(-alpha, d_Ap + row_offset, d_r + row_offset, n_local);
+
+        // AllGather r (each rank broadcasts its segment)
+        if (world_size > 1) {
+            CHECK_NCCL(ncclGroupStart());
+            for (int r = 0; r < world_size; r++) {
+                int r_base_rows = n / world_size;
+                int r_remainder = n % world_size;
+                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
+                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
+
+                if (r == rank) {
+                    CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                } else {
+                    CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                }
+            }
+            CHECK_NCCL(ncclGroupEnd());
+        }
 
         // rs_new = r^T * r
         double rs_local_new = compute_local_dot(d_r + row_offset, d_r + row_offset, n_local, d_work, stream);
@@ -546,8 +587,28 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         // beta = rs_new / rs_old
         double beta = rs_new / rs_old;
 
-        // p = r + beta * p
-        axpby_kernel<<<blocks_full, threads, 0, stream>>>(1.0, d_r, beta, d_p, n);
+        // p_local = r_local + beta * p_local (update only local segment)
+        axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r + row_offset, beta, d_p + row_offset, n_local);
+
+        // AllGather p (each rank broadcasts its segment)
+        if (world_size > 1) {
+            CHECK_NCCL(ncclGroupStart());
+            for (int r = 0; r < world_size; r++) {
+                int r_base_rows = n / world_size;
+                int r_remainder = n % world_size;
+                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
+                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
+
+                if (r == rank) {
+                    CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                } else {
+                    CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
+                                             r_n_local, ncclDouble, r, nccl_comm, stream));
+                }
+            }
+            CHECK_NCCL(ncclGroupEnd());
+        }
 
         rs_old = rs_new;
     }
