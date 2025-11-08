@@ -211,6 +211,10 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     cudaStream_t stream;
     CUDA_CHECK(cudaStreamCreate(&stream));
 
+    // Synchronize and check for any pending CUDA errors before NCCL init
+    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaGetLastError());
+
     if (world_size > 1) {
         ncclUniqueId nccl_id;
         if (rank == 0) {
