@@ -167,7 +167,7 @@ __global__ void stencil5_csr_direct_mgpu_kernel(
 
     double sum = 0.0;
 
-    // Interior: direct offset and column calculation
+    // Interior: direct offset and column calculation (requires full CSR)
     if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
         int csr_offset = calculate_interior_csr_offset(row, grid_size);
 

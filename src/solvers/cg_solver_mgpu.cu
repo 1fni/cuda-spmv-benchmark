@@ -39,30 +39,6 @@ __global__ void stencil5_csr_direct_mgpu_kernel(
     double alpha
 );
 
-// Helper to partition CSR matrix rows
-static void partition_csr_rows(CSRMatrix* full_csr, int row_offset, int n_local,
-                                int** local_row_ptr, int** local_col_idx,
-                                double** local_values, int* local_nnz) {
-    // Extract row segment [row_offset : row_offset + n_local]
-    int start_nnz = full_csr->row_ptr[row_offset];
-    int end_nnz = full_csr->row_ptr[row_offset + n_local];
-    *local_nnz = end_nnz - start_nnz;
-
-    // Allocate local arrays
-    *local_row_ptr = (int*)malloc((n_local + 1) * sizeof(int));
-    *local_col_idx = (int*)malloc(*local_nnz * sizeof(int));
-    *local_values = (double*)malloc(*local_nnz * sizeof(double));
-
-    // Copy and adjust row_ptr offsets
-    for (int i = 0; i <= n_local; i++) {
-        (*local_row_ptr)[i] = full_csr->row_ptr[row_offset + i] - start_nnz;
-    }
-
-    // Copy col_idx and values
-    memcpy(*local_col_idx, &full_csr->col_indices[start_nnz], *local_nnz * sizeof(int));
-    memcpy(*local_values, &full_csr->values[start_nnz], *local_nnz * sizeof(double));
-}
-
 // NCCL error checking
 #define CHECK_NCCL(call) \
 { \
@@ -266,93 +242,60 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    // ========== Matrix Partitioning with MPI Scatter ==========
-    int *h_local_row_ptr = NULL, *h_local_col_idx = NULL;
-    double *h_local_values = NULL;
-    int local_nnz = 0;
+    // ========== Matrix Replication (Full CSR on all GPUs) ==========
+    // TODO: Implement true CSR partitioning to scale to larger problems
+    // Current: Full matrix replicated for direct-offset optimization
 
-    // Rank 0: Build CSR and partition for all ranks
+    // Rank 0: Build CSR
     if (rank == 0) {
         if (config.verbose >= 1) {
-            printf("\nBuilding and partitioning CSR matrix...\n");
+            printf("\nBuilding and replicating CSR matrix...\n");
         }
         build_csr_struct(mat);
     }
 
-    // Calculate partition sizes
-    int* all_n_local = (int*)malloc(world_size * sizeof(int));
-    int* all_row_offsets = (int*)malloc(world_size * sizeof(int));
-    int* all_local_nnz = (int*)malloc(world_size * sizeof(int));
+    // Broadcast matrix dimensions to all ranks
+    int full_nnz = (rank == 0) ? csr_mat.nb_nonzeros : 0;
+    MPI_Bcast(&full_nnz, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    for (int r = 0; r < world_size; r++) {
-        all_n_local[r] = base_rows + (r < remainder ? 1 : 0);
-        all_row_offsets[r] = r * base_rows + (r < remainder ? r : remainder);
-    }
+    // Allocate CSR arrays on all ranks
+    int *h_full_row_ptr = (int*)malloc((n + 1) * sizeof(int));
+    int *h_full_col_idx = (int*)malloc(full_nnz * sizeof(int));
+    double *h_full_values = (double*)malloc(full_nnz * sizeof(double));
 
-    // Rank 0: Partition and scatter
+    // Broadcast full CSR from rank 0 to all
     if (rank == 0) {
-        // Partition for all ranks
-        for (int r = 0; r < world_size; r++) {
-            int *tmp_row_ptr, *tmp_col_idx;
-            double *tmp_values;
-            partition_csr_rows(&csr_mat, all_row_offsets[r], all_n_local[r],
-                               &tmp_row_ptr, &tmp_col_idx, &tmp_values, &all_local_nnz[r]);
-
-            if (r == 0) {
-                // Keep rank 0's partition
-                h_local_row_ptr = tmp_row_ptr;
-                h_local_col_idx = tmp_col_idx;
-                h_local_values = tmp_values;
-                local_nnz = all_local_nnz[0];
-            } else {
-                // Send to other ranks
-                MPI_Send(&all_local_nnz[r], 1, MPI_INT, r, 0, MPI_COMM_WORLD);
-                MPI_Send(tmp_row_ptr, all_n_local[r] + 1, MPI_INT, r, 1, MPI_COMM_WORLD);
-                MPI_Send(tmp_col_idx, all_local_nnz[r], MPI_INT, r, 2, MPI_COMM_WORLD);
-                MPI_Send(tmp_values, all_local_nnz[r], MPI_DOUBLE, r, 3, MPI_COMM_WORLD);
-
-                free(tmp_row_ptr);
-                free(tmp_col_idx);
-                free(tmp_values);
-            }
-        }
-    } else {
-        // Receive partition
-        MPI_Recv(&local_nnz, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        h_local_row_ptr = (int*)malloc((n_local + 1) * sizeof(int));
-        h_local_col_idx = (int*)malloc(local_nnz * sizeof(int));
-        h_local_values = (double*)malloc(local_nnz * sizeof(double));
-
-        MPI_Recv(h_local_row_ptr, n_local + 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(h_local_col_idx, local_nnz, MPI_INT, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(h_local_values, local_nnz, MPI_DOUBLE, 0, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        memcpy(h_full_row_ptr, csr_mat.row_ptr, (n + 1) * sizeof(int));
+        memcpy(h_full_col_idx, csr_mat.col_indices, full_nnz * sizeof(int));
+        memcpy(h_full_values, csr_mat.values, full_nnz * sizeof(double));
     }
 
-    free(all_n_local);
-    free(all_row_offsets);
-    free(all_local_nnz);
+    MPI_Bcast(h_full_row_ptr, n + 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(h_full_col_idx, full_nnz, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(h_full_values, full_nnz, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     if (config.verbose >= 2) {
         MPI_Barrier(MPI_COMM_WORLD);
-        printf("[Rank %d] CSR partition: %d rows, %d nnz\n", rank, n_local, local_nnz);
+        printf("[Rank %d] CSR replicated: %d rows, %d nnz (%.2f MB)\n",
+               rank, n, full_nnz,
+               ((n + 1) * sizeof(int) + full_nnz * (sizeof(int) + sizeof(double))) / 1e6);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    // Transfer local CSR to device
-    int *d_local_row_ptr, *d_local_col_idx;
-    double *d_local_values;
+    // Transfer full CSR to device
+    int *d_full_row_ptr, *d_full_col_idx;
+    double *d_full_values;
 
-    CUDA_CHECK(cudaMalloc(&d_local_row_ptr, (n_local + 1) * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&d_local_col_idx, local_nnz * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&d_local_values, local_nnz * sizeof(double)));
+    CUDA_CHECK(cudaMalloc(&d_full_row_ptr, (n + 1) * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_full_col_idx, full_nnz * sizeof(int)));
+    CUDA_CHECK(cudaMalloc(&d_full_values, full_nnz * sizeof(double)));
 
-    CUDA_CHECK(cudaMemcpy(d_local_row_ptr, h_local_row_ptr,
-                          (n_local + 1) * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_local_col_idx, h_local_col_idx,
-                          local_nnz * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_local_values, h_local_values,
-                          local_nnz * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_full_row_ptr, h_full_row_ptr,
+                          (n + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_full_col_idx, h_full_col_idx,
+                          full_nnz * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_full_values, h_full_values,
+                          full_nnz * sizeof(double), cudaMemcpyHostToDevice));
 
     // ========== Memory Allocation ==========
     // Full vectors on each GPU (required for stencil neighbors)
@@ -408,9 +351,9 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     int blocks_spmv = (n_local + threads_spmv - 1) / threads_spmv;
 
     // Compute initial residual: r = b - A*x
-    // SpMV local: Ap_local = A_local * x (using multi-GPU kernel)
+    // SpMV local: Ap_local = A_local * x (using multi-GPU kernel with full CSR)
     stencil5_csr_direct_mgpu_kernel<<<blocks_spmv, threads_spmv, 0, stream>>>(
-        d_local_row_ptr, d_local_col_idx, d_local_values,
+        d_full_row_ptr, d_full_col_idx, d_full_values,
         d_x, d_Ap_local,
         row_offset, n_local, mat->grid_size, 1.0
     );
@@ -511,9 +454,9 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     // CG iteration loop
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
-        // Ap = A * p (distributed SpMV with multi-GPU kernel)
+        // Ap = A * p (distributed SpMV with multi-GPU kernel using full CSR)
         stencil5_csr_direct_mgpu_kernel<<<blocks_spmv, threads_spmv, 0, stream>>>(
-            d_local_row_ptr, d_local_col_idx, d_local_values,
+            d_full_row_ptr, d_full_col_idx, d_full_values,
             d_p, d_Ap_local,
             row_offset, n_local, mat->grid_size, 1.0
         );
@@ -697,6 +640,13 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     cudaFree(d_Ap_local);
     cudaFree(d_b);
     cudaFree(d_work);
+    cudaFree(d_full_row_ptr);
+    cudaFree(d_full_col_idx);
+    cudaFree(d_full_values);
+
+    free(h_full_row_ptr);
+    free(h_full_col_idx);
+    free(h_full_values);
 
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
