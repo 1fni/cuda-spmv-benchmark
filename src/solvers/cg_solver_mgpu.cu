@@ -398,7 +398,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     CUDA_CHECK(cudaEventRecord(start, stream));
 
     int threads = 256;
-    int blocks_full = (n + threads - 1) / threads;
     int blocks_local = (n_local + threads - 1) / threads;  // For local BLAS1 operations
     int threads_spmv = 256;
     int blocks_spmv = (n_local + threads_spmv - 1) / threads_spmv;
@@ -443,12 +442,54 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
 
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    // r = b - Ap
-    axpby_kernel<<<blocks_full, threads, 0, stream>>>(1.0, d_b, -1.0, d_Ap, n);
-    copy_kernel<<<blocks_full, threads, 0, stream>>>(d_Ap, d_r, n);
+    // r_local = b_local - Ap_local (compute only local segment)
+    // Step 1: r = Ap
+    copy_kernel<<<blocks_local, threads, 0, stream>>>(d_Ap + row_offset, d_r + row_offset, n_local);
+    // Step 2: r = b - r = b - Ap
+    axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_b + row_offset, -1.0, d_r + row_offset, n_local);
 
-    // p = r
-    copy_kernel<<<blocks_full, threads, 0, stream>>>(d_r, d_p, n);
+    // AllGather r (synchronize across GPUs)
+    if (world_size > 1) {
+        CHECK_NCCL(ncclGroupStart());
+        for (int r = 0; r < world_size; r++) {
+            int r_base_rows = n / world_size;
+            int r_remainder = n % world_size;
+            int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
+            int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
+
+            if (r == rank) {
+                CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
+                                         r_n_local, ncclDouble, r, nccl_comm, stream));
+            } else {
+                CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
+                                         r_n_local, ncclDouble, r, nccl_comm, stream));
+            }
+        }
+        CHECK_NCCL(ncclGroupEnd());
+    }
+
+    // p_local = r_local
+    copy_kernel<<<blocks_local, threads, 0, stream>>>(d_r + row_offset, d_p + row_offset, n_local);
+
+    // AllGather p (synchronize across GPUs)
+    if (world_size > 1) {
+        CHECK_NCCL(ncclGroupStart());
+        for (int r = 0; r < world_size; r++) {
+            int r_base_rows = n / world_size;
+            int r_remainder = n % world_size;
+            int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
+            int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
+
+            if (r == rank) {
+                CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
+                                         r_n_local, ncclDouble, r, nccl_comm, stream));
+            } else {
+                CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
+                                         r_n_local, ncclDouble, r, nccl_comm, stream));
+            }
+        }
+        CHECK_NCCL(ncclGroupEnd());
+    }
 
     // rs_old = r^T * r (global dot product)
     double rs_local = compute_local_dot(d_r + row_offset, d_r + row_offset, n_local, d_work, stream);
