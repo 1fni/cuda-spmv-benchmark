@@ -397,7 +397,8 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         // NCCL AllGather: gather local segments into full vector
-        CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap + row_offset, n_local,
+        // sendbuff = d_Ap_local, recvbuff = d_Ap (début du buffer complet)
+        CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap, n_local,
                                  ncclDouble, nccl_comm, stream));
 
         if (config.enable_detailed_timers) {
@@ -500,7 +501,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap + row_offset, n_local,
+            CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap, n_local,
                                      ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
@@ -558,7 +559,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclAllGather(d_x + row_offset, d_x + row_offset, n_local,
+            CHECK_NCCL(ncclAllGather(d_x + row_offset, d_x, n_local,
                                      ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
@@ -589,7 +590,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclAllGather(d_r + row_offset, d_r + row_offset, n_local,
+            CHECK_NCCL(ncclAllGather(d_r + row_offset, d_r, n_local,
                                      ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
@@ -661,7 +662,7 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclAllGather(d_p + row_offset, d_p + row_offset, n_local,
+            CHECK_NCCL(ncclAllGather(d_p + row_offset, d_p, n_local,
                                      ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
