@@ -344,10 +344,25 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         printf("\nStarting CG iterations...\n");
     }
 
+    // Initialize timing stats
+    stats->time_spmv_ms = 0.0;
+    stats->time_blas1_ms = 0.0;
+    stats->time_reductions_ms = 0.0;
+    stats->time_allreduce_ms = 0.0;
+    stats->time_allgather_ms = 0.0;
+
+    // Global timing
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
     CUDA_CHECK(cudaEventRecord(start, stream));
+
+    // Detailed timing events (conditional)
+    cudaEvent_t timer_start, timer_stop;
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventCreate(&timer_start));
+        CUDA_CHECK(cudaEventCreate(&timer_stop));
+    }
 
     int threads = 256;
     int blocks_local = (n_local + threads - 1) / threads;  // For local BLAS1 operations
@@ -356,6 +371,10 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
 
     // Compute initial residual: r = b - A*x
     // SpMV local: Ap_local = A_local * x (using multi-GPU kernel with full CSR)
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_start, stream));
+    }
+
     stencil5_csr_direct_mgpu_kernel<<<blocks_spmv, threads_spmv, 0, stream>>>(
         d_full_row_ptr, d_full_col_idx, d_full_values,
         d_x, d_Ap_local,
@@ -363,8 +382,20 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     );
     CUDA_CHECK(cudaGetLastError());
 
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        stats->time_spmv_ms += elapsed_ms;
+    }
+
     // AllGather Ap segments (NCCL GPU-direct)
     if (world_size > 1) {
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
+
         // Use NCCL Broadcast pattern to implement AllGather
         CHECK_NCCL(ncclGroupStart());
 
@@ -387,6 +418,14 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         CHECK_NCCL(ncclGroupEnd());
+
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_allgather_ms += elapsed_ms;
+        }
     } else {
         // Single GPU: just copy local to full
         CUDA_CHECK(cudaMemcpy(d_Ap, d_Ap_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
@@ -455,6 +494,10 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
         // Ap = A * p (distributed SpMV with multi-GPU kernel using full CSR)
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
+
         stencil5_csr_direct_mgpu_kernel<<<blocks_spmv, threads_spmv, 0, stream>>>(
             d_full_row_ptr, d_full_col_idx, d_full_values,
             d_p, d_Ap_local,
@@ -462,8 +505,20 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         );
         CUDA_CHECK(cudaGetLastError());
 
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_spmv_ms += elapsed_ms;
+        }
+
         // AllGather Ap segments (NCCL GPU-direct)
         if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+
             CHECK_NCCL(ncclGroupStart());
 
             for (int r = 0; r < world_size; r++) {
@@ -482,6 +537,14 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             }
 
             CHECK_NCCL(ncclGroupEnd());
+
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allgather_ms += elapsed_ms;
+            }
         } else {
             CUDA_CHECK(cudaMemcpy(d_Ap, d_Ap_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
         }
@@ -489,7 +552,18 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         // alpha = rs_old / (p^T * Ap)
         double pAp_local = compute_local_dot(d_p + row_offset, d_Ap + row_offset, n_local, d_work, stream);
         double pAp;
+
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
         MPI_Allreduce(&pAp_local, &pAp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_allreduce_ms += elapsed_ms;
+        }
 
         if (fabs(pAp) < 1e-20) {
             if (rank == 0) {
@@ -501,10 +575,24 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         double alpha = rs_old / pAp;
 
         // x_local = x_local + alpha * p_local (update only local segment)
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
         axpy_kernel<<<blocks_local, threads, 0, stream>>>(alpha, d_p + row_offset, d_x + row_offset, n_local);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_blas1_ms += elapsed_ms;
+        }
 
         // AllGather x (each rank broadcasts its segment)
         if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+
             CHECK_NCCL(ncclGroupStart());
             for (int r = 0; r < world_size; r++) {
                 int r_base_rows = n / world_size;
@@ -521,13 +609,35 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allgather_ms += elapsed_ms;
+            }
         }
 
         // r_local = r_local - alpha * Ap_local (update only local segment)
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
         axpy_kernel<<<blocks_local, threads, 0, stream>>>(-alpha, d_Ap + row_offset, d_r + row_offset, n_local);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_blas1_ms += elapsed_ms;
+        }
 
         // AllGather r (each rank broadcasts its segment)
         if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+
             CHECK_NCCL(ncclGroupStart());
             for (int r = 0; r < world_size; r++) {
                 int r_base_rows = n / world_size;
@@ -544,12 +654,31 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allgather_ms += elapsed_ms;
+            }
         }
 
         // rs_new = r^T * r
         double rs_local_new = compute_local_dot(d_r + row_offset, d_r + row_offset, n_local, d_work, stream);
         double rs_new;
+
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
         MPI_Allreduce(&rs_local_new, &rs_new, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_allreduce_ms += elapsed_ms;
+        }
 
         double residual_norm = sqrt(rs_new);
         double rel_residual = residual_norm / b_norm;
@@ -577,10 +706,24 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         double beta = rs_new / rs_old;
 
         // p_local = r_local + beta * p_local (update only local segment)
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
         axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r + row_offset, beta, d_p + row_offset, n_local);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_blas1_ms += elapsed_ms;
+        }
 
         // AllGather p (each rank broadcasts its segment)
         if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+
             CHECK_NCCL(ncclGroupStart());
             for (int r = 0; r < world_size; r++) {
                 int r_base_rows = n / world_size;
@@ -597,6 +740,14 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 }
             }
             CHECK_NCCL(ncclGroupEnd());
+
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allgather_ms += elapsed_ms;
+            }
         }
 
         rs_old = rs_new;
@@ -645,6 +796,10 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
 
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
+    if (config.enable_detailed_timers) {
+        cudaEventDestroy(timer_start);
+        cudaEventDestroy(timer_stop);
+    }
     cudaStreamDestroy(stream);
     if (nccl_comm != NULL) {
         ncclCommDestroy(nccl_comm);
