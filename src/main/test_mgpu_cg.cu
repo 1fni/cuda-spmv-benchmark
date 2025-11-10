@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     config.max_iters = 100;
     config.tolerance = 1e-6;
     config.verbose = 2;
-    config.enable_detailed_timers = 0;
+    config.enable_detailed_timers = 1;  // Enable detailed timers by default
 
     // Solver statistics
     CGStatsMultiGPU stats;
@@ -111,6 +111,22 @@ int main(int argc, char** argv) {
         printf("\nSolution norm: %.15e\n", stats.residual_norm);
         printf("Converged: %s\n", stats.converged ? "YES" : "NO");
         printf("Iterations: %d\n", stats.iterations);
+
+        // Timing breakdown
+        if (config.enable_detailed_timers) {
+            printf("\n========================================\n");
+            printf("Timing Breakdown\n");
+            printf("========================================\n");
+            printf("Total time:     %.2f ms\n", stats.time_total_ms);
+            printf("  SpMV:         %.2f ms (%.1f%%)\n",
+                   stats.time_spmv_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms);
+            printf("  BLAS1:        %.2f ms (%.1f%%)\n",
+                   stats.time_blas1_ms, 100.0 * stats.time_blas1_ms / stats.time_total_ms);
+            printf("  AllReduce:    %.2f ms (%.1f%%)\n",
+                   stats.time_allreduce_ms, 100.0 * stats.time_allreduce_ms / stats.time_total_ms);
+            printf("  AllGather:    %.2f ms (%.1f%%)\n",
+                   stats.time_allgather_ms, 100.0 * stats.time_allgather_ms / stats.time_total_ms);
+        }
         printf("========================================\n");
     }
 
