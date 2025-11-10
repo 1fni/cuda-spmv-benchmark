@@ -396,28 +396,9 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
 
-        // Use NCCL Broadcast pattern to implement AllGather
-        CHECK_NCCL(ncclGroupStart());
-
-        // Each rank broadcasts its local segment
-        for (int r = 0; r < world_size; r++) {
-            int r_base_rows = n / world_size;
-            int r_remainder = n % world_size;
-            int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
-            int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
-
-            if (r == rank) {
-                // Broadcast my segment from d_Ap_local to d_Ap[r_offset]
-                CHECK_NCCL(ncclBroadcast(d_Ap_local, d_Ap + r_offset,
-                                         r_n_local, ncclDouble, r, nccl_comm, stream));
-            } else {
-                // Receive rank r's segment into d_Ap[r_offset]
-                CHECK_NCCL(ncclBroadcast(d_Ap + r_offset, d_Ap + r_offset,
-                                         r_n_local, ncclDouble, r, nccl_comm, stream));
-            }
-        }
-
-        CHECK_NCCL(ncclGroupEnd());
+        // NCCL AllGather: gather local segments into full vector
+        CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap + row_offset, n_local,
+                                 ncclDouble, nccl_comm, stream));
 
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -519,24 +500,8 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclGroupStart());
-
-            for (int r = 0; r < world_size; r++) {
-                int r_base_rows = n / world_size;
-                int r_remainder = n % world_size;
-                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
-                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
-
-                if (r == rank) {
-                    CHECK_NCCL(ncclBroadcast(d_Ap_local, d_Ap + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                } else {
-                    CHECK_NCCL(ncclBroadcast(d_Ap + r_offset, d_Ap + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                }
-            }
-
-            CHECK_NCCL(ncclGroupEnd());
+            CHECK_NCCL(ncclAllGather(d_Ap_local, d_Ap + row_offset, n_local,
+                                     ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -593,22 +558,8 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclGroupStart());
-            for (int r = 0; r < world_size; r++) {
-                int r_base_rows = n / world_size;
-                int r_remainder = n % world_size;
-                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
-                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
-
-                if (r == rank) {
-                    CHECK_NCCL(ncclBroadcast(d_x + r_offset, d_x + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                } else {
-                    CHECK_NCCL(ncclBroadcast(d_x + r_offset, d_x + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                }
-            }
-            CHECK_NCCL(ncclGroupEnd());
+            CHECK_NCCL(ncclAllGather(d_x + row_offset, d_x + row_offset, n_local,
+                                     ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -638,22 +589,8 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclGroupStart());
-            for (int r = 0; r < world_size; r++) {
-                int r_base_rows = n / world_size;
-                int r_remainder = n % world_size;
-                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
-                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
-
-                if (r == rank) {
-                    CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                } else {
-                    CHECK_NCCL(ncclBroadcast(d_r + r_offset, d_r + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                }
-            }
-            CHECK_NCCL(ncclGroupEnd());
+            CHECK_NCCL(ncclAllGather(d_r + row_offset, d_r + row_offset, n_local,
+                                     ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -724,22 +661,8 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
-            CHECK_NCCL(ncclGroupStart());
-            for (int r = 0; r < world_size; r++) {
-                int r_base_rows = n / world_size;
-                int r_remainder = n % world_size;
-                int r_n_local = r_base_rows + (r < r_remainder ? 1 : 0);
-                int r_offset = r * r_base_rows + (r < r_remainder ? r : r_remainder);
-
-                if (r == rank) {
-                    CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                } else {
-                    CHECK_NCCL(ncclBroadcast(d_p + r_offset, d_p + r_offset,
-                                             r_n_local, ncclDouble, r, nccl_comm, stream));
-                }
-            }
-            CHECK_NCCL(ncclGroupEnd());
+            CHECK_NCCL(ncclAllGather(d_p + row_offset, d_p + row_offset, n_local,
+                                     ncclDouble, nccl_comm, stream));
 
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_stop, stream));
