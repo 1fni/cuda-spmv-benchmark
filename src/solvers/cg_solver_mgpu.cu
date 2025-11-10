@@ -553,24 +553,6 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             stats->time_blas1_ms += elapsed_ms;
         }
 
-        // AllGather x (each rank broadcasts its segment)
-        if (world_size > 1) {
-            if (config.enable_detailed_timers) {
-                CUDA_CHECK(cudaEventRecord(timer_start, stream));
-            }
-
-            CHECK_NCCL(ncclAllGather(d_x + row_offset, d_x, n_local,
-                                     ncclDouble, nccl_comm, stream));
-
-            if (config.enable_detailed_timers) {
-                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-                CUDA_CHECK(cudaEventSynchronize(timer_stop));
-                float elapsed_ms;
-                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-                stats->time_allgather_ms += elapsed_ms;
-            }
-        }
-
         // r_local = r_local - alpha * Ap_local (update only local segment)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
@@ -584,14 +566,18 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
             stats->time_blas1_ms += elapsed_ms;
         }
 
-        // AllGather r (each rank broadcasts its segment)
+        // Batched AllGather: x and r in single NCCL group (reduces launch overhead)
         if (world_size > 1) {
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_start, stream));
             }
 
+            CHECK_NCCL(ncclGroupStart());
+            CHECK_NCCL(ncclAllGather(d_x + row_offset, d_x, n_local,
+                                     ncclDouble, nccl_comm, stream));
             CHECK_NCCL(ncclAllGather(d_r + row_offset, d_r, n_local,
                                      ncclDouble, nccl_comm, stream));
+            CHECK_NCCL(ncclGroupEnd());
 
             if (config.enable_detailed_timers) {
                 CUDA_CHECK(cudaEventRecord(timer_stop, stream));
