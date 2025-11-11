@@ -476,16 +476,20 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     }
 
     double rs_old;
-    if (config.enable_detailed_timers) {
-        CUDA_CHECK(cudaEventRecord(timer_start, stream));
-    }
-    MPI_Allreduce(&rs_local, &rs_old, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    if (config.enable_detailed_timers) {
-        CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-        CUDA_CHECK(cudaEventSynchronize(timer_stop));
-        float elapsed_ms;
-        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-        stats->time_allreduce_ms += elapsed_ms;
+    if (world_size > 1) {
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        }
+        MPI_Allreduce(&rs_local, &rs_old, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        if (config.enable_detailed_timers) {
+            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+            CUDA_CHECK(cudaEventSynchronize(timer_stop));
+            float elapsed_ms;
+            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+            stats->time_allreduce_ms += elapsed_ms;
+        }
+    } else {
+        rs_old = rs_local;  // Single GPU: no reduction needed
     }
 
     double b_norm = sqrt(rs_old);  // Initial residual is b norm (since x0 = 0)
@@ -550,16 +554,20 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         double pAp;
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_start, stream));
-        }
-        MPI_Allreduce(&pAp_local, &pAp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-            CUDA_CHECK(cudaEventSynchronize(timer_stop));
-            float elapsed_ms;
-            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-            stats->time_allreduce_ms += elapsed_ms;
+        if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+            MPI_Allreduce(&pAp_local, &pAp, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allreduce_ms += elapsed_ms;
+            }
+        } else {
+            pAp = pAp_local;  // Single GPU: no reduction needed
         }
 
         if (fabs(pAp) < 1e-20) {
@@ -633,16 +641,20 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         }
 
         double rs_new;
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_start, stream));
-        }
-        MPI_Allreduce(&rs_local_new, &rs_new, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-            CUDA_CHECK(cudaEventSynchronize(timer_stop));
-            float elapsed_ms;
-            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-            stats->time_allreduce_ms += elapsed_ms;
+        if (world_size > 1) {
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_start, stream));
+            }
+            MPI_Allreduce(&rs_local_new, &rs_new, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            if (config.enable_detailed_timers) {
+                CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+                CUDA_CHECK(cudaEventSynchronize(timer_stop));
+                float elapsed_ms;
+                CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+                stats->time_allreduce_ms += elapsed_ms;
+            }
+        } else {
+            rs_new = rs_local_new;  // Single GPU: no reduction needed
         }
 
         double residual_norm = sqrt(rs_new);
