@@ -113,6 +113,30 @@ $(BIN_MGPU): $(OBJ_MGPU_MAIN) $(OBJ_MGPU_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) 
 # Convenience target
 test_mgpu: $(BIN_MGPU)
 
+# Multi-GPU partitioned test
+BIN_MGPU_PART := $(BIN_DIR)/test_mgpu_cg_partitioned
+
+# Partitioned MPI objects
+OBJ_MGPU_PART_MAIN := $(OBJ_DIR)/mgpu/test_mgpu_cg_partitioned.o
+OBJ_MGPU_PART_SOLVER := $(OBJ_DIR)/mgpu/cg_solver_mgpu_partitioned.o
+
+# Compile partitioned sources
+$(OBJ_DIR)/mgpu/test_mgpu_cg_partitioned.o: $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) -I/usr/lib/x86_64-linux-gnu/openmpi/include -c $< -o $@
+
+$(OBJ_DIR)/mgpu/cg_solver_mgpu_partitioned.o: $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) -I/usr/lib/x86_64-linux-gnu/openmpi/include -c $< -o $@
+
+# Link partitioned solver
+$(BIN_MGPU_PART): $(OBJ_MGPU_PART_MAIN) $(OBJ_MGPU_PART_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL)
+	@mkdir -p $(BIN_DIR)
+	mpic++ $^ -o $@ $(LDFLAGS) -lnccl -L/usr/local/cuda/lib64 -lcudart
+
+# Convenience target
+test_mgpu_part: $(BIN_MGPU_PART)
+
 # Clean
 clean:
 	rm -rf build bin results
