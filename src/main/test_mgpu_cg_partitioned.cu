@@ -26,8 +26,10 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         if (rank == 0) {
-            printf("Usage: mpirun -np <N> %s <matrix.mtx>\n", argv[0]);
+            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--timers]\n", argv[0]);
             printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx\n", argv[0]);
+            printf("Options:\n");
+            printf("  --timers  Enable detailed timing breakdown (adds GPU sync overhead)\n");
         }
         MPI_Finalize();
         return 1;
@@ -66,7 +68,17 @@ int main(int argc, char** argv) {
     config.max_iters = 100;
     config.tolerance = 1e-6;
     config.verbose = 2;
-    config.enable_detailed_timers = 1;
+
+    // Detailed timers: disabled by default (no sync overhead), enable with --timers flag
+    config.enable_detailed_timers = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--timers") == 0) {
+            config.enable_detailed_timers = 1;
+            if (rank == 0) {
+                printf("Detailed timers enabled (adds sync overhead)\n");
+            }
+        }
+    }
 
     // Solver statistics
     CGStatsMultiGPU stats;
