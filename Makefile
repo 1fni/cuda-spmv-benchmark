@@ -26,8 +26,8 @@ LDFLAGS := -lcusparse -lcublas
 CU_SRCS := $(shell find $(SRC_DIR) -name '*.cu')
 CU_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SRCS))
 
-# SpMV : exclut generate_matrix, cg_test, test_mgpu_cg, cg_solver_mgpu
-CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_test.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu, $(CU_SRCS))
+# SpMV : exclut generate_matrix, cg_test, test_mgpu_cg*, cg_solver_mgpu*
+CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_test.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu, $(CU_SRCS))
 CU_SPMV_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SPMV_SRCS))
 
 # Générateur : juste generate_matrix + io
@@ -39,8 +39,8 @@ BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
 BIN_CG   := $(BIN_DIR)/cg_test
 
-# CG test: exclut generate_matrix, spmv_bench main, test_mgpu_cg, cg_solver_mgpu
-CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu, $(CU_SRCS))
+# CG test: exclut generate_matrix, spmv_bench main, test_mgpu_cg*, cg_solver_mgpu*
+CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu, $(CU_SRCS))
 CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY
