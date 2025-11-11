@@ -67,31 +67,8 @@ __global__ void csr_spmv_kernel(
 }
 
 /**
- * @brief Calculate CSR offset for interior stencil point
- * @details Exploits regular 5-point stencil structure
- */
-__device__ inline int calculate_interior_csr_offset(int row, int grid_size) {
-    int i = row / grid_size;  // Grid row
-    int j = row % grid_size;  // Grid column
-
-    // Row 0: corner + edges + corner
-    int row0_nnz = 3 + (grid_size - 2) * 4 + 3;
-
-    // Interior rows [1..(i-1)]: edge + interiors + edge
-    int interior_row_nnz = 4 + (grid_size - 2) * 5 + 4;
-
-    // Offset before row i
-    int offset = row0_nnz + (i - 1) * interior_row_nnz;
-
-    // Within row i: left edge (4) + interior points before j
-    offset += 4 + (j - 1) * 5;
-
-    return offset;
-}
-
-/**
  * @brief Optimized stencil SpMV kernel for partitioned CSR
- * @details Partitioned version: maps local_row → global_row for geometry
+ * @details Uses direct column indices (no indirection) for interior stencil points
  *          Accesses global x vector, writes to local y vector
  */
 __global__ void stencil5_csr_direct_partitioned_kernel(
@@ -112,35 +89,34 @@ __global__ void stencil5_csr_direct_partitioned_kernel(
     int i = row / grid_size;
     int j = row % grid_size;
 
+    // Get CSR row range from row_ptr
+    int row_start = row_ptr[local_row];
+    int row_end = row_ptr[local_row + 1];
+
     double sum = 0.0;
 
-    // Interior: direct offset and column calculation (zero indirection)
-    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
-        // Calculate CSR offset from global row geometry
-        int csr_offset = calculate_interior_csr_offset(row, grid_size);
-
+    // Interior points: direct column calculation (no col_idx lookup)
+    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1 && (row_end - row_start) == 5) {
         // Column indices known from stencil structure (global indices)
+        int idx_north = row - grid_size;
         int idx_west = row - 1;
         int idx_center = row;
         int idx_east = row + 1;
-        int idx_north = row - grid_size;
         int idx_south = row + grid_size;
 
         // Optimized memory access: W-C-E (stride 1), then N-S (stride grid_size)
-        sum = values[csr_offset + 1] * x[idx_west]      // West
-            + values[csr_offset + 2] * x[idx_center]    // Center
-            + values[csr_offset + 3] * x[idx_east]      // East
-            + values[csr_offset + 0] * x[idx_north]     // North
-            + values[csr_offset + 4] * x[idx_south];    // South
+        // CSR sorted order: [North, West, Center, East, South]
+        sum = values[row_start + 1] * x[idx_west]      // West
+            + values[row_start + 2] * x[idx_center]    // Center
+            + values[row_start + 3] * x[idx_east]      // East
+            + values[row_start + 0] * x[idx_north]     // North
+            + values[row_start + 4] * x[idx_south];    // South
     }
     // Boundary/corner: standard CSR traversal
     else {
-        int row_start = row_ptr[local_row];
-        int row_end = row_ptr[local_row + 1];
-
         #pragma unroll 8
-        for (int j = row_start; j < row_end; j++) {
-            sum += values[j] * x[col_idx[j]];
+        for (int k = row_start; k < row_end; k++) {
+            sum += values[k] * x[col_idx[k]];
         }
     }
 
