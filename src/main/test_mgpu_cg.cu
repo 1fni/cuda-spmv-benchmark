@@ -122,6 +122,8 @@ int main(int argc, char** argv) {
                    stats.time_spmv_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms);
             printf("  BLAS1:        %.2f ms (%.1f%%)\n",
                    stats.time_blas1_ms, 100.0 * stats.time_blas1_ms / stats.time_total_ms);
+            printf("  Reductions:   %.2f ms (%.1f%%)\n",
+                   stats.time_reductions_ms, 100.0 * stats.time_reductions_ms / stats.time_total_ms);
             printf("  AllReduce:    %.2f ms (%.1f%%)\n",
                    stats.time_allreduce_ms, 100.0 * stats.time_allreduce_ms / stats.time_total_ms);
             printf("  AllGather:    %.2f ms (%.1f%%)\n",
