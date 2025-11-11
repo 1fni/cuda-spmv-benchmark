@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
     config.max_iters = 100;
     config.tolerance = 1e-6;
     config.verbose = 2;
-    config.enable_detailed_timers = 0;
+    config.enable_detailed_timers = 1;
 
     // Solver statistics
     CGStatsMultiGPU stats;
