@@ -35,52 +35,28 @@ int main(int argc, char** argv) {
 
     const char* matrix_file = argv[1];
 
-    // Rank 0 loads matrix and broadcasts dimensions
+    // Each rank loads matrix independently (avoids MPI_Bcast size limit)
     MatrixData mat;
-    int matrix_rows, matrix_cols, matrix_nnz, grid_size;
 
     if (rank == 0) {
         printf("Loading matrix: %s\n", matrix_file);
-        if (load_matrix_market(matrix_file, &mat) != 0) {
-            fprintf(stderr, "Error loading matrix: %s\n", matrix_file);
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
+    }
+
+    if (load_matrix_market(matrix_file, &mat) != 0) {
+        fprintf(stderr, "[Rank %d] Error loading matrix: %s\n", rank, matrix_file);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    if (rank == 0) {
         printf("Matrix loaded: %d × %d, %d nonzeros\n", mat.rows, mat.cols, mat.nnz);
-
-        matrix_rows = mat.rows;
-        matrix_cols = mat.cols;
-        matrix_nnz = mat.nnz;
-        grid_size = mat.grid_size;
-
         printf("\nCalling partitioned multi-GPU CG solver...\n");
     }
 
-    // Broadcast matrix dimensions to all ranks
-    MPI_Bcast(&matrix_rows, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&matrix_cols, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&matrix_nnz, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Non-zero ranks initialize mat structure
-    if (rank != 0) {
-        mat.rows = matrix_rows;
-        mat.cols = matrix_cols;
-        mat.nnz = matrix_nnz;
-        mat.grid_size = grid_size;
-        mat.entries = NULL;
-    }
-
-    // Broadcast matrix entries
-    if (rank != 0) {
-        mat.entries = (Entry*)malloc(matrix_nnz * sizeof(Entry));
-    }
-    MPI_Bcast(mat.entries, matrix_nnz * sizeof(Entry), MPI_BYTE, 0, MPI_COMM_WORLD);
-
     // Create deterministic RHS: b = ones (all ranks)
-    double* b = (double*)malloc(matrix_rows * sizeof(double));
-    double* x = (double*)calloc(matrix_rows, sizeof(double));
+    double* b = (double*)malloc(mat.rows * sizeof(double));
+    double* x = (double*)calloc(mat.rows, sizeof(double));
 
-    for (int i = 0; i < matrix_rows; i++) {
+    for (int i = 0; i < mat.rows; i++) {
         b[i] = 1.0;
         x[i] = 0.0;
     }
@@ -103,11 +79,11 @@ int main(int argc, char** argv) {
         printf("\n========================================\n");
         printf("CG Solution (first 10 values):\n");
         printf("========================================\n");
-        for (int i = 0; i < 10 && i < matrix_rows; i++) {
+        for (int i = 0; i < 10 && i < mat.rows; i++) {
             printf("x[%d] = %.15e\n", i, x[i]);
         }
         printf("...\n");
-        printf("x[%d] = %.15e (last)\n", matrix_rows - 1, x[matrix_rows - 1]);
+        printf("x[%d] = %.15e (last)\n", mat.rows - 1, x[mat.rows - 1]);
 
         printf("\nSolution norm: %.15e\n", stats.residual_norm);
         printf("Converged: %s\n", stats.converged ? "YES" : "NO");
