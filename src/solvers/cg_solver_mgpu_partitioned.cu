@@ -272,6 +272,10 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
  * @brief Exchange halo zones with neighbors using P2P NCCL communication
  * @details Each rank sends its boundary row to neighbors and receives theirs
  *
+ * Uses NCCL groups to enable overlap of all Send/Recv operations:
+ * - All communications are launched in parallel within a single NCCL group
+ * - Eliminates serialization and enables PCIe/NVLink overlap
+ *
  * For 5-point stencil with row-band partitioning:
  * - GPU0: sends last row to GPU1, receives GPU1's first row
  * - GPU1: sends first row to GPU0, receives GPU0's last row
@@ -289,29 +293,32 @@ static void exchange_halo_p2p(
     ncclComm_t nccl_comm,
     cudaStream_t stream
 ) {
-    // P2P communication pattern for row-band decomposition:
-    // - Even ranks send down, odd ranks send up (deadlock avoidance)
-    // - Then reverse direction
+    // Use NCCL group to enable overlapping all Send/Recv operations
+    // This eliminates serialization and maximizes PCIe/NVLink bandwidth utilization
+    CHECK_NCCL(ncclGroupStart());
 
-    // Phase 1: Send to next rank, receive from previous rank
-    if (rank < world_size - 1) {
-        // Send last row to next rank
-        CHECK_NCCL(ncclSend(d_local_send_next, halo_size, ncclDouble, rank + 1, nccl_comm, stream));
-    }
-    if (rank > 0) {
-        // Receive from previous rank
-        CHECK_NCCL(ncclRecv(d_halo_recv_prev, halo_size, ncclDouble, rank - 1, nccl_comm, stream));
-    }
-
-    // Phase 2: Send to previous rank, receive from next rank
+    // Launch all Send operations
     if (rank > 0) {
         // Send first row to previous rank
         CHECK_NCCL(ncclSend(d_local_send_prev, halo_size, ncclDouble, rank - 1, nccl_comm, stream));
     }
     if (rank < world_size - 1) {
+        // Send last row to next rank
+        CHECK_NCCL(ncclSend(d_local_send_next, halo_size, ncclDouble, rank + 1, nccl_comm, stream));
+    }
+
+    // Launch all Recv operations
+    if (rank > 0) {
+        // Receive from previous rank
+        CHECK_NCCL(ncclRecv(d_halo_recv_prev, halo_size, ncclDouble, rank - 1, nccl_comm, stream));
+    }
+    if (rank < world_size - 1) {
         // Receive from next rank
         CHECK_NCCL(ncclRecv(d_halo_recv_next, halo_size, ncclDouble, rank + 1, nccl_comm, stream));
     }
+
+    // End group - all operations execute in parallel
+    CHECK_NCCL(ncclGroupEnd());
 }
 
 /**
