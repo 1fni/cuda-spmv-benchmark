@@ -67,6 +67,87 @@ __global__ void csr_spmv_kernel(
 }
 
 /**
+ * @brief Calculate CSR offset for interior stencil point
+ * @details Exploits regular 5-point stencil structure
+ */
+__device__ inline int calculate_interior_csr_offset(int row, int grid_size) {
+    int i = row / grid_size;  // Grid row
+    int j = row % grid_size;  // Grid column
+
+    // Row 0: corner + edges + corner
+    int row0_nnz = 3 + (grid_size - 2) * 4 + 3;
+
+    // Interior rows [1..(i-1)]: edge + interiors + edge
+    int interior_row_nnz = 4 + (grid_size - 2) * 5 + 4;
+
+    // Offset before row i
+    int offset = row0_nnz + (i - 1) * interior_row_nnz;
+
+    // Within row i: left edge (4) + interior points before j
+    offset += 4 + (j - 1) * 5;
+
+    return offset;
+}
+
+/**
+ * @brief Optimized stencil SpMV kernel for partitioned CSR
+ * @details Partitioned version: maps local_row → global_row for geometry
+ *          Accesses global x vector, writes to local y vector
+ */
+__global__ void stencil5_csr_direct_partitioned_kernel(
+    const int* __restrict__ row_ptr,
+    const int* __restrict__ col_idx,
+    const double* __restrict__ values,
+    const double* __restrict__ x,        // Global vector (full N)
+    double* __restrict__ y,              // Local output (n_local)
+    int n_local,                         // Number of local rows
+    int row_offset,                      // Global row offset
+    int N,                               // Global size
+    int grid_size
+) {
+    int local_row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (local_row >= n_local) return;
+
+    int row = row_offset + local_row;  // Global row for geometry
+    int i = row / grid_size;
+    int j = row % grid_size;
+
+    double sum = 0.0;
+
+    // Interior: direct offset and column calculation (zero indirection)
+    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1) {
+        // Calculate CSR offset from global row geometry
+        int csr_offset = calculate_interior_csr_offset(row, grid_size);
+
+        // Column indices known from stencil structure (global indices)
+        int idx_west = row - 1;
+        int idx_center = row;
+        int idx_east = row + 1;
+        int idx_north = row - grid_size;
+        int idx_south = row + grid_size;
+
+        // Optimized memory access: W-C-E (stride 1), then N-S (stride grid_size)
+        sum = values[csr_offset + 1] * x[idx_west]      // West
+            + values[csr_offset + 2] * x[idx_center]    // Center
+            + values[csr_offset + 3] * x[idx_east]      // East
+            + values[csr_offset + 0] * x[idx_north]     // North
+            + values[csr_offset + 4] * x[idx_south];    // South
+    }
+    // Boundary/corner: standard CSR traversal
+    else {
+        int row_start = row_ptr[local_row];
+        int row_end = row_ptr[local_row + 1];
+
+        #pragma unroll 8
+        for (int j = row_start; j < row_end; j++) {
+            sum += values[j] * x[col_idx[j]];
+        }
+    }
+
+    y[local_row] = sum;  // Write to local output
+}
+
+/**
  * @brief AXPY kernel: y = alpha * x + y
  */
 __global__ void axpy_kernel(double alpha, const double* x, double* y, int n) {
@@ -255,9 +336,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     int threads = 256;
     int blocks_local = (n_local + threads - 1) / threads;
 
-    // Initial SpMV: Ap = A*x (using x0)
-    csr_spmv_kernel<<<blocks_local, threads, 0, stream>>>(
-        d_row_ptr, d_col_idx, d_values, d_x, d_Ap, n_local);
+    // Initial SpMV: Ap = A*x (using x0) - optimized stencil kernel
+    stencil5_csr_direct_partitioned_kernel<<<blocks_local, threads, 0, stream>>>(
+        d_row_ptr, d_col_idx, d_values, d_x, d_Ap, n_local, row_offset, n, grid_size);
 
     // r = b - Ap
     axpy_kernel<<<blocks_local, threads, 0, stream>>>(-1.0, d_Ap, d_b, n_local);
@@ -283,12 +364,12 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     // CG iteration loop
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
-        // Ap = A * p (local SpMV)
+        // Ap = A * p (local SpMV) - optimized stencil kernel
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        csr_spmv_kernel<<<blocks_local, threads, 0, stream>>>(
-            d_row_ptr, d_col_idx, d_values, d_p, d_Ap, n_local);
+        stencil5_csr_direct_partitioned_kernel<<<blocks_local, threads, 0, stream>>>(
+            d_row_ptr, d_col_idx, d_values, d_p, d_Ap, n_local, row_offset, n, grid_size);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
