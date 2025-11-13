@@ -25,25 +25,12 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
-#include <nccl.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
 #include "spmv.h"
 #include "io.h"
 #include "solvers/cg_solver_mgpu_partitioned.h"
-
-// NCCL error checking macro
-#ifndef CHECK_NCCL
-#define CHECK_NCCL(cmd) do {                          \
-  ncclResult_t res = cmd;                             \
-  if (res != ncclSuccess) {                           \
-    fprintf(stderr, "NCCL error %s:%d '%s'\n",        \
-        __FILE__,__LINE__,ncclGetErrorString(res));   \
-    exit(EXIT_FAILURE);                               \
-  }                                                   \
-} while(0)
-#endif
 
 /**
  * @brief Simple CSR SpMV kernel (non-optimized, standard)
@@ -269,12 +256,15 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
 }
 
 /**
- * @brief Exchange halo zones with neighbors using P2P NCCL communication
+ * @brief Exchange halo zones with neighbors using MPI with explicit staging
  * @details Each rank sends its boundary row to neighbors and receives theirs
  *
- * Uses NCCL groups to enable overlap of all Send/Recv operations:
- * - All communications are launched in parallel within a single NCCL group
- * - Eliminates serialization and enables PCIe/NVLink overlap
+ * Implementation: Explicit staging (D2H, MPI, H2D) to avoid CUDA-aware MPI requirement:
+ * 1. cudaMemcpyAsync D2H (device send → host send buffers)
+ * 2. MPI_Isend/Irecv (non-blocking host communication)
+ * 3. MPI_Waitall (ensure MPI operations complete)
+ * 4. cudaMemcpyAsync H2D (host recv → device halo buffers)
+ * 5. cudaStreamSynchronize (ensure data ready before kernel launch)
  *
  * For 5-point stencil with row-band partitioning:
  * - GPU0: sends last row to GPU1, receives GPU1's first row
@@ -282,43 +272,67 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
  *
  * Total communication: 2 × grid_size × 8 bytes = 160 KB (vs 800 MB AllGather)
  */
-static void exchange_halo_p2p(
+static void exchange_halo_mpi(
     const double* d_local_send_prev,    // Data to send to prev rank (or NULL)
     const double* d_local_send_next,    // Data to send to next rank (or NULL)
     double* d_halo_recv_prev,           // Buffer to receive from prev rank (or NULL)
     double* d_halo_recv_next,           // Buffer to receive from next rank (or NULL)
+    double* h_send_prev,                // Host pinned buffer for send to prev
+    double* h_send_next,                // Host pinned buffer for send to next
+    double* h_recv_prev,                // Host pinned buffer for recv from prev
+    double* h_recv_next,                // Host pinned buffer for recv from next
     int halo_size,                      // Number of elements per halo (grid_size)
     int rank,
     int world_size,
-    ncclComm_t nccl_comm,
     cudaStream_t stream
 ) {
-    // Use NCCL group to enable overlapping all Send/Recv operations
-    // This eliminates serialization and maximizes PCIe/NVLink bandwidth utilization
-    CHECK_NCCL(ncclGroupStart());
+    MPI_Request requests[4];
+    int req_count = 0;
 
-    // Launch all Send operations
+    // Step 1: Copy device send buffers to host asynchronously
+    if (rank > 0 && d_local_send_prev != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(h_send_prev, d_local_send_prev,
+                                    halo_size * sizeof(double),
+                                    cudaMemcpyDeviceToHost, stream));
+    }
+    if (rank < world_size - 1 && d_local_send_next != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(h_send_next, d_local_send_next,
+                                    halo_size * sizeof(double),
+                                    cudaMemcpyDeviceToHost, stream));
+    }
+
+    // Wait for D2H copies to complete before MPI can access host buffers
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+
+    // Step 2: Launch all MPI_Isend/Irecv operations
     if (rank > 0) {
-        // Send first row to previous rank
-        CHECK_NCCL(ncclSend(d_local_send_prev, halo_size, ncclDouble, rank - 1, nccl_comm, stream));
+        MPI_Isend(h_send_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(h_recv_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
     }
     if (rank < world_size - 1) {
-        // Send last row to next rank
-        CHECK_NCCL(ncclSend(d_local_send_next, halo_size, ncclDouble, rank + 1, nccl_comm, stream));
+        MPI_Isend(h_send_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(h_recv_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
     }
 
-    // Launch all Recv operations
-    if (rank > 0) {
-        // Receive from previous rank
-        CHECK_NCCL(ncclRecv(d_halo_recv_prev, halo_size, ncclDouble, rank - 1, nccl_comm, stream));
-    }
-    if (rank < world_size - 1) {
-        // Receive from next rank
-        CHECK_NCCL(ncclRecv(d_halo_recv_next, halo_size, ncclDouble, rank + 1, nccl_comm, stream));
+    // Step 3: Wait for all MPI operations to complete
+    if (req_count > 0) {
+        MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
     }
 
-    // End group - all operations execute in parallel
-    CHECK_NCCL(ncclGroupEnd());
+    // Step 4: Copy host recv buffers to device halo zones asynchronously
+    if (rank > 0 && d_halo_recv_prev != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_prev, h_recv_prev,
+                                    halo_size * sizeof(double),
+                                    cudaMemcpyHostToDevice, stream));
+    }
+    if (rank < world_size - 1 && d_halo_recv_next != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_next, h_recv_next,
+                                    halo_size * sizeof(double),
+                                    cudaMemcpyHostToDevice, stream));
+    }
+
+    // Step 5: Ensure H2D copies complete before kernel uses halo data
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 }
 
 /**
@@ -371,19 +385,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         printf("[Rank %d] Rows: [%d:%d) (%d rows)\n", rank, row_offset, row_offset + n_local, n_local);
     }
 
-    // Initialize NCCL
-    ncclComm_t nccl_comm;
-    ncclUniqueId nccl_id;
-
-    if (rank == 0) {
-        CHECK_NCCL(ncclGetUniqueId(&nccl_id));
-    }
-    MPI_Bcast(&nccl_id, sizeof(nccl_id), MPI_BYTE, 0, MPI_COMM_WORLD);
-    CHECK_NCCL(ncclCommInitRank(&nccl_comm, world_size, nccl_id, rank));
-
-    if (rank == 0 && config.verbose >= 1) {
-        printf("NCCL initialized (%d GPUs)\n\n", world_size);
-    }
+    // Note: Using MPI with explicit staging (no NCCL required)
 
     // Create CUDA stream and cuBLAS handle
     cudaStream_t stream;
@@ -479,6 +481,23 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                rank, local_mem / 1e6, halo_mem / 1e3);
     }
 
+    // Allocate pinned host buffers for MPI staging (D2H, H2D)
+    double *h_send_prev, *h_send_next, *h_recv_prev, *h_recv_next;
+    if (rank > 0) {
+        CUDA_CHECK(cudaMallocHost(&h_send_prev, grid_size * sizeof(double)));
+        CUDA_CHECK(cudaMallocHost(&h_recv_prev, grid_size * sizeof(double)));
+    } else {
+        h_send_prev = NULL;
+        h_recv_prev = NULL;
+    }
+    if (rank < world_size - 1) {
+        CUDA_CHECK(cudaMallocHost(&h_send_next, grid_size * sizeof(double)));
+        CUDA_CHECK(cudaMallocHost(&h_recv_next, grid_size * sizeof(double)));
+    } else {
+        h_send_next = NULL;
+        h_recv_next = NULL;
+    }
+
     // Initialize vectors (local partition only)
     CUDA_CHECK(cudaMemcpy(d_b, &b[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
@@ -528,12 +547,14 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
-    exchange_halo_p2p(
+    exchange_halo_mpi(
         d_x_local,                                   // First row to send to prev
         d_x_local + (n_local - grid_size),           // Last row to send to next
         d_x_halo_prev,                               // Receive from prev
         d_x_halo_next,                               // Receive from next
-        grid_size, rank, world_size, nccl_comm, stream
+        h_send_prev, h_send_next,                    // Host send buffers
+        h_recv_prev, h_recv_next,                    // Host recv buffers
+        grid_size, rank, world_size, stream
     );
 
     if (config.enable_detailed_timers) {
@@ -558,12 +579,14 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
-    exchange_halo_p2p(
+    exchange_halo_mpi(
         d_r_local,                                   // First row to prev
         d_r_local + (n_local - grid_size),           // Last row to next
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
-        grid_size, rank, world_size, nccl_comm, stream
+        h_send_prev, h_send_next,                    // Host send buffers
+        h_recv_prev, h_recv_next,                    // Host recv buffers
+        grid_size, rank, world_size, stream
     );
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -738,12 +761,14 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        exchange_halo_p2p(
+        exchange_halo_mpi(
             d_p_local,                                   // First row to prev
             d_p_local + (n_local - grid_size),           // Last row to next
             d_p_halo_prev,                               // Receive from prev
             d_p_halo_next,                               // Receive from next
-            grid_size, rank, world_size, nccl_comm, stream
+            h_send_prev, h_send_next,                    // Host send buffers
+            h_recv_prev, h_recv_next,                    // Host recv buffers
+            grid_size, rank, world_size, stream
         );
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -810,6 +835,12 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (d_r_halo_prev) cudaFree(d_r_halo_prev);
     if (d_r_halo_next) cudaFree(d_r_halo_next);
 
+    // Free host pinned buffers
+    if (h_send_prev) cudaFreeHost(h_send_prev);
+    if (h_send_next) cudaFreeHost(h_send_next);
+    if (h_recv_prev) cudaFreeHost(h_recv_prev);
+    if (h_recv_next) cudaFreeHost(h_recv_next);
+
     cublasDestroy(cublas_handle);
     cudaStreamDestroy(stream);
     cudaEventDestroy(start);
@@ -818,8 +849,6 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         cudaEventDestroy(timer_start);
         cudaEventDestroy(timer_stop);
     }
-
-    ncclCommDestroy(nccl_comm);
 
     return 0;
 }
