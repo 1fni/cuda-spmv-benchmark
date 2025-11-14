@@ -571,9 +571,19 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_local, d_x_halo_prev, d_x_halo_next,
         d_Ap, n_local, row_offset, n, grid_size);
 
-    // r_local = b - Ap
-    axpy_kernel<<<blocks_local, threads, 0, stream>>>(-1.0, d_Ap, d_b, n_local);
-    CUDA_CHECK(cudaMemcpy(d_r_local, d_b, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
+    // r_local = b - Ap (using cuBLAS)
+    double alpha_neg1 = -1.0;
+    cublasStatus_t status;
+    status = cublasDcopy(cublas_handle, n_local, d_b, 1, d_r_local, 1);  // r = b
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "cuBLAS Dcopy failed\n");
+        exit(EXIT_FAILURE);
+    }
+    status = cublasDaxpy(cublas_handle, n_local, &alpha_neg1, d_Ap, 1, d_r_local, 1);  // r = -Ap + r
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "cuBLAS Daxpy failed\n");
+        exit(EXIT_FAILURE);
+    }
 
     // Exchange r halo for initial dot product
     if (config.enable_detailed_timers) {
@@ -666,11 +676,15 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
         double alpha = rs_old / pAp;
 
-        // x_local = x_local + alpha * p_local
+        // x_local = x_local + alpha * p_local (using cuBLAS)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        axpy_kernel<<<blocks_local, threads, 0, stream>>>(alpha, d_p_local, d_x_local, n_local);
+        status = cublasDaxpy(cublas_handle, n_local, &alpha, d_p_local, 1, d_x_local, 1);
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "cuBLAS Daxpy failed\n");
+            exit(EXIT_FAILURE);
+        }
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -679,11 +693,16 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             stats->time_blas1_ms += elapsed_ms;
         }
 
-        // r_local = r_local - alpha * Ap_local
+        // r_local = r_local - alpha * Ap_local (using cuBLAS)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        axpy_kernel<<<blocks_local, threads, 0, stream>>>(-alpha, d_Ap, d_r_local, n_local);
+        double alpha_neg = -alpha;
+        status = cublasDaxpy(cublas_handle, n_local, &alpha_neg, d_Ap, 1, d_r_local, 1);
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "cuBLAS Daxpy failed\n");
+            exit(EXIT_FAILURE);
+        }
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -744,11 +763,21 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         // beta = rs_new / rs_old
         double beta = rs_new / rs_old;
 
-        // p_local = r_local + beta * p_local
+        // p_local = r_local + beta * p_local (using cuBLAS: scal + axpy)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r_local, beta, d_p_local, n_local);
+        status = cublasDscal(cublas_handle, n_local, &beta, d_p_local, 1);  // p = beta*p
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "cuBLAS Dscal failed\n");
+            exit(EXIT_FAILURE);
+        }
+        double alpha_one = 1.0;
+        status = cublasDaxpy(cublas_handle, n_local, &alpha_one, d_r_local, 1, d_p_local, 1);  // p = r + p
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            fprintf(stderr, "cuBLAS Daxpy failed\n");
+            exit(EXIT_FAILURE);
+        }
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
