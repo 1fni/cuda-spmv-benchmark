@@ -572,8 +572,18 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_Ap, n_local, row_offset, n, grid_size);
 
     // r_local = b - Ap
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_start, stream));
+    }
     axpy_kernel<<<blocks_local, threads, 0, stream>>>(-1.0, d_Ap, d_b, n_local);
     CUDA_CHECK(cudaMemcpy(d_r_local, d_b, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        stats->time_initial_r_ms = elapsed_ms;
+    }
 
     // Exchange r halo for initial dot product
     if (config.enable_detailed_timers) {
@@ -608,7 +618,17 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     }
 
     // rs_old = r^T * r (local dot product + AllReduce)
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_start, stream));
+    }
     double rs_local_old = compute_local_dot(cublas_handle, d_r_local, d_r_local, n_local);
+    if (config.enable_detailed_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop, stream));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        stats->time_dot_rs_initial_ms = elapsed_ms;
+    }
     double rs_old;
     MPI_Allreduce(&rs_local_old, &rs_old, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
@@ -648,6 +668,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_reductions_ms += elapsed_ms;
+            stats->time_dot_pAp_ms += elapsed_ms;  // Granular timer
         }
 
         // AllReduce for pAp
@@ -677,6 +698,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_blas1_ms += elapsed_ms;
+            stats->time_axpy_update_x_ms += elapsed_ms;  // Granular timer
         }
 
         // r_local = r_local - alpha * Ap_local
@@ -690,6 +712,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_blas1_ms += elapsed_ms;
+            stats->time_axpy_update_r_ms += elapsed_ms;  // Granular timer
         }
 
         // rs_new = r^T * r - local dot product
@@ -703,6 +726,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_reductions_ms += elapsed_ms;
+            stats->time_dot_rs_new_ms += elapsed_ms;  // Granular timer
         }
 
         // AllReduce for rs_new
@@ -755,6 +779,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_blas1_ms += elapsed_ms;
+            stats->time_axpby_update_p_ms += elapsed_ms;  // Granular timer
         }
 
         // P2P halo exchange for p vector (160 KB vs 800 MB AllGather)
@@ -795,6 +820,15 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     float time_ms;
     CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
 
+    // Normalize granular timers by number of iterations (compute averages)
+    if (config.enable_detailed_timers && stats->iterations > 0) {
+        stats->time_dot_pAp_ms /= stats->iterations;
+        stats->time_dot_rs_new_ms /= stats->iterations;
+        stats->time_axpy_update_x_ms /= stats->iterations;
+        stats->time_axpy_update_r_ms /= stats->iterations;
+        stats->time_axpby_update_p_ms /= stats->iterations;
+    }
+
     if (rank == 0) {
         stats->time_total_ms = time_ms;
         if (config.verbose >= 1) {
@@ -806,6 +840,17 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                 printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / time_ms);
                 printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / time_ms);
                 printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / time_ms);
+
+                printf("\nGranular BLAS1 Breakdown (per-iteration avg):\n");
+                printf("  Initial r=b-Ax0:  %.3f ms\n", stats->time_initial_r_ms);
+                printf("  AXPY update_x:    %.3f ms\n", stats->time_axpy_update_x_ms);
+                printf("  AXPY update_r:    %.3f ms\n", stats->time_axpy_update_r_ms);
+                printf("  AXPBY update_p:   %.3f ms\n", stats->time_axpby_update_p_ms);
+
+                printf("\nGranular Reductions Breakdown (per-iteration avg):\n");
+                printf("  Dot rs_initial:   %.3f ms\n", stats->time_dot_rs_initial_ms);
+                printf("  Dot pAp:          %.3f ms\n", stats->time_dot_pAp_ms);
+                printf("  Dot rs_new:       %.3f ms\n", stats->time_dot_rs_new_ms);
             }
             printf("========================================\n");
         }

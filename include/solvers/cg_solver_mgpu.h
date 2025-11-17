@@ -50,11 +50,20 @@ typedef struct {
     double residual_norm;       ///< Final residual norm
     double time_total_ms;       ///< Total solve time
     double time_spmv_ms;        ///< SpMV time
-    double time_blas1_ms;       ///< BLAS1 operations time
-    double time_reductions_ms;  ///< Dot products time
+    double time_blas1_ms;       ///< BLAS1 operations time (total)
+    double time_reductions_ms;  ///< Dot products time (total)
     double time_allreduce_ms;   ///< NCCL AllReduce time
-    double time_allgather_ms;   ///< NCCL AllGather time
+    double time_allgather_ms;   ///< NCCL AllGather time (or halo exchange)
     int converged;              ///< 1 if converged
+
+    // Granular BLAS1 timings (per-iteration averages)
+    double time_dot_rs_initial_ms;   ///< Initial dot(r,r) before loop
+    double time_dot_pAp_ms;           ///< dot(p, Ap) average per iteration
+    double time_dot_rs_new_ms;        ///< dot(r, r) convergence check average
+    double time_axpy_update_x_ms;    ///< x = x + alpha*p average
+    double time_axpy_update_r_ms;    ///< r = r - alpha*Ap average
+    double time_axpby_update_p_ms;   ///< p = r + beta*p average
+    double time_initial_r_ms;        ///< Initial r = b - A*x0
 } CGStatsMultiGPU;
 
 /**
