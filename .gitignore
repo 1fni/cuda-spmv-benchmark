@@ -23,3 +23,16 @@ scripts/save_results_to_git.sh
 # Matrix files - ignore all except example3x3.mtx
 *.mtx
 !matrix/example3x3.mtx
+
+# External dependencies (Kokkos, etc.)
+external/kokkos/
+external/kokkos-kernels/
+external/kokkos-install/
+external/kokkos-kernels-install/
+external/kokkos_cg_baseline
+external/matrix/
+
+# Profiling and test scripts
+profiling_results/
+test_*.sh
+profile_*.sh
