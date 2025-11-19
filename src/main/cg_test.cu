@@ -18,26 +18,28 @@
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>] [--device] [--no-detailed-timers]\n", argv[0]);
-        printf("Example: %s matrix/stencil_512x512.mtx --mode=stencil5-csr-direct --device\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--mode=<spmv_mode>] [--host] [--no-detailed-timers]\n", argv[0]);
+        printf("Example: %s matrix/stencil_512x512.mtx --mode=stencil5-csr-direct\n", argv[0]);
         printf("\nOptions:\n");
         printf("  --mode=<mode>          SpMV operator (default: stencil5-csr-direct)\n");
-        printf("  --device               Use device-native CG (zero host transfers)\n");
+        printf("  --host                 Use host interface (default: device-native for best GPU perf)\n");
         printf("  --no-detailed-timers   Disable per-category timing (removes sync overhead)\n");
         return 1;
     }
 
     const char* matrix_file = argv[1];
     const char* mode = "stencil5-csr-direct";  // Default
-    bool use_device = false;
+    bool use_device = true;  // Default: device-native for best GPU performance
     bool enable_detailed_timers = true;  // Default: timers enabled
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
         if (strncmp(argv[i], "--mode=", 7) == 0) {
             mode = argv[i] + 7;
+        } else if (strcmp(argv[i], "--host") == 0) {
+            use_device = false;
         } else if (strcmp(argv[i], "--device") == 0) {
-            use_device = true;
+            use_device = true;  // Keep for backward compatibility
         } else if (strcmp(argv[i], "--no-detailed-timers") == 0) {
             enable_detailed_timers = false;
         }
