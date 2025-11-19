@@ -200,7 +200,20 @@ int main(int argc, char* argv[]) {
         }
         
         printf("SpMV completed successfully using mode: %s\n", op->name);
-        
+
+        // Compute checksum for validation
+        double sum = 0.0;
+        double norm2 = 0.0;
+        for (int i = 0; i < mat.num_rows; i++) {
+            sum += y[i];
+            norm2 += y[i] * y[i];
+        }
+        norm2 = sqrt(norm2);
+        printf("\n=== Output Checksum ===\n");
+        printf("Sum(y):    %.16e\n", sum);
+        printf("Norm2(y):  %.16e\n", norm2);
+        printf("=======================\n\n");
+
         // Free GPU memory after each mode to prevent accumulation on large matrices
         op->free();
     }
