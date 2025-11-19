@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
         // Compute checksum for validation
         double sum = 0.0;
         double norm2 = 0.0;
-        for (int i = 0; i < mat.num_rows; i++) {
+        for (int i = 0; i < mat.rows; i++) {
             sum += y[i];
             norm2 += y[i] * y[i];
         }
