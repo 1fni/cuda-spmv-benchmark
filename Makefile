@@ -40,14 +40,14 @@ CU_GEN_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_GEN_SRCS))
 # Binaries
 BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
-BIN_CG   := $(BIN_DIR)/cg_test
+BIN_CG   := $(BIN_DIR)/cg_solver
 
 # CG solver test: exclude generator, spmv_bench, and multi-GPU sources
 CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu, $(CU_SRCS))
 CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
-.PHONY: all clean test_mgpu_part
+.PHONY: all clean cg_mgpu
 
 # Main target
 all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
@@ -77,7 +77,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
 # ============================================================================
 
 # Multi-GPU partitioned solver binary
-BIN_MGPU_PART := $(BIN_DIR)/test_mgpu_cg_partitioned
+BIN_MGPU_PART := $(BIN_DIR)/cg_solver_mgpu
 
 # MPI objects (shared utilities)
 OBJ_MGPU_IO := $(OBJ_DIR)/mgpu/io.o
@@ -120,7 +120,7 @@ $(BIN_MGPU_PART): $(OBJ_MGPU_PART_MAIN) $(OBJ_MGPU_PART_SOLVER) $(OBJ_MGPU_IO) $
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS)
 
 # Convenience target
-test_mgpu_part: $(BIN_MGPU_PART)
+cg_mgpu: $(BIN_MGPU_PART)
 
 # Clean
 clean:
