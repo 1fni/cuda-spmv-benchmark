@@ -131,17 +131,15 @@ int main(int argc, char** argv) {
         // Reset solution vector
         memset(x, 0, mat.rows * sizeof(double));
 
-        // Warmup run (1 CG iteration equivalent - just SpMV)
-        printf("Warmup...\n");
-        double* y_warmup = (double*)calloc(mat.rows, sizeof(double));
-        double* x_warmup = (double*)malloc(mat.rows * sizeof(double));
-        for (int i = 0; i < mat.rows; i++) x_warmup[i] = 1.0;
-        double dummy_time;
-        for (int w = 0; w < 3; w++) {
-            spmv_op->run_timed(x_warmup, y_warmup, &dummy_time);
+        // Warmup: 1 full CG iteration (warms up SpMV + cuBLAS + reductions)
+        printf("Warmup (1 CG iteration)...\n");
+        CGConfig warmup_config = {1, tolerance, 0, false};
+        CGStats warmup_stats;
+        if (use_device) {
+            cg_solve_device(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+        } else {
+            cg_solve(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
         }
-        free(y_warmup);
-        free(x_warmup);
 
         // Solve
         CGStats stats;
