@@ -61,9 +61,15 @@ static double beta  = 0.0;           ///< Weight for existing Y
  */
 int build_csr_struct(MatrixData* mat)
 {
+    // Skip if CSR already built (multi-mode reuse)
+    if (csr_mat.row_ptr != NULL && csr_mat.nb_rows == mat->rows && csr_mat.nb_nonzeros == mat->nnz) {
+        printf("✅ CSR structure already built, reusing (%dx%d, %d nnz)\n", mat->rows, mat->cols, mat->nnz);
+        return EXIT_SUCCESS;
+    }
+
     printf("🔄 Building CSR structure (%dx%d, %d nnz)...\n", mat->rows, mat->cols, mat->nnz);
     fflush(stdout);
-    
+
     // Allocate row pointer array
     int *row_ptr = (int*)calloc(mat->rows + 1, sizeof(int));
     if (!row_ptr) {

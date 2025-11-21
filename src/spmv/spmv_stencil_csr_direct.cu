@@ -204,11 +204,8 @@ __global__ void stencil5_csr_direct_mgpu_kernel(
 int stencil_csr_direct_init(MatrixData* mat) {
     printf("[STENCIL-CSR-DIRECT] Initializing (CG-friendly, calculated offsets)\n");
 
-    // Build CSR if needed
-    if (!csr_mat.values) {
-        printf("Building CSR structure...\n");
-        build_csr_struct(mat);
-    }
+    // Build CSR if needed (function handles reuse check)
+    build_csr_struct(mat);
 
     // Allocate device CSR arrays
     CUDA_CHECK(cudaMalloc(&d_row_ptr, (csr_mat.nb_rows + 1) * sizeof(int)));
