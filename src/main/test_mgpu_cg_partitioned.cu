@@ -83,6 +83,15 @@ int main(int argc, char** argv) {
     // Solver statistics
     CGStatsMultiGPU stats;
 
+    // Warmup: 1 full CG iteration (warms up SpMV + cuBLAS + MPI + reductions)
+    if (rank == 0) printf("Warmup (1 CG iteration)...\n");
+    CGConfigMultiGPU warmup_config = config;
+    warmup_config.max_iters = 1;
+    warmup_config.verbose = 0;
+    CGStatsMultiGPU warmup_stats;
+    cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
+    memset(x, 0, mat.rows * sizeof(double));  // Reset solution
+
     // Call partitioned multi-GPU CG solver
     cg_solve_mgpu_partitioned(NULL, &mat, b, x, config, &stats);
 
