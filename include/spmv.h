@@ -135,6 +135,7 @@ extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES;
 extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED;
 extern SpmvOperator SPMV_STENCIL5_CSR_DIRECT;
 extern SpmvOperator SPMV_STENCIL5_MULTI_GPU;
+extern SpmvOperator SPMV_STENCIL_HALO_MGPU;
 extern SpmvOperator SPMV_CSR_MULTI_GPU;
 
 #ifdef __cplusplus

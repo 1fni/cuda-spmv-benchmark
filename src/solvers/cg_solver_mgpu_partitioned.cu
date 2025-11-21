@@ -59,113 +59,21 @@ __global__ void csr_spmv_kernel(
 }
 
 /**
- * @brief Optimized stencil SpMV kernel for partitioned CSR with halo zones
- * @details Uses direct column indices (no indirection) for interior stencil points
- *          Accesses local + halo data instead of global vector
- *
- * Memory layout:
- * - x_local[0:n_local] : Local partition data
- * - x_halo_prev[0:grid_size] : Halo from previous rank (if exists)
- * - x_halo_next[0:grid_size] : Halo from next rank (if exists)
- *
- * Global index mapping:
- * - [row_offset:row_offset+n_local) → x_local[]
- * - row_offset-grid_size : row_offset-1 → x_halo_prev[] (previous rank boundary row)
- * - row_offset+n_local : row_offset+n_local+grid_size-1 → x_halo_next[] (next rank boundary row)
+ * @brief Shared kernel - implementation in src/spmv/spmv_stencil_partitioned_halo_kernel.cu
  */
-__global__ void stencil5_csr_partitioned_halo_kernel(
+extern __global__ void stencil5_csr_partitioned_halo_kernel(
     const int* __restrict__ row_ptr,
     const int* __restrict__ col_idx,
     const double* __restrict__ values,
-    const double* __restrict__ x_local,      // Local vector (n_local)
-    const double* __restrict__ x_halo_prev,  // Halo from prev rank (grid_size or NULL)
-    const double* __restrict__ x_halo_next,  // Halo from next rank (grid_size or NULL)
-    double* __restrict__ y,                  // Local output (n_local)
-    int n_local,                             // Number of local rows
-    int row_offset,                          // Global row offset
-    int N,                                   // Global size
+    const double* __restrict__ x_local,
+    const double* __restrict__ x_halo_prev,
+    const double* __restrict__ x_halo_next,
+    double* __restrict__ y,
+    int n_local,
+    int row_offset,
+    int N,
     int grid_size
-) {
-    int local_row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (local_row >= n_local) return;
-
-    int row = row_offset + local_row;  // Global row for geometry
-    int i = row / grid_size;
-    int j = row % grid_size;
-
-    // Get CSR row range from row_ptr
-    int row_start = row_ptr[local_row];
-    int row_end = row_ptr[local_row + 1];
-
-    double sum = 0.0;
-
-    // Interior points: direct column calculation (no col_idx lookup)
-    if (i > 0 && i < grid_size - 1 && j > 0 && j < grid_size - 1 && (row_end - row_start) == 5) {
-        // Column indices known from stencil structure (global indices)
-        int idx_north = row - grid_size;
-        int idx_west = row - 1;
-        int idx_center = row;
-        int idx_east = row + 1;
-        int idx_south = row + grid_size;
-
-        // Map global indices to local/halo space
-        // North: row - grid_size
-        double val_north;
-        if (idx_north >= row_offset && idx_north < row_offset + n_local) {
-            val_north = x_local[idx_north - row_offset];
-        } else if (idx_north >= row_offset - grid_size && idx_north < row_offset) {
-            // Previous rank halo (boundary row)
-            val_north = x_halo_prev[idx_north - (row_offset - grid_size)];
-        } else {
-            val_north = 0.0;  // Should never happen for valid stencil
-        }
-
-        // West, Center, East: Always in local partition for interior points
-        double val_west = x_local[idx_west - row_offset];
-        double val_center = x_local[idx_center - row_offset];
-        double val_east = x_local[idx_east - row_offset];
-
-        // South: row + grid_size
-        double val_south;
-        if (idx_south >= row_offset && idx_south < row_offset + n_local) {
-            val_south = x_local[idx_south - row_offset];
-        } else if (idx_south >= row_offset + n_local && idx_south < row_offset + n_local + grid_size) {
-            // Next rank halo (boundary row)
-            val_south = x_halo_next[idx_south - (row_offset + n_local)];
-        } else {
-            val_south = 0.0;  // Should never happen for valid stencil
-        }
-
-        // CSR sorted order: [North, West, Center, East, South]
-        sum = values[row_start + 0] * val_north
-            + values[row_start + 1] * val_west
-            + values[row_start + 2] * val_center
-            + values[row_start + 3] * val_east
-            + values[row_start + 4] * val_south;
-    }
-    // Boundary/corner: standard CSR traversal with global index mapping
-    else {
-        for (int k = row_start; k < row_end; k++) {
-            int global_col = col_idx[k];
-            double val;
-
-            // Map global column to local/halo
-            if (global_col >= row_offset && global_col < row_offset + n_local) {
-                val = x_local[global_col - row_offset];
-            } else if (x_halo_prev != NULL && global_col >= row_offset - grid_size && global_col < row_offset) {
-                val = x_halo_prev[global_col - (row_offset - grid_size)];
-            } else if (x_halo_next != NULL && global_col >= row_offset + n_local && global_col < row_offset + n_local + grid_size) {
-                val = x_halo_next[global_col - (row_offset + n_local)];
-            } else {
-                val = 0.0;  // Should never happen for valid stencil
-            }
-
-            sum += values[k] * val;
-        }
-    }
-
-    y[local_row] = sum;  // Write to local output
-}
+);
 
 /**
  * @brief Original SpMV kernel using global vector (for compatibility)
