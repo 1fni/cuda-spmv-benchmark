@@ -30,7 +30,7 @@ CU_SRCS := $(shell find $(SRC_DIR) -name '*.cu')
 CU_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SRCS))
 
 # SpMV benchmark: exclude generator, CG solver, and multi-GPU sources
-CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_test.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu, $(CU_SRCS))
+CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_solver.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu, $(CU_SRCS))
 CU_SPMV_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SPMV_SRCS))
 
 # Matrix generator
@@ -42,8 +42,8 @@ BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
 BIN_CG   := $(BIN_DIR)/cg_solver
 
-# CG solver test: exclude generator, spmv_bench, and multi-GPU sources
-CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/test_mgpu_cg_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu, $(CU_SRCS))
+# CG solver: exclude generator, spmv_bench, and multi-GPU sources
+CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/test_mgpu_cg.cu $(SRC_DIR)/main/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu, $(CU_SRCS))
 CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
@@ -86,7 +86,7 @@ OBJ_MGPU_STENCIL := $(OBJ_DIR)/mgpu/spmv_stencil_csr_direct.o
 OBJ_MGPU_HALO_KERNEL := $(OBJ_DIR)/mgpu/spmv_stencil_partitioned_halo_kernel.o
 
 # Partitioned solver objects
-OBJ_MGPU_PART_MAIN := $(OBJ_DIR)/mgpu/test_mgpu_cg_partitioned.o
+OBJ_MGPU_PART_MAIN := $(OBJ_DIR)/mgpu/cg_solver_mgpu.o
 OBJ_MGPU_PART_SOLVER := $(OBJ_DIR)/mgpu/cg_solver_mgpu_partitioned.o
 
 # Compile MPI sources with NVCC + MPI headers
