@@ -299,19 +299,8 @@ void csr_free()
     if (matA) cusparseDestroySpMat(matA);
     if (handle) cusparseDestroy(handle);
 
-    // Free host CSR arrays
-    if (csr_mat.row_ptr) {
-        free(csr_mat.row_ptr);
-        csr_mat.row_ptr = NULL;
-    }
-    if (csr_mat.col_indices) {
-        free(csr_mat.col_indices);
-        csr_mat.col_indices = NULL;
-    }
-    if (csr_mat.values) {
-        free(csr_mat.values);
-        csr_mat.values = NULL;
-    }
+    // Host CSR arrays (csr_mat) preserved for reuse across modes.
+    // Memory freed by OS at program exit.
 }
 
 /**

@@ -117,6 +117,10 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < num_modes; i++) {
         printf("%s%s", mode_tokens[i], (i < num_modes - 1) ? ", " : "\n");
     }
+    if (num_modes > 1) {
+        printf("NOTE: Multi-mode benchmark - performance may vary with order due to GPU state.\n");
+        printf("      For accurate comparison, run each mode separately.\n");
+    }
 
     // Allocate and initialize input/output vectors on the host (shared across modes)
     double* x = (double*)malloc(mat.cols * sizeof(double)); ///< Input vector for SpMV operation (x in y = A*x)
@@ -146,7 +150,14 @@ int main(int argc, char* argv[]) {
         
         // Reset output vector for this mode
         memset(y, 0, mat.rows * sizeof(double));
-        
+
+        // Warmup runs to stabilize GPU clock frequency
+        printf("Warmup (5 runs)...\n");
+        double dummy_time;
+        for (int w = 0; w < 5; w++) {
+            op->run_timed(x, y, &dummy_time);
+        }
+
         // Statistical benchmark with outlier detection
         printf("Running statistical benchmark (10 iterations)...\n");
         BenchmarkStats bench_stats;
