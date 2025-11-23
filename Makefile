@@ -119,12 +119,36 @@ $(OBJ_DIR)/mgpu/spmv_stencil_partitioned_halo_kernel.o: $(SRC_DIR)/spmv/spmv_ste
 	@mkdir -p $(OBJ_DIR)/mgpu
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
 
+$(OBJ_DIR)/mgpu/spmv.o: $(SRC_DIR)/spmv/spmv.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/mgpu/spmv_ellpack.o: $(SRC_DIR)/spmv/spmv_cusparse_ellpack.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/mgpu/spmv_stencil.o: $(SRC_DIR)/spmv/spmv_stencil.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/mgpu/spmv_csr_mgpu.o: $(SRC_DIR)/spmv/spmv_csr_mgpu.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/mgpu/spmv_stencil_mgpu.o: $(SRC_DIR)/spmv/spmv_stencil_mgpu.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
+$(OBJ_DIR)/mgpu/spmv_stencil_halo_mgpu.o: $(SRC_DIR)/spmv/spmv_stencil_halo_mgpu.cu
+	@mkdir -p $(OBJ_DIR)/mgpu
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
+
 $(OBJ_DIR)/mgpu/cg_solver_mgpu_lib.o: $(SRC_DIR)/solvers/cg_solver_mgpu.cu
 	@mkdir -p $(OBJ_DIR)/mgpu
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
 
 # Link generic solver with MPI (AllGather approach, uses NCCL)
-$(BIN_MGPU): $(OBJ_MGPU_MAIN) $(OBJ_MGPU_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV)
+$(BIN_MGPU): $(OBJ_MGPU_MAIN) $(OBJ_MGPU_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_DIR)/mgpu/spmv.o $(OBJ_DIR)/mgpu/spmv_ellpack.o $(OBJ_DIR)/mgpu/spmv_stencil.o $(OBJ_DIR)/mgpu/spmv_csr_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_halo_mgpu.o
 	@mkdir -p $(BIN_DIR)
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS) -lnccl
 

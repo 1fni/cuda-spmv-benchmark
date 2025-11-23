@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <mpi.h>
 #include "io.h"
 #include "solvers/cg_solver_mgpu.h"
@@ -25,25 +26,78 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         if (rank == 0) {
-            printf("Usage: mpirun -np <N> %s <matrix.mtx>\n", argv[0]);
-            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx\n", argv[0]);
+            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--mode=<modes>] [--tol=<tol>] [--maxiter=<n>]\n", argv[0]);
+            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --mode=csr,stencil5-csr-direct\n", argv[0]);
+            printf("\nOptions:\n");
+            printf("  --mode=<modes>         SpMV operators, comma-separated (default: csr)\n");
+            printf("  --tol=<tol>            Convergence tolerance (default: 1e-6)\n");
+            printf("  --maxiter=<n>          Maximum iterations (default: 100)\n");
         }
         MPI_Finalize();
         return 1;
     }
 
     const char* matrix_file = argv[1];
+    const char* modes_string = "csr";  // Default
+    double tolerance = 1e-6;
+    int max_iters = 100;
+
+    // Parse arguments
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--mode=", 7) == 0) {
+            modes_string = argv[i] + 7;
+        } else if (strncmp(argv[i], "--tol=", 6) == 0) {
+            tolerance = atof(argv[i] + 6);
+        } else if (strncmp(argv[i], "--maxiter=", 10) == 0) {
+            max_iters = atoi(argv[i] + 10);
+        }
+    }
+
+    // Parse modes (split by comma) BEFORE loading matrix
+    char modes_buffer[256];
+    strncpy(modes_buffer, modes_string, sizeof(modes_buffer) - 1);
+    modes_buffer[sizeof(modes_buffer) - 1] = '\0';
+
+    const char* mode_tokens[10];  // Support up to 10 modes
+    int num_modes = 0;
+
+    char* token = strtok(modes_buffer, ",");
+    while (token != NULL && num_modes < 10) {
+        mode_tokens[num_modes++] = token;
+        token = strtok(NULL, ",");
+    }
+
+    // Validate all modes BEFORE loading matrix (rank 0 only)
+    if (rank == 0) {
+        printf("Validating %d mode(s): ", num_modes);
+        for (int i = 0; i < num_modes; i++) {
+            printf("%s%s", mode_tokens[i], (i < num_modes - 1) ? ", " : "\n");
+
+            SpmvOperator* op = get_operator(mode_tokens[i]);
+            if (op == NULL) {
+                fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
+                fprintf(stderr, "Available modes: csr, stencil5-csr-direct\n");
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+        }
+    }
 
     // Rank 0 loads matrix and broadcasts dimensions
     MatrixData mat;
     int matrix_rows, matrix_cols, matrix_nnz, grid_size;
 
     if (rank == 0) {
+        printf("\nLoading matrix: %s\n", matrix_file);
         if (load_matrix_market(matrix_file, &mat) != 0) {
             fprintf(stderr, "Error loading matrix: %s\n", matrix_file);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
         printf("Matrix loaded: %d × %d, %d nonzeros\n", mat.rows, mat.cols, mat.nnz);
+
+        if (num_modes > 1) {
+            printf("NOTE: Multi-mode benchmark - performance may vary with order due to GPU state.\n");
+            printf("      For accurate comparison, run each mode separately.\n");
+        }
 
         matrix_rows = mat.rows;
         matrix_cols = mat.cols;
@@ -77,58 +131,76 @@ int main(int argc, char** argv) {
 
     // CG configuration
     CGConfigMultiGPU config;
-    config.max_iters = 100;
-    config.tolerance = 1e-6;
+    config.max_iters = max_iters;
+    config.tolerance = tolerance;
     config.verbose = 2;
     config.enable_detailed_timers = 1;  // Enable detailed timers by default
 
-    // Solver statistics
-    CGStatsMultiGPU stats;
+    // Loop through all modes
+    for (int mode_idx = 0; mode_idx < num_modes; mode_idx++) {
+        const char* current_mode = mode_tokens[mode_idx];
 
-    // Call multi-GPU CG solver with MPI distribution
-    if (rank == 0) {
-        printf("\nCalling multi-GPU CG solver...\n\n");
+        if (rank == 0) {
+            printf("\n========================================\n");
+            printf("CG Solver (Multi-GPU AllGather) - Mode: %s\n", current_mode);
+            printf("========================================\n");
+            printf("Tolerance: %.1e, Max iterations: %d\n", tolerance, max_iters);
+        }
+
+        // Get and initialize operator (all ranks)
+        SpmvOperator* spmv_op = get_operator(current_mode);
+        spmv_op->init(&mat);
+
+        // Reset solution vector
+        memset(x, 0, matrix_rows * sizeof(double));
+
+        // Warmup: 1 full CG iteration
+        if (rank == 0) printf("Warmup (1 CG iteration)...\n");
+        CGConfigMultiGPU warmup_config = config;
+        warmup_config.max_iters = 1;
+        warmup_config.verbose = 0;
+        CGStatsMultiGPU warmup_stats;
+        cg_solve_mgpu(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+        memset(x, 0, matrix_rows * sizeof(double));  // Reset solution
+
+        // Solve
+        CGStatsMultiGPU stats;
+        if (rank == 0) printf("Starting CG solver...\n");
+        cg_solve_mgpu(spmv_op, &mat, b, x, config, &stats);
+
+        // Display results for verification (rank 0 only)
+        if (rank == 0) {
+            printf("\n--- Results for %s ---\n", current_mode);
+            printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
+            printf("Solution norm: %.15e\n", stats.residual_norm);
+
+            // Timing breakdown
+            if (config.enable_detailed_timers) {
+                printf("\nTiming Breakdown:\n");
+                printf("  Total time:   %.2f ms\n", stats.time_total_ms);
+                printf("  SpMV:         %.2f ms (%.1f%%)\n",
+                       stats.time_spmv_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms);
+                printf("  BLAS1:        %.2f ms (%.1f%%)\n",
+                       stats.time_blas1_ms, 100.0 * stats.time_blas1_ms / stats.time_total_ms);
+                printf("  Reductions:   %.2f ms (%.1f%%)\n",
+                       stats.time_reductions_ms, 100.0 * stats.time_reductions_ms / stats.time_total_ms);
+                printf("  AllReduce:    %.2f ms (%.1f%%)\n",
+                       stats.time_allreduce_ms, 100.0 * stats.time_allreduce_ms / stats.time_total_ms);
+                printf("  AllGather:    %.2f ms (%.1f%%)\n",
+                       stats.time_allgather_ms, 100.0 * stats.time_allgather_ms / stats.time_total_ms);
+            }
+
+            printf("GFLOPS (SpMV): %.3f\n",
+                   (2.0 * matrix_nnz * stats.iterations) / (stats.time_spmv_ms * 1e6));
+        }
+
+        // Free GPU memory after each mode
+        spmv_op->free();
     }
 
-    cg_solve_mgpu(NULL,  // SpMV handled internally
-                  &mat,
-                  b,
-                  x,
-                  config,
-                  &stats);
-
-    // Display results for verification (rank 0 only)
     if (rank == 0) {
         printf("\n========================================\n");
-        printf("CG Solution (first 10 values):\n");
-        printf("========================================\n");
-        for (int i = 0; i < 10 && i < matrix_rows; i++) {
-            printf("x[%d] = %.15e\n", i, x[i]);
-        }
-        printf("...\n");
-        printf("x[%d] = %.15e (last)\n", matrix_rows - 1, x[matrix_rows - 1]);
-
-        printf("\nSolution norm: %.15e\n", stats.residual_norm);
-        printf("Converged: %s\n", stats.converged ? "YES" : "NO");
-        printf("Iterations: %d\n", stats.iterations);
-
-        // Timing breakdown
-        if (config.enable_detailed_timers) {
-            printf("\n========================================\n");
-            printf("Timing Breakdown\n");
-            printf("========================================\n");
-            printf("Total time:     %.2f ms\n", stats.time_total_ms);
-            printf("  SpMV:         %.2f ms (%.1f%%)\n",
-                   stats.time_spmv_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms);
-            printf("  BLAS1:        %.2f ms (%.1f%%)\n",
-                   stats.time_blas1_ms, 100.0 * stats.time_blas1_ms / stats.time_total_ms);
-            printf("  Reductions:   %.2f ms (%.1f%%)\n",
-                   stats.time_reductions_ms, 100.0 * stats.time_reductions_ms / stats.time_total_ms);
-            printf("  AllReduce:    %.2f ms (%.1f%%)\n",
-                   stats.time_allreduce_ms, 100.0 * stats.time_allreduce_ms / stats.time_total_ms);
-            printf("  AllGather:    %.2f ms (%.1f%%)\n",
-                   stats.time_allgather_ms, 100.0 * stats.time_allgather_ms / stats.time_total_ms);
-        }
+        printf("Multi-mode benchmark completed\n");
         printf("========================================\n");
     }
 
