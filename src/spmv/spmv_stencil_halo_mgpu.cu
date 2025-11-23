@@ -181,7 +181,7 @@ static int spmv_halo_mgpu_init(MatrixData* mat) {
     return 0;
 }
 
-static int spmv_halo_mgpu_run_timed(const double* x, double* y, float* time_ms) {
+static int spmv_halo_mgpu_run_timed(const double* x, double* y, double* time_ms) {
     CUDA_CHECK(cudaMemcpy(ctx.d_x_local, &x[ctx.row_offset],
                           ctx.n_local * sizeof(double), cudaMemcpyHostToDevice));
 
@@ -203,7 +203,9 @@ static int spmv_halo_mgpu_run_timed(const double* x, double* y, float* time_ms) 
 
     CUDA_CHECK(cudaEventRecord(stop, ctx.stream));
     CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(time_ms, start, stop));
+    float time_ms_float;
+    CUDA_CHECK(cudaEventElapsedTime(&time_ms_float, start, stop));
+    *time_ms = (double)time_ms_float;
 
     CUDA_CHECK(cudaMemcpy(&y[ctx.row_offset], ctx.d_y_local,
                           ctx.n_local * sizeof(double), cudaMemcpyDeviceToHost));
