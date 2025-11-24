@@ -15,6 +15,7 @@
 #include "io.h"
 #include "spmv.h"
 #include "solvers/cg_solver_mgpu_partitioned.h"
+#include "benchmark_stats_mgpu.h"
 
 int main(int argc, char** argv) {
     // Initialize MPI
@@ -80,35 +81,53 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Solver statistics
-    CGStatsMultiGPU stats;
-
-    // Warmup: 1 full CG iteration (warms up SpMV + cuBLAS + MPI + reductions)
-    if (rank == 0) printf("Warmup (1 CG iteration)...\n");
+    // Warmup: 5 full CG runs (HPC best practice for multi-GPU)
+    if (rank == 0) printf("Warmup (5 runs)...\n");
     CGConfigMultiGPU warmup_config = config;
-    warmup_config.max_iters = 1;
     warmup_config.verbose = 0;
     CGStatsMultiGPU warmup_stats;
-    cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
-    memset(x, 0, mat.rows * sizeof(double));  // Reset solution
+    for (int w = 0; w < 5; w++) {
+        memset(x, 0, mat.rows * sizeof(double));
+        cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
+    }
 
-    // Call partitioned multi-GPU CG solver
-    cg_solve_mgpu_partitioned(NULL, &mat, b, x, config, &stats);
+    // Benchmark: 30 runs with statistical analysis
+    if (rank == 0) printf("Running benchmark (30 runs)...\n");
+    BenchmarkStats bench_stats;
+    CGStatsMultiGPU stats;
+    cg_benchmark_with_stats_mgpu_partitioned(NULL, &mat, b, x, config, 30, &bench_stats, &stats);
+
+    if (rank == 0) {
+        printf("Completed: %d valid runs, %d outliers removed\n",
+               bench_stats.valid_runs, bench_stats.outliers_removed);
+    }
 
     // Display results for verification (rank 0 only)
     if (rank == 0) {
         printf("\n========================================\n");
-        printf("CG Solution (first 10 values):\n");
+        printf("Results:\n");
         printf("========================================\n");
+        printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
+        printf("Solution norm: %.15e\n", stats.residual_norm);
+
+        // Timing summary with statistics
+        printf("\nTime (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, Halo: %.1f%%)\n",
+               bench_stats.median_ms,
+               100.0 * stats.time_spmv_ms / stats.time_total_ms,
+               100.0 * stats.time_blas1_ms / stats.time_total_ms,
+               100.0 * stats.time_reductions_ms / stats.time_total_ms,
+               100.0 * stats.time_allgather_ms / stats.time_total_ms);
+        if (bench_stats.valid_runs > 1) {
+            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
+                   bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
+        }
+
+        printf("\nCG Solution (first 10 values):\n");
         for (int i = 0; i < 10 && i < mat.rows; i++) {
             printf("x[%d] = %.15e\n", i, x[i]);
         }
         printf("...\n");
         printf("x[%d] = %.15e (last)\n", mat.rows - 1, x[mat.rows - 1]);
-
-        printf("\nSolution norm: %.15e\n", stats.residual_norm);
-        printf("Converged: %s\n", stats.converged ? "YES" : "NO");
-        printf("Iterations: %d\n", stats.iterations);
         printf("========================================\n");
     }
 

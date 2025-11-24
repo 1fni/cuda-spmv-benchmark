@@ -14,6 +14,7 @@
 #include <mpi.h>
 #include "io.h"
 #include "solvers/cg_solver_mgpu.h"
+#include "benchmark_stats_mgpu.h"
 #include "spmv.h"
 
 int main(int argc, char** argv) {
@@ -154,19 +155,26 @@ int main(int argc, char** argv) {
         // Reset solution vector
         memset(x, 0, matrix_rows * sizeof(double));
 
-        // Warmup: 1 full CG iteration
-        if (rank == 0) printf("Warmup (1 CG iteration)...\n");
+        // Warmup: 5 full CG runs (HPC best practice for multi-GPU)
+        if (rank == 0) printf("Warmup (5 runs)...\n");
         CGConfigMultiGPU warmup_config = config;
-        warmup_config.max_iters = 1;
         warmup_config.verbose = 0;
         CGStatsMultiGPU warmup_stats;
-        cg_solve_mgpu(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
-        memset(x, 0, matrix_rows * sizeof(double));  // Reset solution
+        for (int w = 0; w < 5; w++) {
+            memset(x, 0, matrix_rows * sizeof(double));
+            cg_solve_mgpu(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+        }
 
-        // Solve
+        // Benchmark: 30 runs with statistical analysis
+        if (rank == 0) printf("Running benchmark (30 runs)...\n");
+        BenchmarkStats bench_stats;
         CGStatsMultiGPU stats;
-        if (rank == 0) printf("Starting CG solver...\n");
-        cg_solve_mgpu(spmv_op, &mat, b, x, config, &stats);
+        cg_benchmark_with_stats_mgpu(spmv_op, &mat, b, x, config, 30, &bench_stats, &stats);
+
+        if (rank == 0) {
+            printf("Completed: %d valid runs, %d outliers removed\n",
+                   bench_stats.valid_runs, bench_stats.outliers_removed);
+        }
 
         // Display results for verification (rank 0 only)
         if (rank == 0) {
@@ -174,20 +182,17 @@ int main(int argc, char** argv) {
             printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
             printf("Solution norm: %.15e\n", stats.residual_norm);
 
-            // Timing breakdown
-            if (config.enable_detailed_timers) {
-                printf("\nTiming Breakdown:\n");
-                printf("  Total time:   %.2f ms\n", stats.time_total_ms);
-                printf("  SpMV:         %.2f ms (%.1f%%)\n",
-                       stats.time_spmv_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms);
-                printf("  BLAS1:        %.2f ms (%.1f%%)\n",
-                       stats.time_blas1_ms, 100.0 * stats.time_blas1_ms / stats.time_total_ms);
-                printf("  Reductions:   %.2f ms (%.1f%%)\n",
-                       stats.time_reductions_ms, 100.0 * stats.time_reductions_ms / stats.time_total_ms);
-                printf("  AllReduce:    %.2f ms (%.1f%%)\n",
-                       stats.time_allreduce_ms, 100.0 * stats.time_allreduce_ms / stats.time_total_ms);
-                printf("  AllGather:    %.2f ms (%.1f%%)\n",
-                       stats.time_allgather_ms, 100.0 * stats.time_allgather_ms / stats.time_total_ms);
+            // Timing summary with statistics
+            printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, AllReduce: %.1f%%, AllGather: %.1f%%)\n",
+                   bench_stats.median_ms,
+                   100.0 * stats.time_spmv_ms / stats.time_total_ms,
+                   100.0 * stats.time_blas1_ms / stats.time_total_ms,
+                   100.0 * stats.time_reductions_ms / stats.time_total_ms,
+                   100.0 * stats.time_allreduce_ms / stats.time_total_ms,
+                   100.0 * stats.time_allgather_ms / stats.time_total_ms);
+            if (bench_stats.valid_runs > 1) {
+                printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
+                       bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
             }
 
             printf("GFLOPS (SpMV): %.3f\n",

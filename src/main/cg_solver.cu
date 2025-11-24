@@ -17,26 +17,32 @@
 #include "io.h"
 #include "spmv.h"
 #include "solvers/cg_solver.h"
+#include "solvers/cg_metrics.h"
+#include "benchmark_stats.h"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--mode=<modes>] [--host] [--tol=<tol>] [--maxiter=<n>]\n", argv[0]);
-        printf("Example: %s matrix/stencil_512x512.mtx --mode=csr,stencil5-csr-direct\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--mode=<modes>] [--host] [--tol=<tol>] [--maxiter=<n>] [--timers] [--json=<file>] [--csv=<file>]\n", argv[0]);
+        printf("Example: %s matrix/stencil_512x512.mtx --mode=csr,stencil5-csr-direct --json=results/cg.json\n", argv[0]);
         printf("\nOptions:\n");
         printf("  --mode=<modes>         SpMV operators, comma-separated (default: stencil5-csr-direct)\n");
-        printf("  --host                 Use host interface (default: device-native for best GPU perf)\n");
+        printf("  --host                 Use host interface (default: device-native GPU)\n");
         printf("  --tol=<tol>            Convergence tolerance (default: 1e-6)\n");
         printf("  --maxiter=<n>          Maximum iterations (default: 1000)\n");
-        printf("  --no-detailed-timers   Disable per-category timing\n");
+        printf("  --timers               Enable detailed per-category timing (adds sync overhead)\n");
+        printf("  --json=<file>          Export results to JSON (one file per mode: <file>_<mode>.json)\n");
+        printf("  --csv=<file>           Export results to CSV (append all modes to single file)\n");
         return 1;
     }
 
     const char* matrix_file = argv[1];
     const char* modes_string = "stencil5-csr-direct";  // Default
     bool use_device = true;
-    bool enable_detailed_timers = true;
+    bool enable_detailed_timers = false;  // Opt-in with --timers (avoids sync overhead)
     double tolerance = 1e-6;
     int max_iters = 1000;
+    const char* json_file = NULL;
+    const char* csv_file = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -46,12 +52,16 @@ int main(int argc, char** argv) {
             use_device = false;
         } else if (strcmp(argv[i], "--device") == 0) {
             use_device = true;
-        } else if (strcmp(argv[i], "--no-detailed-timers") == 0) {
-            enable_detailed_timers = false;
+        } else if (strcmp(argv[i], "--timers") == 0) {
+            enable_detailed_timers = true;
         } else if (strncmp(argv[i], "--tol=", 6) == 0) {
             tolerance = atof(argv[i] + 6);
         } else if (strncmp(argv[i], "--maxiter=", 10) == 0) {
             max_iters = atoi(argv[i] + 10);
+        } else if (strncmp(argv[i], "--json=", 7) == 0) {
+            json_file = argv[i] + 7;
+        } else if (strncmp(argv[i], "--csv=", 6) == 0) {
+            csv_file = argv[i] + 6;
         }
     }
 
@@ -131,25 +141,37 @@ int main(int argc, char** argv) {
         // Reset solution vector
         memset(x, 0, mat.rows * sizeof(double));
 
-        // Warmup: 1 full CG iteration (warms up SpMV + cuBLAS + reductions)
-        printf("Warmup (1 CG iteration)...\n");
-        CGConfig warmup_config = {1, tolerance, 0, false};
+        // Warmup: 3 CG iterations (HPC best practice)
+        printf("Warmup (3 runs)...\n");
+        CGConfig warmup_config = {max_iters, tolerance, 0, false};
         CGStats warmup_stats;
-        if (use_device) {
-            cg_solve_device(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
-        } else {
-            cg_solve(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+        for (int w = 0; w < 3; w++) {
+            memset(x, 0, mat.rows * sizeof(double));
+            if (use_device) {
+                cg_solve_device(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+            } else {
+                cg_solve(spmv_op, &mat, b, x, warmup_config, &warmup_stats);
+            }
         }
 
-        // Solve
+        // Benchmark: 10 runs with statistical analysis
+        printf("Running benchmark (10 runs)...\n");
+        BenchmarkStats bench_stats;
         CGStats stats;
-        printf("Starting CG solver...\n");
 
         if (use_device) {
-            cg_solve_device(spmv_op, &mat, b, x, config, &stats);
+            cg_benchmark_with_stats_device(spmv_op, &mat, b, x, config, 10, &bench_stats, &stats);
         } else {
+            // For host interface, run single iteration (host is not performance-critical)
+            memset(x, 0, mat.rows * sizeof(double));
             cg_solve(spmv_op, &mat, b, x, config, &stats);
+            bench_stats.median_ms = stats.time_total_ms;
+            bench_stats.valid_runs = 1;
+            bench_stats.outliers_removed = 0;
         }
+
+        printf("Completed: %d valid runs, %d outliers removed\n",
+               bench_stats.valid_runs, bench_stats.outliers_removed);
 
         // Verify solution
         double error = 0.0;
@@ -162,14 +184,29 @@ int main(int argc, char** argv) {
         // Summary for this mode
         printf("\n--- Results for %s ---\n", current_mode);
         printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
-        printf("Time: %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
-               stats.time_total_ms,
+        printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
+               bench_stats.median_ms,
                100.0 * stats.time_spmv_ms / stats.time_total_ms,
                100.0 * stats.time_blas1_ms / stats.time_total_ms,
                100.0 * stats.time_reductions_ms / stats.time_total_ms);
+        if (bench_stats.valid_runs > 1) {
+            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
+                   bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
+        }
         printf("Solution error (RMS): %e\n", error);
         printf("GFLOPS (SpMV): %.3f\n",
                (2.0 * mat.nnz * stats.iterations) / (stats.time_spmv_ms * 1e6));
+
+        // Export results if requested
+        if (json_file) {
+            char json_filename[512];
+            snprintf(json_filename, sizeof(json_filename), "%s_%s.json", json_file, current_mode);
+            export_cg_json(json_filename, current_mode, &mat, &bench_stats, &stats);
+        }
+        if (csv_file) {
+            bool write_header = (mode_idx == 0);  // Header only for first mode
+            export_cg_csv(csv_file, current_mode, &mat, &bench_stats, &stats, write_header);
+        }
 
         // Cleanup operator (GPU memory only, CSR host preserved)
         spmv_op->free();

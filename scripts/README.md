@@ -1,80 +1,51 @@
-# Scripts
+# Benchmark Scripts
 
-Automation scripts for building, benchmarking, and profiling the CUDA SpMV project.
+Automated benchmarking scripts for SpMV and CG solvers.
 
-## Directory Structure
+## Quick Start
 
-```
-scripts/
-├── setup/         # Installation and environment setup
-├── benchmarking/  # Performance benchmarks (local + VastAI)
-├── profiling/     # GPU profiling (nsys, ncu)
-├── analysis/      # Results visualization and export
-└── utils/         # Validation and helper scripts
-```
-
-## Quick Reference
-
-### Setup
-- `setup/full_setup.sh` - Modular setup with options:
-  - `./full_setup.sh` - Main project only (default)
-  - `./full_setup.sh --all` - Everything (main + Kokkos + AMGX)
-  - `./full_setup.sh --kokkos` - Main + Kokkos
-  - `./full_setup.sh --amgx` - Main + AMGX
-- `setup/remote_setup.sh` - Basic setup (project only, deprecated - use full_setup.sh)
-- `setup/install_amgx.sh` - Install NVIDIA AMGX library
-- `setup/detect_gpu_config.sh` - Detect GPU architecture and capabilities
-
-### Benchmarking
-- `benchmarking/multimode_benchmark.sh` - Compare all SpMV modes
-- `benchmarking/cg_comparison_setup.sh` - CG solver benchmark setup
-- `benchmarking/remote_benchmark.sh` - Single SpMV mode benchmark
-- `benchmarking/benchmark_and_visualize.sh` - Benchmark with plots
-
-### Profiling
-- `profiling/profile_kernel.sh` - Profile kernels with nsys/ncu
-
-### Analysis
-- `analysis/generate_performance_chart.sh` - Create performance plots
-- `analysis/save_results_to_git.sh` - Commit benchmark results
-
-### Utils
-- `utils/test_validation.sh` - Validate SpMV correctness
-- `utils/push_remote_results.sh` - Transfer results from remote instance
-
-## Usage Examples
-
-**Complete setup (VastAI, RunPod, AWS, etc.):**
 ```bash
-# Clone project first
-git clone https://github.com/1fni/cuda-spmv-benchmark.git
-cd cuda-spmv-benchmark
+# Local testing (single-GPU)
+./scripts/quick_bench.sh matrix/stencil_512x512.mtx
 
-# Then run setup with desired options
-./scripts/setup/full_setup.sh              # Main project only (default)
-./scripts/setup/full_setup.sh --all        # With all benchmarks
-./scripts/setup/full_setup.sh --kokkos     # Main + Kokkos
-./scripts/setup/full_setup.sh --amgx       # Main + AMGX
+# Full benchmark suite (8 GPUs A100)
+./scripts/benchmark_suite.sh matrix/stencil_5000x5000.mtx results/a100_run
 ```
 
-**Run multi-mode benchmark:**
+## Scripts Overview
+
+### 1. `benchmark_suite.sh` - Complete benchmark suite
+
+Full benchmarking pipeline for multi-GPU systems (designed for A100 8×GPU).
+
+**Usage:**
 ```bash
-./scripts/benchmarking/multimode_benchmark.sh
+./scripts/benchmark_suite.sh <matrix.mtx> [output_dir]
 ```
 
-**Profile AMGX:**
-```bash
-cd external/benchmarks/amgx
-nsys profile -o amgx_cg ./amgx_cg_solver ../../../matrix/stencil_5000x5000.mtx
-```
+**What it runs:**
+1. SpMV single-GPU - All modes (csr, stencil5-*)
+2. CG single-GPU - Modes: csr, stencil5-csr-direct
+3. CG multi-GPU AllGather - 2, 4, 8 GPUs
+4. CG multi-GPU Halo P2P - 2, 4, 8 GPUs
 
-**Profile our CG:**
-```bash
-nsys profile -o our_cg ./bin/release/cg_test matrix/stencil_5000x5000.mtx --mode=stencil5-csr-direct --device
-```
+### 2. `quick_bench.sh` - Fast local testing
 
-**Compare results:**
+Lightweight benchmark for local development (single-GPU only).
+
+## Output Files
+
+- `*.csv` - Tabular comparison (append mode for multi-run)
+- `*.json` - Detailed run metadata (one per config)
+
+## Example
+
 ```bash
-nsys stats --report cuda_api_sum amgx_cg.nsys-rep > amgx_api.txt
-nsys stats --report cuda_api_sum our_cg.nsys-rep > our_api.txt
+# Generate matrix
+./bin/generate_matrix 5000 matrix/stencil_5000x5000.mtx
+
+# Run benchmark
+./scripts/benchmark_suite.sh matrix/stencil_5000x5000.mtx results/a100
+
+# Results in: results/a100/
 ```
