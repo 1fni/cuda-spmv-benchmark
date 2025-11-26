@@ -2,8 +2,8 @@
  * @file amgx_cg_solver_mgpu.cpp
  * @brief Multi-GPU CG solver using NVIDIA AmgX with MPI
  *
- * AmgX handles all internal communications (halos, overlap, etc).
- * We only provide: local CSR partitions + global_row_ids mapping.
+ * AmgX handles all internal communications automatically when using MPI.
+ * Simplified approach: use upload_all() with local data, AmgX detects MPI context.
  *
  * Launch: mpirun -np N ./amgx_cg_solver_mgpu matrix.mtx [options]
  */
@@ -20,10 +20,12 @@
 #include <algorithm>
 #include "amgx_benchmark.h"
 
+static int g_rank = 0;  // Global rank for callbacks
+
 #define CUDA_CHECK(call) do { \
     cudaError_t err = call; \
     if (err != cudaSuccess) { \
-        fprintf(stderr, "[Rank %d] CUDA error at %s:%d: %s\n", rank, __FILE__, __LINE__, cudaGetErrorString(err)); \
+        fprintf(stderr, "[Rank %d] CUDA error at %s:%d: %s\n", g_rank, __FILE__, __LINE__, cudaGetErrorString(err)); \
         MPI_Abort(MPI_COMM_WORLD, 1); \
     } \
 } while(0)
@@ -31,10 +33,19 @@
 #define AMGX_CHECK(call) do { \
     AMGX_RC err = call; \
     if (err != AMGX_RC_OK) { \
-        fprintf(stderr, "[Rank %d] AMGX error at %s:%d: code %d\n", rank, __FILE__, __LINE__, err); \
+        char str[4096]; \
+        AMGX_get_error_string(err, str, 4096); \
+        fprintf(stderr, "[Rank %d] AMGX error at %s:%d: %s\n", g_rank, __FILE__, __LINE__, str); \
         MPI_Abort(MPI_COMM_WORLD, 1); \
     } \
 } while(0)
+
+// Print callback - only rank 0 prints
+void print_callback(const char *msg, int length) {
+    if (g_rank == 0) {
+        printf("%s", msg);
+    }
+}
 
 struct MatrixMarket {
     int rows, cols, nnz;
@@ -132,6 +143,9 @@ RunResult run_amgx_solve_mgpu(AMGX_solver_handle solver,
     AMGX_CHECK(AMGX_solver_solve(solver, b, x));
     auto end = std::chrono::high_resolution_clock::now();
 
+    // Download solution from AmgX to d_x
+    AMGX_CHECK(AMGX_vector_download(x, d_x));
+
     RunResult result;
     result.time_ms = std::chrono::duration<double, std::milli>(end - start).count();
 
@@ -175,6 +189,7 @@ int main(int argc, char* argv[]) {
     int rank, world_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    g_rank = rank;  // Set global rank for callbacks
 
     if (argc < 2) {
         if (rank == 0) {
@@ -257,7 +272,7 @@ int main(int argc, char* argv[]) {
         local_row_ptr[i + 1] = local_nnz;
     }
 
-    // Extract local CSR partition
+    // Extract local CSR partition with GLOBAL column indices (important for AmgX!)
     int *local_col_idx = (int*)malloc(local_nnz * sizeof(int));
     double *local_values = (double*)malloc(local_nnz * sizeof(double));
 
@@ -267,36 +282,22 @@ int main(int argc, char* argv[]) {
         int row_nnz = mat.row_ptr[global_row + 1] - src_start;
         int dst_start = local_row_ptr[i];
 
+        // Copy with GLOBAL column indices (AmgX needs these for halo detection)
         memcpy(&local_col_idx[dst_start], &mat.col_idx[src_start], row_nnz * sizeof(int));
         memcpy(&local_values[dst_start], &mat.values[src_start], row_nnz * sizeof(double));
     }
 
     if (rank == 0) {
-        printf("Partition created: rank %d has rows [%d:%d), %d nnz\n",
+        printf("Partition: rank %d has rows [%d:%d), %d nnz\n\n",
                rank, row_offset, row_offset + n_local, local_nnz);
     }
 
-    // Gather partition sizes from all ranks for offsets array
-    int *partition_sizes = nullptr;
-    if (rank == 0) {
-        partition_sizes = (int*)malloc((world_size + 1) * sizeof(int));
-    }
-    MPI_Gather(&n_local, 1, MPI_INT, partition_sizes + 1, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    int *partition_offsets = nullptr;
-    if (rank == 0) {
-        partition_offsets = (int*)malloc((world_size + 1) * sizeof(int));
-        partition_offsets[0] = 0;
-        for (int i = 1; i <= world_size; i++) {
-            partition_offsets[i] = partition_offsets[i-1] + partition_sizes[i];
-        }
-    }
-
     // Initialize AmgX
-    AMGX_CHECK(AMGX_initialize());
-    AMGX_CHECK(AMGX_initialize_plugins());
+    AMGX_SAFE_CALL(AMGX_initialize());
+    AMGX_SAFE_CALL(AMGX_initialize_plugins());
+    AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 
-    // Create config for PCG solver (no preconditioning, fair comparison)
+    // Create config for PCG solver (no preconditioning)
     char config_string[512];
     snprintf(config_string, sizeof(config_string),
              "config_version=2, "
@@ -307,64 +308,37 @@ int main(int argc, char* argv[]) {
              "tolerance=%.15e, "
              "norm=L2, "
              "print_solve_stats=0, "
-             "monitor_residual=1, "  // Required for convergence check
+             "monitor_residual=1, "
              "obtain_timings=0",
              max_iters, tolerance);
 
     AMGX_config_handle cfg;
-    AMGX_CHECK(AMGX_config_create(&cfg, config_string));
+    AMGX_SAFE_CALL(AMGX_config_create(&cfg, config_string));
 
-    // Create resources with MPI communicator
+    // Mode: double precision, device (GPU), int indices, int pointers
+    AMGX_Mode mode = AMGX_mode_dDDI;
+
+    // Open AmgX library
     AMGX_resources_handle rsrc;
-    MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    void* mpi_comm_ptr = (void*)&mpi_comm;
-    AMGX_CHECK(AMGX_resources_create(&rsrc, cfg, &mpi_comm_ptr, 1, &device_id));
-
-    // Create distribution object for partitioned matrix
-    AMGX_distribution_handle dist;
-    AMGX_CHECK(AMGX_distribution_create(&dist, cfg));
-
-    // Broadcast partition offsets to all ranks
-    if (rank != 0) {
-        partition_offsets = (int*)malloc((world_size + 1) * sizeof(int));
-    }
-    MPI_Bcast(partition_offsets, world_size + 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    AMGX_CHECK(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_offsets));
-    AMGX_CHECK(AMGX_distribution_set_32bit_colindices(dist, 1));  // Use 32-bit column indices
+    AMGX_SAFE_CALL(AMGX_resources_create_simple(&rsrc, cfg));
 
     // Create matrix, vectors, and solver
     AMGX_matrix_handle A;
     AMGX_vector_handle b, x;
     AMGX_solver_handle solver;
 
-    AMGX_CHECK(AMGX_matrix_create(&A, rsrc, AMGX_mode_dDDI));
-    AMGX_CHECK(AMGX_vector_create(&b, rsrc, AMGX_mode_dDDI));
-    AMGX_CHECK(AMGX_vector_create(&x, rsrc, AMGX_mode_dDDI));
-    AMGX_CHECK(AMGX_solver_create(&solver, rsrc, AMGX_mode_dDDI, cfg));
+    AMGX_SAFE_CALL(AMGX_matrix_create(&A, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_vector_create(&b, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
 
-    // Debug: print partition offsets
+    // Upload local matrix (AmgX auto-detects MPI context and handles halos)
     if (rank == 0) {
-        printf("Partition offsets: [");
-        for (int i = 0; i <= world_size; i++) {
-            printf("%d%s", partition_offsets[i], (i < world_size) ? ", " : "");
-        }
-        printf("]\n");
-        printf("Uploading matrix: n_global=%d, n_local=%d, local_nnz=%d\n\n",
-               mat.rows, n_local, local_nnz);
+        printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
+               n_local, local_nnz);
     }
-
-    // Upload local matrix partition with distribution
-    AMGX_CHECK(AMGX_matrix_upload_distributed(A,
-                                               mat.rows,      // n_global
-                                               n_local,       // n (local rows)
-                                               local_nnz,     // nnz (local)
-                                               1, 1,          // block_dimx, block_dimy
-                                               local_row_ptr,
-                                               local_col_idx, // Global column indices
-                                               local_values,
-                                               nullptr,       // diag_data
-                                               dist));
+    AMGX_SAFE_CALL(AMGX_matrix_upload_all(A, n_local, local_nnz, 1, 1,
+                                           local_row_ptr, local_col_idx, local_values, nullptr));
 
     // Create RHS: b = ones
     if (rank == 0) {
@@ -379,10 +353,10 @@ int main(int argc, char* argv[]) {
     CUDA_CHECK(cudaMalloc(&d_x, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, n_local * sizeof(double), cudaMemcpyHostToDevice));
 
-    AMGX_CHECK(AMGX_vector_upload(b, n_local, 1, d_b));
+    AMGX_SAFE_CALL(AMGX_vector_upload(b, n_local, 1, d_b));
 
-    // Setup solver
-    AMGX_CHECK(AMGX_solver_setup(solver, A));
+    // Setup solver (builds internal structures + halos)
+    AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
 
     // Warmup
     if (rank == 0) printf("Warmup (3 runs)...\n");
@@ -396,6 +370,28 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < num_runs; i++) {
         results.push_back(run_amgx_solve_mgpu(solver, b, x, d_x, n_local, false, rank));
     }
+
+    // Verify solution with checksum (download x and compute sum + L2 norm)
+    double *h_x_local = (double*)malloc(n_local * sizeof(double));
+    CUDA_CHECK(cudaMemcpy(h_x_local, d_x, n_local * sizeof(double), cudaMemcpyDeviceToHost));
+
+    double local_sum = 0.0;
+    double local_norm2 = 0.0;
+    for (int i = 0; i < n_local; i++) {
+        local_sum += h_x_local[i];
+        local_norm2 += h_x_local[i] * h_x_local[i];
+    }
+
+    double global_sum, global_norm2;
+    MPI_Allreduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&local_norm2, &global_norm2, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    double global_norm = sqrt(global_norm2);
+
+    if (rank == 0) {
+        printf("Solution verification: sum=%.15e, L2_norm=%.15e\n\n", global_sum, global_norm);
+    }
+
+    free(h_x_local);
 
     // Extract times (rank 0 only, all ranks have same timing)
     std::vector<double> times;
@@ -480,7 +476,6 @@ int main(int argc, char* argv[]) {
     AMGX_vector_destroy(x);
     AMGX_vector_destroy(b);
     AMGX_matrix_destroy(A);
-    AMGX_distribution_destroy(dist);
     AMGX_resources_destroy(rsrc);
     AMGX_config_destroy(cfg);
 
@@ -493,10 +488,6 @@ int main(int argc, char* argv[]) {
     free(local_row_ptr);
     free(local_col_idx);
     free(local_values);
-    free(partition_offsets);
-    if (rank == 0 && partition_sizes) {
-        free(partition_sizes);
-    }
 
     MPI_Finalize();
     return 0;

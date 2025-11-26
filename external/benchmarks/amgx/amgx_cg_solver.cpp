@@ -132,6 +132,9 @@ RunResult run_amgx_solve(AMGX_solver_handle solver,
     AMGX_CHECK(AMGX_solver_solve(solver, b, x));
     auto end = std::chrono::high_resolution_clock::now();
 
+    // Download solution from AmgX to d_x
+    AMGX_CHECK(AMGX_vector_download(x, d_x));
+
     if (verbose) {
         printf("========================================\n");
     }
@@ -282,6 +285,21 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < num_runs; i++) {
         results.push_back(run_amgx_solve(solver, b, x, d_x, mat.rows, false));
     }
+
+    // Verify solution with checksum (download x and compute sum + L2 norm)
+    double *h_x = (double*)malloc(mat.rows * sizeof(double));
+    CUDA_CHECK(cudaMemcpy(h_x, d_x, mat.rows * sizeof(double), cudaMemcpyDeviceToHost));
+
+    double sum = 0.0;
+    double norm2 = 0.0;
+    for (int i = 0; i < mat.rows; i++) {
+        sum += h_x[i];
+        norm2 += h_x[i] * h_x[i];
+    }
+    double norm = sqrt(norm2);
+
+    printf("Solution verification: sum=%.15e, L2_norm=%.15e\n\n", sum, norm);
+    free(h_x);
 
     // Extract times
     std::vector<double> times;
