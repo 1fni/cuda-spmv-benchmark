@@ -15,6 +15,7 @@
 #include "io.h"
 #include "spmv.h"
 #include "solvers/cg_solver_mgpu_partitioned.h"
+#include "solvers/cg_metrics.h"
 #include "benchmark_stats_mgpu.h"
 
 int main(int argc, char** argv) {
@@ -27,16 +28,20 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         if (rank == 0) {
-            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--timers]\n", argv[0]);
-            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx\n", argv[0]);
+            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--timers] [--json=<file>] [--csv=<file>]\n", argv[0]);
+            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --json=results.json\n", argv[0]);
             printf("Options:\n");
-            printf("  --timers  Enable detailed timing breakdown (adds GPU sync overhead)\n");
+            printf("  --timers      Enable detailed timing breakdown (adds GPU sync overhead)\n");
+            printf("  --json=<file> Export results to JSON file\n");
+            printf("  --csv=<file>  Export results to CSV file\n");
         }
         MPI_Finalize();
         return 1;
     }
 
     const char* matrix_file = argv[1];
+    const char* json_file = NULL;
+    const char* csv_file = NULL;
 
     // Each rank loads matrix independently (avoids MPI_Bcast size limit)
     MatrixData mat;
@@ -78,6 +83,10 @@ int main(int argc, char** argv) {
             if (rank == 0) {
                 printf("Detailed timers enabled (adds sync overhead)\n");
             }
+        } else if (strncmp(argv[i], "--json=", 7) == 0) {
+            json_file = argv[i] + 7;
+        } else if (strncmp(argv[i], "--csv=", 6) == 0) {
+            csv_file = argv[i] + 6;
         }
     }
 
@@ -129,6 +138,18 @@ int main(int argc, char** argv) {
         printf("...\n");
         printf("x[%d] = %.15e (last)\n", mat.rows - 1, x[mat.rows - 1]);
         printf("========================================\n");
+
+        // Export results if requested
+        if (json_file || csv_file) {
+            if (json_file) {
+                export_cg_mgpu_json(json_file, "partitioned-halo", &mat, &bench_stats, &stats, world_size);
+                printf("\nResults exported to JSON: %s\n", json_file);
+            }
+            if (csv_file) {
+                // TODO: Implement CSV export for multi-GPU CG
+                printf("\nWarning: CSV export not yet implemented for multi-GPU CG\n");
+            }
+        }
     }
 
     // Cleanup
