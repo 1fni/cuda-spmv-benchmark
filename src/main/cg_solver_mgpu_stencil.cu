@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
     // CG configuration
     CGConfigMultiGPU config;
-    config.max_iters = 100;
+    config.max_iters = 1000;
     config.tolerance = 1e-6;
     config.verbose = 2;
 

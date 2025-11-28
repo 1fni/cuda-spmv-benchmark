@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     const char* matrix_file = argv[1];
     const char* modes_string = "csr";  // Default
     double tolerance = 1e-6;
-    int max_iters = 100;
+    int max_iters = 1000;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
