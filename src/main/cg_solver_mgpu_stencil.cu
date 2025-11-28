@@ -81,21 +81,21 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Warmup: 5 full CG runs (HPC best practice for multi-GPU)
-    if (rank == 0) printf("Warmup (5 runs)...\n");
+    // Warmup: 3 full CG runs
+    if (rank == 0) printf("Warmup (3 runs)...\n");
     CGConfigMultiGPU warmup_config = config;
     warmup_config.verbose = 0;
     CGStatsMultiGPU warmup_stats;
-    for (int w = 0; w < 5; w++) {
+    for (int w = 0; w < 3; w++) {
         memset(x, 0, mat.rows * sizeof(double));
         cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
     }
 
-    // Benchmark: 30 runs with statistical analysis
-    if (rank == 0) printf("Running benchmark (30 runs)...\n");
+    // Benchmark: 10 runs with statistical analysis (match AmgX default)
+    if (rank == 0) printf("Running benchmark (10 runs)...\n");
     BenchmarkStats bench_stats;
     CGStatsMultiGPU stats;
-    cg_benchmark_with_stats_mgpu_partitioned(NULL, &mat, b, x, config, 30, &bench_stats, &stats);
+    cg_benchmark_with_stats_mgpu_partitioned(NULL, &mat, b, x, config, 10, &bench_stats, &stats);
 
     if (rank == 0) {
         printf("Completed: %d valid runs, %d outliers removed\n",
