@@ -219,8 +219,10 @@ int main(int argc, char* argv[]) {
         // Free GPU memory after each mode to prevent accumulation on large matrices
         op->free();
     }
-    
-    printf("\n=== Multi-mode benchmark completed ===\n");
+
+    if (num_modes > 1) {
+        printf("\n=== Multi-mode benchmark completed ===\n");
+    }
 
     // Free host memory for vectors and matrix data
     free(x);
