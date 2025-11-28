@@ -44,36 +44,31 @@
 int main(int argc, char* argv[]) {
     // Check for correct number of command-line arguments
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<mode1[,mode2,...]> [--output-format=<human|json|csv>] [--output-file=<filename>]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<mode1[,mode2,...]> [--json=<file>] [--csv=<file>]\n", argv[0]);
         fprintf(stderr, "Available modes: csr, ellpack-naive, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened\n");
+        fprintf(stderr, "Example: %s matrix.mtx --mode=csr,stencil5 --json=results.json\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const char* matrix_file = argv[1];        ///< Path to Matrix Market file containing sparse matrix
     const char* modes_string = NULL;          ///< SpMV implementation modes (comma-separated)
-    const char* output_format = "human";      ///< Output format for metrics (default: human-readable)
-    const char* output_file = NULL;           ///< Output file for metrics (default: stdout)
+    const char* json_file = NULL;             ///< JSON output file
+    const char* csv_file = NULL;              ///< CSV output file
 
-    // Parse command-line arguments to find mode, output format, and output file
+    // Parse command-line arguments
     for (int i = 2; i < argc; ++i) {
         if (strncmp(argv[i], "--mode=", 7) == 0) {
-            modes_string = argv[i] + 7;  // Get modes value after "--mode="
-        } else if (strncmp(argv[i], "--output-format=", 16) == 0) {
-            output_format = argv[i] + 16;  // Get format value after "--output-format="
-        } else if (strncmp(argv[i], "--output-file=", 14) == 0) {
-            output_file = argv[i] + 14;  // Get filename after "--output-file="
+            modes_string = argv[i] + 7;
+        } else if (strncmp(argv[i], "--json=", 7) == 0) {
+            json_file = argv[i] + 7;
+        } else if (strncmp(argv[i], "--csv=", 6) == 0) {
+            csv_file = argv[i] + 6;
         }
     }
 
     // Validate that modes were specified
     if (modes_string == NULL) {
         fprintf(stderr, "Error: mode not specified. Use --mode=<mode1[,mode2,...]>\n");
-        return EXIT_FAILURE;
-    }
-
-    // Validate output format
-    if (strcmp(output_format, "human") != 0 && strcmp(output_format, "json") != 0 && strcmp(output_format, "csv") != 0) {
-        fprintf(stderr, "Error: Invalid output format '%s'. Use --output-format=<human|json|csv>\n", output_format);
         return EXIT_FAILURE;
     }
 
@@ -179,35 +174,31 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "Warning: Could not retrieve GPU properties\n");
         }
         
-        // Output metrics (for multi-mode: human to stdout, for single-mode: support file output)
-        if (num_modes == 1) {
-            // Single mode: support file output as before
-            FILE* output_fp = stdout;
-            if (output_file != NULL) {
-                output_fp = fopen(output_file, "w");
-                if (output_fp == NULL) {
-                    fprintf(stderr, "Error: Could not open output file '%s' for writing\n", output_file);
-                    op->free();
-                    continue;
-                }
-                printf("Writing metrics to file: %s\n", output_file);
-            }
-            
-            if (strcmp(output_format, "json") == 0) {
-                print_metrics_json(&metrics, output_fp);
-            } else if (strcmp(output_format, "csv") == 0) {
-                print_metrics_csv(&metrics, output_fp);
+        // Always print human-readable metrics to stdout
+        print_benchmark_metrics(&metrics, stdout);
+
+        // Export to JSON if requested
+        if (json_file != NULL) {
+            FILE* fp = fopen(json_file, "w");
+            if (fp == NULL) {
+                fprintf(stderr, "Error: Could not open JSON file '%s' for writing\n", json_file);
             } else {
-                print_benchmark_metrics(&metrics, output_fp);
+                print_metrics_json(&metrics, fp);
+                fclose(fp);
+                printf("Metrics exported to JSON: %s\n", json_file);
             }
-            
-            if (output_fp != stdout) {
-                fclose(output_fp);
-                printf("Metrics successfully written to: %s\n", output_file);
+        }
+
+        // Export to CSV if requested
+        if (csv_file != NULL) {
+            FILE* fp = fopen(csv_file, "w");
+            if (fp == NULL) {
+                fprintf(stderr, "Error: Could not open CSV file '%s' for writing\n", csv_file);
+            } else {
+                print_metrics_csv(&metrics, fp);
+                fclose(fp);
+                printf("Metrics exported to CSV: %s\n", csv_file);
             }
-        } else {
-            // Multi-mode: human output to stdout for comparison
-            print_benchmark_metrics(&metrics, stdout);
         }
         
         printf("SpMV completed successfully using mode: %s\n", op->name);

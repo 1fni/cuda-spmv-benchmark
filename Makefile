@@ -87,6 +87,7 @@ OBJ_MGPU_STENCIL_SPMV := $(OBJ_DIR)/mgpu/spmv_stencil_csr_direct.o
 OBJ_MGPU_HALO_KERNEL := $(OBJ_DIR)/mgpu/spmv_stencil_partitioned_halo_kernel.o
 OBJ_MGPU_BENCH_STATS := $(OBJ_DIR)/mgpu/benchmark_stats_mgpu.o
 OBJ_MGPU_BENCH_STATS_PARTITIONED := $(OBJ_DIR)/mgpu/benchmark_stats_mgpu_partitioned.o
+OBJ_MGPU_CG_METRICS := $(OBJ_DIR)/mgpu/cg_metrics.o
 
 # Generic solver objects
 OBJ_MGPU_MAIN := $(OBJ_DIR)/mgpu/cg_solver_mgpu.o
@@ -158,12 +159,12 @@ $(OBJ_DIR)/mgpu/cg_solver_mgpu_lib.o: $(SRC_DIR)/solvers/cg_solver_mgpu.cu
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $(MPI_INCLUDES) -c $< -o $@
 
 # Link generic solver with MPI (AllGather approach, uses NCCL)
-$(BIN_MGPU): $(OBJ_MGPU_MAIN) $(OBJ_MGPU_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_MGPU_BENCH_STATS) $(OBJ_DIR)/mgpu/spmv.o $(OBJ_DIR)/mgpu/spmv_ellpack.o $(OBJ_DIR)/mgpu/spmv_stencil.o $(OBJ_DIR)/mgpu/spmv_csr_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_halo_mgpu.o
+$(BIN_MGPU): $(OBJ_MGPU_MAIN) $(OBJ_MGPU_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_MGPU_BENCH_STATS) $(OBJ_MGPU_CG_METRICS) $(OBJ_DIR)/mgpu/spmv.o $(OBJ_DIR)/mgpu/spmv_ellpack.o $(OBJ_DIR)/mgpu/spmv_stencil.o $(OBJ_DIR)/mgpu/spmv_csr_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_mgpu.o $(OBJ_DIR)/mgpu/spmv_stencil_halo_mgpu.o
 	@mkdir -p $(BIN_DIR)
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS) -lnccl
 
 # Link stencil solver with MPI (halo P2P approach)
-$(BIN_MGPU_STENCIL): $(OBJ_MGPU_STENCIL_MAIN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_MGPU_BENCH_STATS_PARTITIONED)
+$(BIN_MGPU_STENCIL): $(OBJ_MGPU_STENCIL_MAIN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_MGPU_BENCH_STATS_PARTITIONED) $(OBJ_MGPU_CG_METRICS)
 	@mkdir -p $(BIN_DIR)
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS)
 
