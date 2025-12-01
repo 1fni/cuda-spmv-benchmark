@@ -189,22 +189,24 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, local_gpu));
 
-    if (rank == 0) {
-        printf("\n========================================\n");
-        printf("Multi-GPU CG Solver (MPI+NCCL)\n");
-        printf("========================================\n");
-        printf("MPI ranks: %d\n", world_size);
-        printf("GPUs per node: %d\n", num_gpus);
-        printf("Problem size: %d unknowns\n", mat->rows);
-        printf("Max iterations: %d\n", config.max_iters);
-        printf("Tolerance: %.1e\n", config.tolerance);
-        printf("========================================\n\n");
-    }
+    if (config.verbose >= 2) {
+        if (rank == 0) {
+            printf("\n========================================\n");
+            printf("Multi-GPU CG Solver (MPI+NCCL)\n");
+            printf("========================================\n");
+            printf("MPI ranks: %d\n", world_size);
+            printf("GPUs per node: %d\n", num_gpus);
+            printf("Problem size: %d unknowns\n", mat->rows);
+            printf("Max iterations: %d\n", config.max_iters);
+            printf("Tolerance: %.1e\n", config.tolerance);
+            printf("========================================\n\n");
+        }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    printf("[Rank %d] GPU %d: %s (CC %d.%d)\n",
-           rank, local_gpu, prop.name, prop.major, prop.minor);
-    MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
+        printf("[Rank %d] GPU %d: %s (CC %d.%d)\n",
+               rank, local_gpu, prop.name, prop.major, prop.minor);
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
 
     // ========== NCCL Initialization (skip if single GPU) ==========
     ncclComm_t nccl_comm = NULL;

@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
     // Cleanup
     free(b);
     free(x);
-    if (rank == 0 && mat.entries) {
+    if (mat.entries) {
         free(mat.entries);
     }
 
