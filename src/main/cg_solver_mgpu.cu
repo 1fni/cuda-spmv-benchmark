@@ -112,14 +112,21 @@ int main(int argc, char** argv) {
     MPI_Bcast(&matrix_nnz, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&grid_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Non-zero ranks initialize mat structure
+    // Non-zero ranks initialize mat structure and allocate entries
     if (rank != 0) {
         mat.rows = matrix_rows;
         mat.cols = matrix_cols;
         mat.nnz = matrix_nnz;
         mat.grid_size = grid_size;
-        mat.entries = NULL;
+        mat.entries = (Entry*)malloc(matrix_nnz * sizeof(Entry));
+        if (!mat.entries) {
+            fprintf(stderr, "[Rank %d] Failed to allocate matrix entries\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
     }
+
+    // Broadcast matrix entries to all ranks (AllGather requires full matrix)
+    MPI_Bcast(mat.entries, matrix_nnz * sizeof(Entry), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     // Create deterministic RHS: b = ones (all ranks)
     double* b = (double*)malloc(matrix_rows * sizeof(double));
