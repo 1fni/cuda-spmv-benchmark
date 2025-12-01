@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <mpi.h>
 #include "io.h"
 #include "solvers/cg_solver_mgpu.h"
@@ -125,8 +126,23 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Create MPI datatype for Entry structure to avoid INT_MAX overflow with large matrices
+    MPI_Datatype MPI_ENTRY;
+    int blocklengths[3] = {1, 1, 1};
+    MPI_Aint displacements[3];
+    MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_DOUBLE};
+
+    displacements[0] = offsetof(Entry, row);
+    displacements[1] = offsetof(Entry, col);
+    displacements[2] = offsetof(Entry, value);
+
+    MPI_Type_create_struct(3, blocklengths, displacements, types, &MPI_ENTRY);
+    MPI_Type_commit(&MPI_ENTRY);
+
     // Broadcast matrix entries to all ranks (AllGather requires full matrix)
-    MPI_Bcast(mat.entries, matrix_nnz * sizeof(Entry), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(mat.entries, matrix_nnz, MPI_ENTRY, 0, MPI_COMM_WORLD);
+
+    MPI_Type_free(&MPI_ENTRY);
 
     // Create deterministic RHS: b = ones (all ranks)
     double* b = (double*)malloc(matrix_rows * sizeof(double));
