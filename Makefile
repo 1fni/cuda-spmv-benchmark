@@ -47,10 +47,35 @@ CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/
 CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
-.PHONY: all clean cg_mgpu cg_mgpu_stencil
+.PHONY: all clean help
+.PHONY: spmv_bench generate_matrix cg_solver cg_solver_mgpu cg_solver_mgpu_stencil
+.PHONY: spmv gen cg cg_mgpu cg_mgpu_stencil
 
 # Main target
 all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
+
+# Help target
+help:
+	@echo "Available targets:"
+	@echo "  make              - Build all single-GPU binaries (default)"
+	@echo ""
+	@echo "Explicit targets (match binary names):"
+	@echo "  make spmv_bench              - Build bin/spmv_bench"
+	@echo "  make generate_matrix         - Build bin/generate_matrix"
+	@echo "  make cg_solver               - Build bin/cg_solver"
+	@echo "  make cg_solver_mgpu          - Build bin/cg_solver_mgpu (MPI)"
+	@echo "  make cg_solver_mgpu_stencil  - Build bin/cg_solver_mgpu_stencil (MPI)"
+	@echo ""
+	@echo "Short aliases:"
+	@echo "  make spmv         - Alias for spmv_bench"
+	@echo "  make gen          - Alias for generate_matrix"
+	@echo "  make cg           - Alias for cg_solver"
+	@echo "  make cg_mgpu      - Alias for cg_solver_mgpu"
+	@echo "  make cg_mgpu_stencil - Alias for cg_solver_mgpu_stencil"
+	@echo ""
+	@echo "Other targets:"
+	@echo "  make clean        - Remove all build artifacts"
+	@echo "  make help         - Show this help message"
 
 # SpMV benchmark binary
 $(BIN_SPMV): $(CU_SPMV_OBJS)
@@ -168,11 +193,30 @@ $(BIN_MGPU_STENCIL): $(OBJ_MGPU_STENCIL_MAIN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_M
 	@mkdir -p $(BIN_DIR)
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS)
 
-# Convenience targets
-cg_mgpu: $(BIN_MGPU)
-cg_mgpu_stencil: $(BIN_MGPU_STENCIL)
+# ============================================================================
+# Explicit targets (match binary names)
+# ============================================================================
 
+spmv_bench: $(BIN_SPMV)
+generate_matrix: $(BIN_GEN)
+cg_solver: $(BIN_CG)
+cg_solver_mgpu: $(BIN_MGPU)
+cg_solver_mgpu_stencil: $(BIN_MGPU_STENCIL)
+
+# ============================================================================
+# Short aliases
+# ============================================================================
+
+spmv: spmv_bench
+gen: generate_matrix
+cg: cg_solver
+cg_mgpu: cg_solver_mgpu
+cg_mgpu_stencil: cg_solver_mgpu_stencil
+
+# ============================================================================
 # Clean
+# ============================================================================
+
 clean:
 	rm -rf build bin results
 
