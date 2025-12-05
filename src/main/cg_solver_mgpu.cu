@@ -26,6 +26,12 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
+    // Set GPU device early (before any CUDA operations including spmv_op->init)
+    int num_gpus;
+    cudaGetDeviceCount(&num_gpus);
+    int local_gpu = rank % num_gpus;
+    cudaSetDevice(local_gpu);
+
     if (argc < 2) {
         if (rank == 0) {
             printf("Usage: mpirun -np <N> %s <matrix.mtx> [--mode=<modes>] [--tol=<tol>] [--maxiter=<n>]\n", argv[0]);
