@@ -732,12 +732,12 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     float time_ms;
     CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
 
-    if (rank == 0) {
-        stats->time_total_ms = time_ms;
-        if (config.verbose >= 1) {
-            printf("Total time: %.2f ms\n", time_ms);
-            printf("========================================\n");
-        }
+    // All ranks fill their stats
+    stats->time_total_ms = time_ms;
+
+    if (rank == 0 && config.verbose >= 1) {
+        printf("Total time: %.2f ms\n", time_ms);
+        printf("========================================\n");
     }
 
     // ========== Copy result back ==========
