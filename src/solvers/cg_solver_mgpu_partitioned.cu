@@ -737,17 +737,46 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         stats->time_axpby_update_p_ms /= stats->iterations;
     }
 
-    if (rank == 0) {
-        stats->time_total_ms = time_ms;
-        if (config.verbose >= 1) {
-            printf("Total time: %.2f ms\n", time_ms);
-            if (config.enable_detailed_timers) {
+    // All ranks fill their local stats first
+    stats->time_total_ms = time_ms;
+
+    // ========== MPI Stats Aggregation ==========
+    // Collect max times from all ranks (slowest rank = bottleneck for wall-time)
+    // Also collect min to compute load imbalance
+    if (world_size > 1) {
+        double local_times[6], max_times[6], min_times[6];
+
+        local_times[0] = stats->time_total_ms;
+        local_times[1] = stats->time_spmv_ms;
+        local_times[2] = stats->time_blas1_ms;
+        local_times[3] = stats->time_reductions_ms;
+        local_times[4] = stats->time_allreduce_ms;
+        local_times[5] = stats->time_allgather_ms;  // Halo P2P time
+
+        MPI_Reduce(local_times, max_times, 6, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(local_times, min_times, 6, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            // Store max times (bottleneck = what matters for wall-time)
+            stats->time_total_ms = max_times[0];
+            stats->time_spmv_ms = max_times[1];
+            stats->time_blas1_ms = max_times[2];
+            stats->time_reductions_ms = max_times[3];
+            stats->time_allreduce_ms = max_times[4];
+            stats->time_allgather_ms = max_times[5];
+
+            // Display load imbalance (always show for multi-GPU)
+            double imbalance_pct = 100.0 * (max_times[0] - min_times[0]) / max_times[0];
+            printf("Total time: %.2f ms (max), %.2f ms (min) - Load imbalance: %.1f%%\n",
+                   max_times[0], min_times[0], imbalance_pct);
+
+            if (config.verbose >= 1 && config.enable_detailed_timers) {
                 printf("\nDetailed Timing Breakdown:\n");
-                printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / time_ms);
-                printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / time_ms);
-                printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / time_ms);
-                printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / time_ms);
-                printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / time_ms);
+                printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / stats->time_total_ms);
+                printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / stats->time_total_ms);
+                printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / stats->time_total_ms);
+                printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / stats->time_total_ms);
+                printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / stats->time_total_ms);
 
                 printf("\nGranular BLAS1 Breakdown (per-iteration avg):\n");
                 printf("  Initial r=b-Ax0:  %.3f ms\n", stats->time_initial_r_ms);
@@ -762,6 +791,28 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             }
             printf("========================================\n");
         }
+    } else if (rank == 0 && config.verbose >= 1) {
+        printf("Total time: %.2f ms\n", stats->time_total_ms);
+        if (config.enable_detailed_timers) {
+            printf("\nDetailed Timing Breakdown:\n");
+            printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / time_ms);
+            printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / time_ms);
+            printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / time_ms);
+            printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / time_ms);
+            printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / time_ms);
+
+            printf("\nGranular BLAS1 Breakdown (per-iteration avg):\n");
+            printf("  Initial r=b-Ax0:  %.3f ms\n", stats->time_initial_r_ms);
+            printf("  AXPY update_x:    %.3f ms\n", stats->time_axpy_update_x_ms);
+            printf("  AXPY update_r:    %.3f ms\n", stats->time_axpy_update_r_ms);
+            printf("  AXPBY update_p:   %.3f ms\n", stats->time_axpby_update_p_ms);
+
+            printf("\nGranular Reductions Breakdown (per-iteration avg):\n");
+            printf("  Dot rs_initial:   %.3f ms\n", stats->time_dot_rs_initial_ms);
+            printf("  Dot pAp:          %.3f ms\n", stats->time_dot_pAp_ms);
+            printf("  Dot rs_new:       %.3f ms\n", stats->time_dot_rs_new_ms);
+        }
+        printf("========================================\n");
     }
 
     // Copy result back (local partition only)
