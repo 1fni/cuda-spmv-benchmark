@@ -164,7 +164,17 @@ int main(int argc, char** argv) {
     config.max_iters = max_iters;
     config.tolerance = tolerance;
     config.verbose = 2;
-    config.enable_detailed_timers = 1;  // Enable detailed timers by default
+
+    // Detailed timers: disabled by default (no sync overhead), enable with --timers flag
+    config.enable_detailed_timers = 0;
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--timers") == 0) {
+            config.enable_detailed_timers = 1;
+            if (rank == 0) {
+                printf("Detailed timers enabled (adds sync overhead)\n");
+            }
+        }
+    }
 
     // Loop through all modes
     for (int mode_idx = 0; mode_idx < num_modes; mode_idx++) {
@@ -219,6 +229,9 @@ int main(int argc, char** argv) {
                    100.0 * stats.time_reductions_ms / stats.time_total_ms,
                    100.0 * stats.time_allreduce_ms / stats.time_total_ms,
                    100.0 * stats.time_allgather_ms / stats.time_total_ms);
+            if (!config.enable_detailed_timers) {
+                printf("Note: Use --timers flag to enable detailed timing breakdown\n");
+            }
             if (bench_stats.valid_runs > 1) {
                 printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
                        bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
