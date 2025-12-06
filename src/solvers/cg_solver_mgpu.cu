@@ -736,9 +736,9 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     stats->time_total_ms = time_ms;
 
     // ========== MPI Stats Aggregation ==========
-    // Collect max time from all ranks (slowest rank = wall-time bottleneck)
+    // Collect max/min time from all ranks for load balance analysis
     if (world_size > 1) {
-        double local_times[6], max_times[6];
+        double local_times[6], max_times[6], min_times[6];
         local_times[0] = stats->time_total_ms;
         local_times[1] = stats->time_spmv_ms;
         local_times[2] = stats->time_blas1_ms;
@@ -747,19 +747,25 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
         local_times[5] = stats->time_allgather_ms;
 
         MPI_Reduce(local_times, max_times, 6, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(local_times, min_times, 6, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 
         if (rank == 0) {
+            // Store max (bottleneck) in stats
             stats->time_total_ms = max_times[0];
             stats->time_spmv_ms = max_times[1];
             stats->time_blas1_ms = max_times[2];
             stats->time_reductions_ms = max_times[3];
             stats->time_allreduce_ms = max_times[4];
             stats->time_allgather_ms = max_times[5];
-        }
-    }
 
-    if (rank == 0 && config.verbose >= 1) {
-        printf("Total time: %.2f ms (max across %d ranks)\n", stats->time_total_ms, world_size);
+            // Display load imbalance (always show for multi-GPU)
+            double imbalance_pct = 100.0 * (max_times[0] - min_times[0]) / max_times[0];
+            printf("Total time: %.2f ms (max), %.2f ms (min) - Load imbalance: %.1f%%\n",
+                   max_times[0], min_times[0], imbalance_pct);
+            printf("========================================\n");
+        }
+    } else if (rank == 0 && config.verbose >= 1) {
+        printf("Total time: %.2f ms\n", stats->time_total_ms);
         printf("========================================\n");
     }
 
