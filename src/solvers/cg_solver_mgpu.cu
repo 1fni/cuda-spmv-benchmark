@@ -732,11 +732,34 @@ int cg_solve_mgpu(SpmvOperator* spmv_op,
     float time_ms;
     CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
 
-    // All ranks fill their stats
+    // All ranks fill their local stats first
     stats->time_total_ms = time_ms;
 
+    // ========== MPI Stats Aggregation ==========
+    // Collect max time from all ranks (slowest rank = wall-time bottleneck)
+    if (world_size > 1) {
+        double local_times[6], max_times[6];
+        local_times[0] = stats->time_total_ms;
+        local_times[1] = stats->time_spmv_ms;
+        local_times[2] = stats->time_blas1_ms;
+        local_times[3] = stats->time_reductions_ms;
+        local_times[4] = stats->time_allreduce_ms;
+        local_times[5] = stats->time_allgather_ms;
+
+        MPI_Reduce(local_times, max_times, 6, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            stats->time_total_ms = max_times[0];
+            stats->time_spmv_ms = max_times[1];
+            stats->time_blas1_ms = max_times[2];
+            stats->time_reductions_ms = max_times[3];
+            stats->time_allreduce_ms = max_times[4];
+            stats->time_allgather_ms = max_times[5];
+        }
+    }
+
     if (rank == 0 && config.verbose >= 1) {
-        printf("Total time: %.2f ms\n", time_ms);
+        printf("Total time: %.2f ms (max across %d ranks)\n", stats->time_total_ms, world_size);
         printf("========================================\n");
     }
 
