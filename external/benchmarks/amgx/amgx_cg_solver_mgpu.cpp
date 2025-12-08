@@ -141,6 +141,7 @@ RunResult run_amgx_solve_mgpu(AMGX_solver_handle solver,
 
     auto start = std::chrono::high_resolution_clock::now();
     AMGX_CHECK(AMGX_solver_solve(solver, b, x));
+    CUDA_CHECK(cudaDeviceSynchronize());  // Force GPU completion before timing
     auto end = std::chrono::high_resolution_clock::now();
 
     // Download solution from AmgX to d_x
