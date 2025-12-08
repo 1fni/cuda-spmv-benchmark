@@ -338,8 +338,8 @@ int main(int argc, char* argv[]) {
         printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
                n_local, local_nnz);
     }
-    // Use linear topology: world_size × 1 (all ranks in a row)
-    AMGX_SAFE_CALL(AMGX_matrix_upload_all(A, n_local, local_nnz, world_size, 1,
+    // block_dimx=1, block_dimy=1: scalar matrix (not block matrix)
+    AMGX_SAFE_CALL(AMGX_matrix_upload_all(A, n_local, local_nnz, 1, 1,
                                            local_row_ptr, local_col_idx, local_values, nullptr));
 
     // Create RHS: b = ones
