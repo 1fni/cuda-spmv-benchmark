@@ -393,34 +393,36 @@ int main(int argc, char* argv[]) {
 
     free(h_x_local);
 
-    // Extract times (rank 0 only, all ranks have same timing)
+    // Extract times (all ranks measure their own timing)
     std::vector<double> times;
     for (const auto& r : results) {
         times.push_back(r.time_ms);
     }
 
-    // Calculate statistics (rank 0)
-    if (rank == 0) {
-        double mean = calculate_mean(times);
-        double std_dev = calculate_std_dev(times, mean);
+    // Calculate statistics (all ranks)
+    double mean = calculate_mean(times);
+    double std_dev = calculate_std_dev(times, mean);
 
-        // Remove outliers (>2 std devs)
-        std::vector<double> filtered_times;
-        for (double t : times) {
-            if (fabs(t - mean) <= 2.0 * std_dev) {
-                filtered_times.push_back(t);
-            }
+    // Remove outliers (>2 std devs)
+    std::vector<double> filtered_times;
+    for (double t : times) {
+        if (fabs(t - mean) <= 2.0 * std_dev) {
+            filtered_times.push_back(t);
         }
+    }
 
-        double median = calculate_median(filtered_times);
-        double final_mean = calculate_mean(filtered_times);
-        double final_std = calculate_std_dev(filtered_times, final_mean);
+    double median = calculate_median(filtered_times);
+    double final_mean = calculate_mean(filtered_times);
+    double final_std = calculate_std_dev(filtered_times, final_mean);
 
-        std::sort(filtered_times.begin(), filtered_times.end());
-        double min_time = filtered_times.front();
-        double max_time = filtered_times.back();
+    std::sort(filtered_times.begin(), filtered_times.end());
+    double min_time = filtered_times.front();
+    double max_time = filtered_times.back();
 
-        int outliers_removed = times.size() - filtered_times.size();
+    int outliers_removed = times.size() - filtered_times.size();
+
+    // Display results (rank 0 only)
+    if (rank == 0) {
 
         printf("Completed: %zu valid runs, %d outliers removed\n\n",
                filtered_times.size(), outliers_removed);
@@ -438,6 +440,27 @@ int main(int argc, char* argv[]) {
         double gflops = (2.0 * mat.nnz * results[0].iterations) / (median * 1e6);
         printf("GFLOPS: %.3f\n", gflops);
         printf("========================================\n");
+    }
+
+    // ========== MPI Stats Aggregation (All Ranks) ==========
+    // Collect median time from each rank to compute load imbalance
+    double max_rank_time = 0.0, min_rank_time = 0.0;
+
+    if (world_size > 1) {
+        // Collect max/min median times across all ranks
+        MPI_Reduce(&median, &max_rank_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&median, &min_rank_time, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            double imbalance_pct = 100.0 * (max_rank_time - min_rank_time) / max_rank_time;
+            printf("\n--- Multi-GPU Performance ---\n");
+            printf("Total time: %.3f ms (max), %.3f ms (min) - Load imbalance: %.1f%%\n",
+                   max_rank_time, min_rank_time, imbalance_pct);
+            printf("========================================\n");
+        }
+    }
+
+    if (rank == 0) {
 
         // Export results
         if (json_file || csv_file) {
