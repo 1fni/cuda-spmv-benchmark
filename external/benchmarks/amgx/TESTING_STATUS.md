@@ -57,11 +57,47 @@ While the solution path differs slightly, convergence criteria are met:
 - Same iteration count demonstrates consistent convergence
 - Variation well below numerical significance for practical applications
 
+## ⚠️ Known Limitation: Load Imbalance with Simple API
+
+### Observed Issue
+
+When using `AMGX_resources_create_simple()` + `AMGX_matrix_upload_all()`, significant load imbalance observed:
+
+```
+Configuration          | Time (rank 0) | Time (rank 1) | Load Imbalance
+-----------------------|---------------|---------------|----------------
+500×500 stencil, 2 GPU | 78 ms        | 1624 ms       | 95.2%
+Custom CG solver       | 27 ms        | 28 ms         | 2.3% ✅
+```
+
+### Root Cause
+
+The **simplified API** (`_simple` + `_upload_all`) is designed for ease of use but not optimized for distributed multi-GPU:
+- No explicit MPI communicator configuration
+- No partition vector for work distribution
+- AmgX may not properly balance work across ranks
+
+### Workaround
+
+For balanced multi-GPU performance, use **distributed API**:
+- `AMGX_resources_create()` with MPI communicator
+- `AMGX_distribution_handle` for explicit partitioning
+- `AMGX_matrix_upload_distributed()` with partition vector
+
+**Note:** This requires significantly more complex implementation.
+
+### Impact on Showcase
+
+✅ **Custom CG solver** demonstrates proper multi-GPU load balancing (2-3% imbalance)
+⚠️ **AmgX multi-GPU** limited to small-scale demonstration with simplified API
+
 ## 🎯 Conclusion
 
-**Status:** ✅ **Production-ready**
+**Status:** ✅ **Functional with limitations**
 
 The multi-GPU MPI CG solver with AmgX demonstrates correct behavior for distributed iterative methods. The observed checksum variation (~0.15%) is an expected consequence of parallel floating-point arithmetic and does not indicate a bug.
+
+**Load balancing limitation** with simplified API is documented. Custom solver achieves proper load distribution.
 
 **Recommendation:** Accept this behavior as normal for distributed linear solvers. For applications requiring bit-exact reproducibility, deterministic reduction algorithms would be needed (at significant performance cost).
 
