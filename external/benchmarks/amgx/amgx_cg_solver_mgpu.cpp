@@ -368,8 +368,11 @@ int main(int argc, char* argv[]) {
     if (rank == 0) printf("Running benchmark (%d runs)...\n", num_runs);
     std::vector<RunResult> results;
     for (int i = 0; i < num_runs; i++) {
+        if (rank == 0) printf("Run %d/%d...\r", i + 1, num_runs);
+        fflush(stdout);
         results.push_back(run_amgx_solve_mgpu(solver, b, x, d_x, n_local, false, rank));
     }
+    if (rank == 0) printf("\n");
 
     // Verify solution with checksum (download x and compute sum + L2 norm)
     double *h_x_local = (double*)malloc(n_local * sizeof(double));
