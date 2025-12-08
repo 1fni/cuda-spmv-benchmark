@@ -35,7 +35,10 @@ struct MatrixInfo {
 inline void export_amgx_json(const char* filename,
                               const char* mode,
                               const MatrixInfo* mat_info,
-                              const BenchmarkResults* results) {
+                              const BenchmarkResults* results,
+                              int num_gpus = 1,
+                              double max_rank_time = 0.0,
+                              double min_rank_time = 0.0) {
     FILE* fp = fopen(filename, "w");
     if (!fp) {
         fprintf(stderr, "Error: Could not open %s for writing\n", filename);
@@ -50,6 +53,9 @@ inline void export_amgx_json(const char* filename,
     fprintf(fp, "  \"timestamp\": \"%s\",\n", timestamp);
     fprintf(fp, "  \"solver\": \"AmgX CG\",\n");
     fprintf(fp, "  \"mode\": \"%s\",\n", mode);
+    if (num_gpus > 1) {
+        fprintf(fp, "  \"num_gpus\": %d,\n", num_gpus);
+    }
 
     fprintf(fp, "  \"matrix\": {\n");
     fprintf(fp, "    \"rows\": %d,\n", mat_info->rows);
@@ -68,8 +74,15 @@ inline void export_amgx_json(const char* filename,
     fprintf(fp, "    \"mean_ms\": %.3f,\n", results->mean_ms);
     fprintf(fp, "    \"min_ms\": %.3f,\n", results->min_ms);
     fprintf(fp, "    \"max_ms\": %.3f,\n", results->max_ms);
-    fprintf(fp, "    \"std_dev_ms\": %.3f\n", results->std_dev_ms);
-    fprintf(fp, "  },\n");
+    fprintf(fp, "    \"std_dev_ms\": %.3f", results->std_dev_ms);
+    if (num_gpus > 1 && max_rank_time > 0.0) {
+        fprintf(fp, ",\n");
+        fprintf(fp, "    \"max_rank_time_ms\": %.3f,\n", max_rank_time);
+        fprintf(fp, "    \"min_rank_time_ms\": %.3f,\n", min_rank_time);
+        double imbalance = 100.0 * (max_rank_time - min_rank_time) / max_rank_time;
+        fprintf(fp, "    \"load_imbalance_pct\": %.1f", imbalance);
+    }
+    fprintf(fp, "\n  },\n");
 
     fprintf(fp, "  \"statistics\": {\n");
     fprintf(fp, "    \"valid_runs\": %d,\n", results->valid_runs);
@@ -94,7 +107,10 @@ inline void export_amgx_csv(const char* filename,
                              const char* mode,
                              const MatrixInfo* mat_info,
                              const BenchmarkResults* results,
-                             bool write_header) {
+                             bool write_header,
+                             int num_gpus = 1,
+                             double max_rank_time = 0.0,
+                             double min_rank_time = 0.0) {
     FILE* fp = fopen(filename, write_header ? "w" : "a");
     if (!fp) {
         fprintf(stderr, "Error: Could not open %s for writing\n", filename);
@@ -102,19 +118,24 @@ inline void export_amgx_csv(const char* filename,
     }
 
     if (write_header) {
-        fprintf(fp, "solver,mode,rows,cols,nnz,grid_size,converged,iterations,");
+        fprintf(fp, "solver,mode,num_gpus,rows,cols,nnz,grid_size,converged,iterations,");
         fprintf(fp, "median_ms,mean_ms,min_ms,max_ms,std_dev_ms,");
+        fprintf(fp, "max_rank_time_ms,min_rank_time_ms,load_imbalance_pct,");
         fprintf(fp, "valid_runs,outliers_removed,gflops\n");
     }
 
     double gflops = (2.0 * mat_info->nnz * results->iterations) / (results->median_ms * 1e6);
+    double imbalance = (num_gpus > 1 && max_rank_time > 0.0) ?
+                       100.0 * (max_rank_time - min_rank_time) / max_rank_time : 0.0;
 
-    fprintf(fp, "AmgX,%s,%d,%d,%d,%d,%d,%d,",
-            mode, mat_info->rows, mat_info->cols, mat_info->nnz, mat_info->grid_size,
+    fprintf(fp, "AmgX,%s,%d,%d,%d,%d,%d,%d,%d,",
+            mode, num_gpus, mat_info->rows, mat_info->cols, mat_info->nnz, mat_info->grid_size,
             results->converged, results->iterations);
     fprintf(fp, "%.3f,%.3f,%.3f,%.3f,%.3f,",
             results->median_ms, results->mean_ms, results->min_ms,
             results->max_ms, results->std_dev_ms);
+    fprintf(fp, "%.3f,%.3f,%.1f,",
+            max_rank_time, min_rank_time, imbalance);
     fprintf(fp, "%d,%d,%.3f\n",
             results->valid_runs, results->outliers_removed, gflops);
 

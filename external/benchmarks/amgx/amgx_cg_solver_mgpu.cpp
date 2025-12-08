@@ -482,10 +482,12 @@ int main(int argc, char* argv[]) {
             };
 
             if (json_file) {
-                export_amgx_json(json_file, mode_str, &mat_info, &bench_results);
+                export_amgx_json(json_file, mode_str, &mat_info, &bench_results,
+                                 world_size, max_rank_time, min_rank_time);
             }
             if (csv_file) {
-                export_amgx_csv(csv_file, mode_str, &mat_info, &bench_results, true);
+                export_amgx_csv(csv_file, mode_str, &mat_info, &bench_results, true,
+                                world_size, max_rank_time, min_rank_time);
             }
         }
     }
