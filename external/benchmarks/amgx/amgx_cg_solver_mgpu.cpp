@@ -194,8 +194,15 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         if (rank == 0) {
-            fprintf(stderr, "Usage: mpirun -np <N> %s <matrix.mtx> [--tol=1e-6] [--max-iters=1000] [--runs=10] [--json=<file>] [--csv=<file>]\n", argv[0]);
-            fprintf(stderr, "Example: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --json=results/amgx_mgpu.json\n", argv[0]);
+            fprintf(stderr, "Usage: mpirun -np <N> %s <matrix.mtx> [options]\n", argv[0]);
+            fprintf(stderr, "Options:\n");
+            fprintf(stderr, "  --tol=<val>        Convergence tolerance (default: 1e-6)\n");
+            fprintf(stderr, "  --max-iters=<n>    Maximum iterations (default: 1000)\n");
+            fprintf(stderr, "  --runs=<n>         Benchmark runs (default: 10)\n");
+            fprintf(stderr, "  --timers           Enable AmgX internal timing breakdown\n");
+            fprintf(stderr, "  --json=<file>      Export results to JSON\n");
+            fprintf(stderr, "  --csv=<file>       Export results to CSV\n");
+            fprintf(stderr, "Example: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --timers\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
@@ -205,6 +212,7 @@ int main(int argc, char* argv[]) {
     double tolerance = 1e-6;
     int max_iters = 1000;
     int num_runs = 10;
+    bool enable_timers = false;
     const char* json_file = nullptr;
     const char* csv_file = nullptr;
 
@@ -216,6 +224,8 @@ int main(int argc, char* argv[]) {
             max_iters = atoi(argv[i] + 12);
         } else if (strncmp(argv[i], "--runs=", 7) == 0) {
             num_runs = atoi(argv[i] + 7);
+        } else if (strcmp(argv[i], "--timers") == 0) {
+            enable_timers = true;
         } else if (strncmp(argv[i], "--json=", 7) == 0) {
             json_file = argv[i] + 7;
         } else if (strncmp(argv[i], "--csv=", 6) == 0) {
@@ -231,7 +241,11 @@ int main(int argc, char* argv[]) {
         printf("MPI ranks: %d\n", world_size);
         printf("Tolerance: %.0e\n", tolerance);
         printf("Max iterations: %d\n", max_iters);
-        printf("Benchmark runs: %d\n\n", num_runs);
+        printf("Benchmark runs: %d\n", num_runs);
+        if (enable_timers) {
+            printf("Detailed timers: ENABLED (AmgX internal breakdown)\n");
+        }
+        printf("\n");
     }
 
     // Set GPU device (one GPU per MPI rank)
@@ -308,10 +322,10 @@ int main(int argc, char* argv[]) {
              "convergence=RELATIVE_INI, "
              "tolerance=%.15e, "
              "norm=L2, "
-             "print_solve_stats=0, "
+             "print_solve_stats=%d, "
              "monitor_residual=1, "
-             "obtain_timings=0",
-             max_iters, tolerance);
+             "obtain_timings=%d",
+             max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
 
     AMGX_config_handle cfg;
     AMGX_SAFE_CALL(AMGX_config_create(&cfg, config_string));
