@@ -202,10 +202,13 @@ int main(int argc, char* argv[]) {
             fprintf(stderr, "  --tol=<val>        Convergence tolerance (default: 1e-6)\n");
             fprintf(stderr, "  --max-iters=<n>    Maximum iterations (default: 1000)\n");
             fprintf(stderr, "  --runs=<n>         Benchmark runs (default: 10)\n");
+            fprintf(stderr, "  --precond=<type>   Preconditioner: none, amg, jacobi (default: none)\n");
             fprintf(stderr, "  --timers           Enable AmgX internal timing breakdown\n");
             fprintf(stderr, "  --json=<file>      Export results to JSON\n");
             fprintf(stderr, "  --csv=<file>       Export results to CSV\n");
-            fprintf(stderr, "Example: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --timers\n", argv[0]);
+            fprintf(stderr, "\nExamples:\n");
+            fprintf(stderr, "  mpirun -np 2 %s matrix.mtx --precond=none --timers\n", argv[0]);
+            fprintf(stderr, "  mpirun -np 2 %s matrix.mtx --precond=amg --runs=10\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
@@ -216,6 +219,7 @@ int main(int argc, char* argv[]) {
     int max_iters = 1000;
     int num_runs = 10;
     bool enable_timers = false;
+    const char* preconditioner = "NOSOLVER";  // Default: no preconditioner
     const char* json_file = nullptr;
     const char* csv_file = nullptr;
 
@@ -230,6 +234,21 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--timers") == 0) {
             enable_timers = true;
             g_enable_timers = true;  // Enable verbose callback for all ranks
+        } else if (strncmp(argv[i], "--precond=", 10) == 0) {
+            const char* precond_arg = argv[i] + 10;
+            if (strcmp(precond_arg, "none") == 0) {
+                preconditioner = "NOSOLVER";
+            } else if (strcmp(precond_arg, "amg") == 0) {
+                preconditioner = "AMG";
+            } else if (strcmp(precond_arg, "jacobi") == 0) {
+                preconditioner = "BLOCK_JACOBI";
+            } else {
+                if (rank == 0) {
+                    fprintf(stderr, "Unknown preconditioner: %s (valid: none, amg, jacobi)\n", precond_arg);
+                }
+                MPI_Finalize();
+                return 1;
+            }
         } else if (strncmp(argv[i], "--json=", 7) == 0) {
             json_file = argv[i] + 7;
         } else if (strncmp(argv[i], "--csv=", 6) == 0) {
@@ -243,6 +262,8 @@ int main(int argc, char* argv[]) {
         printf("========================================\n");
         printf("Matrix: %s\n", matrix_file);
         printf("MPI ranks: %d\n", world_size);
+        printf("Solver: PCG\n");
+        printf("Preconditioner: %s\n", preconditioner);
         printf("Tolerance: %.0e\n", tolerance);
         printf("Max iterations: %d\n", max_iters);
         printf("Benchmark runs: %d\n", num_runs);
@@ -322,12 +343,12 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_initialize_plugins());
     AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 
-    // Create config for PCG solver (no preconditioning)
+    // Create config for PCG solver with configurable preconditioner
     char config_string[512];
     snprintf(config_string, sizeof(config_string),
              "config_version=2, "
              "solver=PCG, "
-             "preconditioner=NOSOLVER, "
+             "preconditioner=%s, "
              "max_iters=%d, "
              "convergence=RELATIVE_INI, "
              "tolerance=%.15e, "
@@ -335,7 +356,7 @@ int main(int argc, char* argv[]) {
              "print_solve_stats=%d, "
              "monitor_residual=1, "
              "obtain_timings=%d",
-             max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
+             preconditioner, max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
 
     AMGX_config_handle cfg;
     AMGX_SAFE_CALL(AMGX_config_create(&cfg, config_string));
