@@ -21,6 +21,7 @@
 #include "amgx_benchmark.h"
 
 static int g_rank = 0;  // Global rank for callbacks
+static bool g_enable_timers = false;  // Global flag for verbose timing output
 
 #define CUDA_CHECK(call) do { \
     cudaError_t err = call; \
@@ -40,9 +41,11 @@ static int g_rank = 0;  // Global rank for callbacks
     } \
 } while(0)
 
-// Print callback - only rank 0 prints
+// Print callback - with --timers, show all ranks; otherwise only rank 0
 void print_callback(const char *msg, int length) {
-    if (g_rank == 0) {
+    if (g_enable_timers) {
+        printf("[Rank %d] %s", g_rank, msg);
+    } else if (g_rank == 0) {
         printf("%s", msg);
     }
 }
@@ -226,6 +229,7 @@ int main(int argc, char* argv[]) {
             num_runs = atoi(argv[i] + 7);
         } else if (strcmp(argv[i], "--timers") == 0) {
             enable_timers = true;
+            g_enable_timers = true;  // Enable verbose callback for all ranks
         } else if (strncmp(argv[i], "--json=", 7) == 0) {
             json_file = argv[i] + 7;
         } else if (strncmp(argv[i], "--csv=", 6) == 0) {
