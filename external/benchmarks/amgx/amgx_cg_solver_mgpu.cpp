@@ -344,19 +344,40 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 
     // Create config for PCG solver with configurable preconditioner
-    char config_string[512];
-    snprintf(config_string, sizeof(config_string),
-             "config_version=2, "
-             "solver=PCG, "
-             "preconditioner=%s, "
-             "max_iters=%d, "
-             "convergence=RELATIVE_INI, "
-             "tolerance=%.15e, "
-             "norm=L2, "
-             "print_solve_stats=%d, "
-             "monitor_residual=1, "
-             "obtain_timings=%d",
-             preconditioner, max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
+    char config_string[1024];
+    if (strcmp(preconditioner, "AMG") == 0) {
+        // AMG requires scoped config
+        snprintf(config_string, sizeof(config_string),
+                 "config_version=2, "
+                 "solver=PCG, "
+                 "preconditioner(amg_precond)=AMG, "
+                 "max_iters=%d, "
+                 "convergence=RELATIVE_INI, "
+                 "tolerance=%.15e, "
+                 "norm=L2, "
+                 "print_solve_stats=%d, "
+                 "monitor_residual=1, "
+                 "obtain_timings=%d, "
+                 "amg_precond:algorithm=AGGREGATION, "
+                 "amg_precond:selector=SIZE_2, "
+                 "amg_precond:max_iters=1, "
+                 "amg_precond:cycle=V",
+                 max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
+    } else {
+        // Simple preconditioners (NOSOLVER, BLOCK_JACOBI)
+        snprintf(config_string, sizeof(config_string),
+                 "config_version=2, "
+                 "solver=PCG, "
+                 "preconditioner=%s, "
+                 "max_iters=%d, "
+                 "convergence=RELATIVE_INI, "
+                 "tolerance=%.15e, "
+                 "norm=L2, "
+                 "print_solve_stats=%d, "
+                 "monitor_residual=1, "
+                 "obtain_timings=%d",
+                 preconditioner, max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
+    }
 
     AMGX_config_handle cfg;
     AMGX_SAFE_CALL(AMGX_config_create(&cfg, config_string));
