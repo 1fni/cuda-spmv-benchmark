@@ -258,9 +258,15 @@ int main(int argc, char* argv[]) {
     int device_id = rank % num_devices;
     CUDA_CHECK(cudaSetDevice(device_id));
 
-    if (rank == 0) {
-        printf("GPU assignment: %d GPUs, rank %d → GPU %d\n\n", num_devices, rank, device_id);
+    // Display GPU assignment for all ranks (synchronized)
+    for (int r = 0; r < world_size; r++) {
+        if (rank == r) {
+            printf("GPU assignment: rank %d → GPU %d\n", rank, device_id);
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
     }
+    if (rank == 0) printf("\n");
 
     // Load full matrix (each rank independently)
     MatrixMarket mat = read_matrix_market(matrix_file, rank);
