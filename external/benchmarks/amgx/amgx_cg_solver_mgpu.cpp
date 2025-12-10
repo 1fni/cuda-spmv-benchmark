@@ -346,7 +346,7 @@ int main(int argc, char* argv[]) {
     // Create config for PCG solver with configurable preconditioner
     char config_string[1024];
     if (strcmp(preconditioner, "AMG") == 0) {
-        // AMG requires scoped config
+        // AMG requires scoped config with iterative coarse solver (Dense LU OOM)
         snprintf(config_string, sizeof(config_string),
                  "config_version=2, "
                  "solver=PCG, "
@@ -361,7 +361,9 @@ int main(int argc, char* argv[]) {
                  "amg_precond:algorithm=AGGREGATION, "
                  "amg_precond:selector=SIZE_2, "
                  "amg_precond:max_iters=1, "
-                 "amg_precond:cycle=V",
+                 "amg_precond:cycle=V, "
+                 "amg_precond:coarse_solver=CG, "
+                 "amg_precond:max_levels=10",
                  max_iters, tolerance, enable_timers ? 1 : 0, enable_timers ? 1 : 0);
     } else {
         // Simple preconditioners (NOSOLVER, BLOCK_JACOBI)
