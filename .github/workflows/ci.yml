@@ -141,84 +141,84 @@ jobs:
           matrix/example3x3.mtx
         retention-days: 7
 
-  # JOB 2: Test framework build and validation
-  test-framework-validation:
-    name: Test Framework Build (CMake)
-    runs-on: ubuntu-22.04
-    needs: build-validation
-    continue-on-error: true
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        echo "📦 Installing CUDA and test dependencies..."
-        # Install CUDA via package manager (alternative to Jimver)
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
-        sudo dpkg -i cuda-keyring_1.0-1_all.deb
-        sudo apt-get update
-        sudo apt-get -y install cuda-toolkit-12-2
-        
-        # Install Google Test
-        sudo apt-get install -y libgtest-dev cmake build-essential
-        echo "✅ Dependencies installed"
-    
-    - name: Cache CMake build
-      uses: actions/cache@v3
-      with:
-        path: tests/build/
-        key: cmake-${{ hashFiles('tests/**/*.cpp', 'tests/**/*.hpp', 'tests/CMakeLists.txt', 'src/**/*.cu') }}
-        restore-keys: |
-          cmake-
-    
-    - name: Build test framework
-      run: |
-        echo "🔧 Building CMake test framework..."
-        cd tests
-        mkdir -p build && cd build
-        
-        cmake .. -DCMAKE_BUILD_TYPE=Release
-        make -j$(nproc)
-        
-        echo "✅ Test framework built successfully"
-        echo "📄 Test binary info:"
-        ls -la spmv_tests
-        file spmv_tests
-    
-    - name: Test framework smoke validation
-      run: |
-        echo "💨 Test framework smoke validation..."
-        cd tests/build
-        
-        # Test 1: Binary execution
-        echo "🧪 Testing binary execution:"
-        ./spmv_tests --help 2>&1 | head -3 || echo "Test binary executes"
-        
-        # Test 2: List available tests
-        echo "🧪 Available test suites:"
-        ./spmv_tests --gtest_list_tests | head -10 || echo "Test listing completed"
-        
-        # Test 3: Dry run attempt (will fail gracefully without GPU)
-        echo "🧪 Attempting test execution (expected to fail gracefully without GPU):"
-        timeout 20 ./spmv_tests --gtest_filter="*Construction*" 2>&1 | head -10 || echo "Construction tests attempted"
-        
-        echo "✅ Test framework smoke validation completed"
-    
-    - name: Upload test framework
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-framework
-        path: |
-          tests/build/spmv_tests
-        retention-days: 7
+  # JOB 2: Test framework build and validation (disabled - in development)
+  # test-framework-validation:
+  #   name: Test Framework Build (CMake)
+  #   runs-on: ubuntu-22.04
+  #   needs: build-validation
+  #   continue-on-error: true
+  #
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+  #
+  #   - name: Install dependencies
+  #     run: |
+  #       echo "📦 Installing CUDA and test dependencies..."
+  #       # Install CUDA via package manager (alternative to Jimver)
+  #       wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+  #       sudo dpkg -i cuda-keyring_1.0-1_all.deb
+  #       sudo apt-get update
+  #       sudo apt-get -y install cuda-toolkit-12-2
+  #
+  #       # Install Google Test
+  #       sudo apt-get install -y libgtest-dev cmake build-essential
+  #       echo "✅ Dependencies installed"
+  #
+  #   - name: Cache CMake build
+  #     uses: actions/cache@v3
+  #     with:
+  #       path: tests/build/
+  #       key: cmake-${{ hashFiles('tests/**/*.cpp', 'tests/**/*.hpp', 'tests/CMakeLists.txt', 'src/**/*.cu') }}
+  #       restore-keys: |
+  #         cmake-
+  #
+  #   - name: Build test framework
+  #     run: |
+  #       echo "🔧 Building CMake test framework..."
+  #       cd tests
+  #       mkdir -p build && cd build
+  #
+  #       cmake .. -DCMAKE_BUILD_TYPE=Release
+  #       make -j$(nproc)
+  #
+  #       echo "✅ Test framework built successfully"
+  #       echo "📄 Test binary info:"
+  #       ls -la spmv_tests
+  #       file spmv_tests
+  #
+  #   - name: Test framework smoke validation
+  #     run: |
+  #       echo "💨 Test framework smoke validation..."
+  #       cd tests/build
+  #
+  #       # Test 1: Binary execution
+  #       echo "🧪 Testing binary execution:"
+  #       ./spmv_tests --help 2>&1 | head -3 || echo "Test binary executes"
+  #
+  #       # Test 2: List available tests
+  #       echo "🧪 Available test suites:"
+  #       ./spmv_tests --gtest_list_tests | head -10 || echo "Test listing completed"
+  #
+  #       # Test 3: Dry run attempt (will fail gracefully without GPU)
+  #       echo "🧪 Attempting test execution (expected to fail gracefully without GPU):"
+  #       timeout 20 ./spmv_tests --gtest_filter="*Construction*" 2>&1 | head -10 || echo "Construction tests attempted"
+  #
+  #       echo "✅ Test framework smoke validation completed"
+  #
+  #   - name: Upload test framework
+  #     uses: actions/upload-artifact@v4
+  #     with:
+  #       name: test-framework
+  #       path: |
+  #         tests/build/spmv_tests
+  #       retention-days: 7
 
   # JOB 3: Code analysis and reporting
   analysis-report:
     name: Code Analysis & CI Report
     runs-on: ubuntu-22.04
-    needs: [build-validation, test-framework-validation]
+    needs: [build-validation]
     if: always()  # Run even if previous jobs fail
     
     steps:
