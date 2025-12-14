@@ -770,20 +770,60 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     float time_ms;
     CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
 
-    if (rank == 0) {
-        stats->time_total_ms = time_ms;
-        if (config.verbose >= 1) {
-            printf("Total time: %.2f ms\n", time_ms);
-            if (config.enable_detailed_timers) {
-                printf("\nDetailed Timing Breakdown:\n");
-                printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / time_ms);
-                printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / time_ms);
-                printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / time_ms);
-                printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / time_ms);
-                printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / time_ms);
+    // All ranks fill their local stats first
+    stats->time_total_ms = time_ms;
+
+    // ========== MPI Stats Aggregation ==========
+    // Collect max/min time from all ranks for load balance analysis
+    if (world_size > 1) {
+        double local_times[6], max_times[6], min_times[6];
+        local_times[0] = stats->time_total_ms;
+        local_times[1] = stats->time_spmv_ms;
+        local_times[2] = stats->time_blas1_ms;
+        local_times[3] = stats->time_reductions_ms;
+        local_times[4] = stats->time_allreduce_ms;
+        local_times[5] = stats->time_allgather_ms;
+
+        MPI_Reduce(local_times, max_times, 6, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(local_times, min_times, 6, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            // Store max (bottleneck) in stats
+            stats->time_total_ms = max_times[0];
+            stats->time_spmv_ms = max_times[1];
+            stats->time_blas1_ms = max_times[2];
+            stats->time_reductions_ms = max_times[3];
+            stats->time_allreduce_ms = max_times[4];
+            stats->time_allgather_ms = max_times[5];
+
+            if (config.verbose >= 1) {
+                // Display load imbalance (always show for multi-GPU)
+                double imbalance_pct = 100.0 * (max_times[0] - min_times[0]) / max_times[0];
+                printf("Total time: %.2f ms (max), %.2f ms (min) - Load imbalance: %.1f%%\n",
+                       max_times[0], min_times[0], imbalance_pct);
+
+                if (config.enable_detailed_timers) {
+                    printf("\nDetailed Timing Breakdown:\n");
+                    printf("  SpMV:       %.2f ms (%.1f%%)\n", max_times[1], 100.0 * max_times[1] / max_times[0]);
+                    printf("  BLAS1:      %.2f ms (%.1f%%)\n", max_times[2], 100.0 * max_times[2] / max_times[0]);
+                    printf("  Reductions: %.2f ms (%.1f%%)\n", max_times[3], 100.0 * max_times[3] / max_times[0]);
+                    printf("  AllReduce:  %.2f ms (%.1f%%)\n", max_times[4], 100.0 * max_times[4] / max_times[0]);
+                    printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", max_times[5], 100.0 * max_times[5] / max_times[0]);
+                }
+                printf("========================================\n");
             }
-            printf("========================================\n");
         }
+    } else if (rank == 0 && config.verbose >= 1) {
+        printf("Total time: %.2f ms\n", stats->time_total_ms);
+        if (config.enable_detailed_timers) {
+            printf("\nDetailed Timing Breakdown:\n");
+            printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / stats->time_total_ms);
+            printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / stats->time_total_ms);
+            printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / stats->time_total_ms);
+            printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / stats->time_total_ms);
+            printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / stats->time_total_ms);
+        }
+        printf("========================================\n");
     }
 
     // Copy result back (local partition only)
