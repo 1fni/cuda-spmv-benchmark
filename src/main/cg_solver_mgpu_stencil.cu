@@ -100,6 +100,9 @@ int main(int argc, char** argv) {
         cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
     }
 
+    // Reset x to zero before benchmark (warmup leaves x = solution)
+    memset(x, 0, mat.rows * sizeof(double));
+
     // Benchmark: 10 runs with statistical analysis (match AmgX default)
     if (rank == 0) printf("Running benchmark (10 runs)...\n");
     BenchmarkStats bench_stats;
