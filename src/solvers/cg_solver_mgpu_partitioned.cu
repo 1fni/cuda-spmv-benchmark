@@ -72,6 +72,7 @@ extern __global__ void stencil5_csr_partitioned_halo_kernel(
     int n_local,
     int row_offset,
     int local_row_start,
+    int n_rows,
     int N,
     int grid_size
 );
@@ -181,7 +182,7 @@ static void launch_interior_spmv(
     stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
         d_row_ptr, d_col_idx, d_values, d_x_local,
         NULL, NULL, d_y,
-        n_local, row_offset, interior_start, N, grid_size
+        n_local, row_offset, interior_start, interior_count, N, grid_size
     );
 }
 
@@ -203,14 +204,14 @@ static void launch_boundary_spmv(
         stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
             d_row_ptr, d_col_idx, d_values, d_x_local,
             NULL, NULL, d_y,
-            n_local, row_offset, 0, N, grid_size
+            n_local, row_offset, 0, grid_size, N, grid_size
         );
         // Last boundary (no next halo)
         int boundary_start = n_local - grid_size;
         stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
             d_row_ptr, d_col_idx, d_values, d_x_local,
             NULL, NULL, d_y,
-            n_local, row_offset, boundary_start, N, grid_size
+            n_local, row_offset, boundary_start, grid_size, N, grid_size
         );
         return;
     }
@@ -222,7 +223,7 @@ static void launch_boundary_spmv(
         stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
             d_row_ptr, d_col_idx, d_values, d_x_local,
             d_x_halo_prev, d_x_halo_next, d_y,
-            n_local, row_offset, 0, N, grid_size
+            n_local, row_offset, 0, grid_size, N, grid_size
         );
     }
 
@@ -233,7 +234,7 @@ static void launch_boundary_spmv(
         stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
             d_row_ptr, d_col_idx, d_values, d_x_local,
             d_x_halo_prev, d_x_halo_next, d_y,
-            n_local, row_offset, boundary_start, N, grid_size
+            n_local, row_offset, boundary_start, grid_size, N, grid_size
         );
     }
 }

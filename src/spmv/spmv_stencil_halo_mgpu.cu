@@ -40,6 +40,8 @@ extern __global__ void stencil5_csr_partitioned_halo_kernel(
     double* __restrict__ y,
     int n_local,
     int row_offset,
+    int local_row_start,
+    int n_rows,
     int N,
     int grid_size
 );
@@ -197,7 +199,7 @@ static int spmv_halo_mgpu_run_timed(const double* x, double* y, double* time_ms)
     stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, ctx.stream>>>(
         ctx.d_row_ptr, ctx.d_col_idx, ctx.d_values,
         ctx.d_x_local, ctx.d_x_halo_prev, ctx.d_x_halo_next,
-        ctx.d_y_local, ctx.n_local, ctx.row_offset,
+        ctx.d_y_local, ctx.n_local, ctx.row_offset, 0, ctx.n_local,
         ctx.grid_size * ctx.grid_size, ctx.grid_size
     );
 
