@@ -533,24 +533,6 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
-    exchange_halo_mpi(
-        d_x_local,                                   // First row to send to prev
-        d_x_local + (n_local - grid_size),           // Last row to send to next
-        d_x_halo_prev,                               // Receive from prev
-        d_x_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
-    );
-
-    if (config.enable_detailed_timers) {
-        CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-        CUDA_CHECK(cudaEventSynchronize(timer_stop));
-        float elapsed_ms;
-        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-        stats->time_allgather_ms += elapsed_ms;  // Count as communication time
-    }
-
     // Initial SpMV: Ap = A*x with stream overlap
     // Stream 1: Interior points (no halo needed)
     launch_interior_spmv(d_row_ptr, d_col_idx, d_values, d_x_local, d_Ap,
