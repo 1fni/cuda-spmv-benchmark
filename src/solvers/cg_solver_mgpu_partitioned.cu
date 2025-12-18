@@ -216,27 +216,22 @@ static void launch_boundary_spmv(
         return;
     }
 
-    // Multi-GPU: process boundaries with halo
-    // First boundary (needs prev halo)
-    if (rank > 0) {
-        int blocks = (grid_size + threads - 1) / threads;
-        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
-            d_row_ptr, d_col_idx, d_values, d_x_local,
-            d_x_halo_prev, d_x_halo_next, d_y,
-            n_local, row_offset, 0, grid_size, N, grid_size
-        );
-    }
+    // Multi-GPU: process boundaries (always, but halo depends on neighbors)
+    // First boundary
+    int blocks = (grid_size + threads - 1) / threads;
+    stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+        d_row_ptr, d_col_idx, d_values, d_x_local,
+        d_x_halo_prev, d_x_halo_next, d_y,
+        n_local, row_offset, 0, grid_size, N, grid_size
+    );
 
-    // Last boundary (needs next halo)
-    if (rank < world_size - 1) {
-        int boundary_start = n_local - grid_size;
-        int blocks = (grid_size + threads - 1) / threads;
-        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
-            d_row_ptr, d_col_idx, d_values, d_x_local,
-            d_x_halo_prev, d_x_halo_next, d_y,
-            n_local, row_offset, boundary_start, grid_size, N, grid_size
-        );
-    }
+    // Last boundary
+    int boundary_start = n_local - grid_size;
+    stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+        d_row_ptr, d_col_idx, d_values, d_x_local,
+        d_x_halo_prev, d_x_halo_next, d_y,
+        n_local, row_offset, boundary_start, grid_size, N, grid_size
+    );
 }
 
 /**
