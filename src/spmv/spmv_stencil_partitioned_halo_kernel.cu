@@ -24,10 +24,11 @@ __global__ void stencil5_csr_partitioned_halo_kernel(
     double* __restrict__ y,
     int n_local,
     int row_offset,
+    int local_row_start,
     int N,
     int grid_size
 ) {
-    int local_row = blockIdx.x * blockDim.x + threadIdx.x;
+    int local_row = local_row_start + blockIdx.x * blockDim.x + threadIdx.x;
     if (local_row >= n_local) return;
 
     int row = row_offset + local_row;

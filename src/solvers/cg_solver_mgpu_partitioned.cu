@@ -71,6 +71,7 @@ extern __global__ void stencil5_csr_partitioned_halo_kernel(
     double* __restrict__ y,
     int n_local,
     int row_offset,
+    int local_row_start,
     int N,
     int grid_size
 );
@@ -161,6 +162,80 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
         exit(EXIT_FAILURE);
     }
     return result;
+}
+
+/**
+ * @brief Launch SpMV for interior rows (no halo needed - can overlap with comm)
+ */
+static void launch_interior_spmv(
+    const int* d_row_ptr, const int* d_col_idx, const double* d_values,
+    const double* d_x_local, double* d_y,
+    int n_local, int row_offset, int N, int grid_size, cudaStream_t stream
+) {
+    int interior_start = grid_size;
+    int interior_count = n_local - 2 * grid_size;
+    if (interior_count <= 0) return;
+
+    int threads = 256;
+    int blocks = (interior_count + threads - 1) / threads;
+    stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+        d_row_ptr, d_col_idx, d_values, d_x_local,
+        NULL, NULL, d_y,
+        n_local, row_offset, interior_start, N, grid_size
+    );
+}
+
+/**
+ * @brief Launch SpMV for boundary rows (needs halo - after exchange)
+ */
+static void launch_boundary_spmv(
+    const int* d_row_ptr, const int* d_col_idx, const double* d_values,
+    const double* d_x_local, const double* d_x_halo_prev, const double* d_x_halo_next,
+    double* d_y, int n_local, int row_offset, int N, int grid_size,
+    int rank, int world_size, cudaStream_t stream
+) {
+    int threads = 256;
+
+    // Single GPU: process all boundary rows (no halo needed)
+    if (world_size == 1) {
+        // First boundary (no prev halo)
+        int blocks = (grid_size + threads - 1) / threads;
+        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+            d_row_ptr, d_col_idx, d_values, d_x_local,
+            NULL, NULL, d_y,
+            n_local, row_offset, 0, N, grid_size
+        );
+        // Last boundary (no next halo)
+        int boundary_start = n_local - grid_size;
+        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+            d_row_ptr, d_col_idx, d_values, d_x_local,
+            NULL, NULL, d_y,
+            n_local, row_offset, boundary_start, N, grid_size
+        );
+        return;
+    }
+
+    // Multi-GPU: process boundaries with halo
+    // First boundary (needs prev halo)
+    if (rank > 0) {
+        int blocks = (grid_size + threads - 1) / threads;
+        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+            d_row_ptr, d_col_idx, d_values, d_x_local,
+            d_x_halo_prev, d_x_halo_next, d_y,
+            n_local, row_offset, 0, N, grid_size
+        );
+    }
+
+    // Last boundary (needs next halo)
+    if (rank < world_size - 1) {
+        int boundary_start = n_local - grid_size;
+        int blocks = (grid_size + threads - 1) / threads;
+        stencil5_csr_partitioned_halo_kernel<<<blocks, threads, 0, stream>>>(
+            d_row_ptr, d_col_idx, d_values, d_x_local,
+            d_x_halo_prev, d_x_halo_next, d_y,
+            n_local, row_offset, boundary_start, N, grid_size
+        );
+    }
 }
 
 /**
@@ -295,9 +370,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
     // Note: Using MPI with explicit staging (no NCCL required)
 
-    // Create CUDA stream and cuBLAS handle
-    cudaStream_t stream;
-    CUDA_CHECK(cudaStreamCreate(&stream));
+    // Create 2 CUDA streams for overlap: compute + comm
+    cudaStream_t stream_compute, stream_comm;
+    CUDA_CHECK(cudaStreamCreate(&stream_compute));
+    CUDA_CHECK(cudaStreamCreate(&stream_comm));
+    cudaStream_t stream = stream_compute;  // Alias for cuBLAS
 
     cublasHandle_t cublas_handle;
     cublasStatus_t cublas_status = cublasCreate(&cublas_handle);
@@ -473,11 +550,26 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         stats->time_allgather_ms += elapsed_ms;  // Count as communication time
     }
 
-    // Initial SpMV: Ap = A*x (using x0 with halo)
-    stencil5_csr_partitioned_halo_kernel<<<blocks_local, threads, 0, stream>>>(
-        d_row_ptr, d_col_idx, d_values,
-        d_x_local, d_x_halo_prev, d_x_halo_next,
-        d_Ap, n_local, row_offset, n, grid_size);
+    // Initial SpMV: Ap = A*x with stream overlap
+    // Stream 1: Interior points (no halo needed)
+    launch_interior_spmv(d_row_ptr, d_col_idx, d_values, d_x_local, d_Ap,
+                         n_local, row_offset, n, grid_size, stream_compute);
+
+    // Stream 2: Halo exchange (parallel with interior)
+    exchange_halo_mpi(d_x_local, d_x_local + (n_local - grid_size),
+                      d_x_halo_prev, d_x_halo_next,
+                      h_send_prev, h_send_next, h_recv_prev, h_recv_next,
+                      grid_size, rank, world_size, stream_comm);
+
+    // Wait for interior compute + halo exchange
+    CUDA_CHECK(cudaStreamSynchronize(stream_compute));
+    CUDA_CHECK(cudaStreamSynchronize(stream_comm));
+
+    // Boundary points (needs halo)
+    launch_boundary_spmv(d_row_ptr, d_col_idx, d_values, d_x_local,
+                         d_x_halo_prev, d_x_halo_next, d_Ap,
+                         n_local, row_offset, n, grid_size,
+                         rank, world_size, stream_compute);
 
     // r_local = b - Ap
     if (config.enable_detailed_timers) {
@@ -549,14 +641,29 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     // CG iteration loop
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
-        // Ap = A * p (local SpMV) - halo-aware kernel
+        // Ap = A * p with stream overlap (halo exchange + compute)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        stencil5_csr_partitioned_halo_kernel<<<blocks_local, threads, 0, stream>>>(
-            d_row_ptr, d_col_idx, d_values,
-            d_p_local, d_p_halo_prev, d_p_halo_next,
-            d_Ap, n_local, row_offset, n, grid_size);
+
+        // Interior SpMV (no halo) + Halo exchange (parallel)
+        launch_interior_spmv(d_row_ptr, d_col_idx, d_values, d_p_local, d_Ap,
+                             n_local, row_offset, n, grid_size, stream_compute);
+
+        exchange_halo_mpi(d_p_local, d_p_local + (n_local - grid_size),
+                          d_p_halo_prev, d_p_halo_next,
+                          h_send_prev, h_send_next, h_recv_prev, h_recv_next,
+                          grid_size, rank, world_size, stream_comm);
+
+        // Sync and boundary SpMV
+        CUDA_CHECK(cudaStreamSynchronize(stream_compute));
+        CUDA_CHECK(cudaStreamSynchronize(stream_comm));
+
+        launch_boundary_spmv(d_row_ptr, d_col_idx, d_values, d_p_local,
+                             d_p_halo_prev, d_p_halo_next, d_Ap,
+                             n_local, row_offset, n, grid_size,
+                             rank, world_size, stream_compute);
+
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -688,27 +795,6 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_blas1_ms += elapsed_ms;
             stats->time_axpby_update_p_ms += elapsed_ms;  // Granular timer
-        }
-
-        // P2P halo exchange for p vector (160 KB vs 800 MB AllGather)
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_start, stream));
-        }
-        exchange_halo_mpi(
-            d_p_local,                                   // First row to prev
-            d_p_local + (n_local - grid_size),           // Last row to next
-            d_p_halo_prev,                               // Receive from prev
-            d_p_halo_next,                               // Receive from next
-            h_send_prev, h_send_next,                    // Host send buffers
-            h_recv_prev, h_recv_next,                    // Host recv buffers
-            grid_size, rank, world_size, stream
-        );
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-            CUDA_CHECK(cudaEventSynchronize(timer_stop));
-            float elapsed_ms;
-            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-            stats->time_allgather_ms += elapsed_ms;  // Keep same name for comparison
         }
 
         rs_old = rs_new;
@@ -846,7 +932,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (h_recv_next) cudaFreeHost(h_recv_next);
 
     cublasDestroy(cublas_handle);
-    cudaStreamDestroy(stream);
+    cudaStreamDestroy(stream_compute);
+    cudaStreamDestroy(stream_comm);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     if (config.enable_detailed_timers) {
