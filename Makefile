@@ -104,6 +104,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
 # Binaries
 BIN_MGPU := $(BIN_DIR)/cg_solver_mgpu                # Generic CSR (AllGather)
 BIN_MGPU_STENCIL := $(BIN_DIR)/cg_solver_mgpu_stencil  # Stencil-optimized (halo P2P)
+BIN_SINGLE_RUN := $(BIN_DIR)/cg_single_run_test      # Single run for profiling
 
 # MPI objects (shared utilities)
 OBJ_MGPU_IO := $(OBJ_DIR)/mgpu/io.o
@@ -121,6 +122,9 @@ OBJ_MGPU_SOLVER := $(OBJ_DIR)/mgpu/cg_solver_mgpu_lib.o
 # Stencil solver objects
 OBJ_MGPU_STENCIL_MAIN := $(OBJ_DIR)/mgpu/cg_solver_mgpu_stencil.o
 OBJ_MGPU_STENCIL_SOLVER := $(OBJ_DIR)/mgpu/cg_solver_mgpu_partitioned.o
+
+# Single run test object
+OBJ_SINGLE_RUN := $(OBJ_DIR)/mgpu/cg_single_run_test.o
 
 # Compile MPI sources with NVCC + MPI headers
 $(OBJ_DIR)/mgpu/%.o: $(SRC_DIR)/main/%.cu
@@ -193,6 +197,11 @@ $(BIN_MGPU_STENCIL): $(OBJ_MGPU_STENCIL_MAIN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_M
 	@mkdir -p $(BIN_DIR)
 	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS)
 
+# Link single run test (no benchmark wrapper)
+$(BIN_SINGLE_RUN): $(OBJ_SINGLE_RUN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_MGPU_IO) $(OBJ_MGPU_CSR) $(OBJ_MGPU_STENCIL_SPMV) $(OBJ_MGPU_HALO_KERNEL) $(OBJ_MGPU_CG_METRICS)
+	@mkdir -p $(BIN_DIR)
+	$(MPICXX) $^ -o $@ $(LDFLAGS) $(CUDA_LDFLAGS)
+
 # ============================================================================
 # Explicit targets (match binary names)
 # ============================================================================
@@ -202,6 +211,7 @@ generate_matrix: $(BIN_GEN)
 cg_solver: $(BIN_CG)
 cg_solver_mgpu: $(BIN_MGPU)
 cg_solver_mgpu_stencil: $(BIN_MGPU_STENCIL)
+cg_single_run_test: $(BIN_SINGLE_RUN)
 
 # ============================================================================
 # Short aliases
