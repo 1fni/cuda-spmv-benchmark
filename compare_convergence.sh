@@ -16,7 +16,7 @@ echo ""
 
 # Test Main with verbose output
 echo "[1/2] Running MAIN with iteration details..."
-git checkout main > /dev/null 2>&1
+git checkout investigate/convergence-difference > /dev/null 2>&1
 make cg_single_run_test > /dev/null 2>&1
 
 mpirun --allow-run-as-root -np $RANKS ./bin/cg_single_run_test $MATRIX 2>&1 | tee /tmp/main_iterations.log
