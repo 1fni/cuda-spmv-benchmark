@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
     CGConfigMultiGPU config;
     config.max_iters = 1000;
     config.tolerance = 1e-6;
-    config.verbose = 2;
+    config.verbose = 1;  // Basic info only (no per-iteration residuals to avoid sync overhead)
 
     // Detailed timers: disabled by default (no sync overhead), enable with --timers flag
     config.enable_detailed_timers = 0;
