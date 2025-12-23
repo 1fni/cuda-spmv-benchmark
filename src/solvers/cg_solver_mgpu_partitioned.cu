@@ -235,6 +235,145 @@ static void launch_boundary_spmv(
 }
 
 /**
+ * @brief CUDA IPC handles for remote GPU memory access
+ */
+struct HaloIPCHandles {
+    cudaIpcMemHandle_t send_prev_handle;
+    cudaIpcMemHandle_t send_next_handle;
+    double* remote_prev_ptr;
+    double* remote_next_ptr;
+    bool has_prev;
+    bool has_next;
+};
+
+/**
+ * @brief Setup CUDA peer access and exchange IPC memory handles via MPI
+ */
+static void setup_halo_ipc(
+    const double* d_local,
+    int n_local,
+    int grid_size,
+    int rank,
+    int world_size,
+    HaloIPCHandles* handles
+) {
+    handles->has_prev = (rank > 0);
+    handles->has_next = (rank < world_size - 1);
+    handles->remote_prev_ptr = NULL;
+    handles->remote_next_ptr = NULL;
+
+    if (handles->has_prev) {
+        int can_access_prev;
+        CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access_prev, rank, rank - 1));
+        if (can_access_prev) {
+            cudaError_t peer_err = cudaDeviceEnablePeerAccess(rank - 1, 0);
+            if (peer_err != cudaSuccess && peer_err != cudaErrorPeerAccessAlreadyEnabled) {
+                CUDA_CHECK(peer_err);
+            }
+        }
+    }
+
+    if (handles->has_next) {
+        int can_access_next;
+        CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access_next, rank, rank + 1));
+        if (can_access_next) {
+            cudaError_t peer_err = cudaDeviceEnablePeerAccess(rank + 1, 0);
+            if (peer_err != cudaSuccess && peer_err != cudaErrorPeerAccessAlreadyEnabled) {
+                CUDA_CHECK(peer_err);
+            }
+        }
+    }
+
+    if (handles->has_prev) {
+        CUDA_CHECK(cudaIpcGetMemHandle(&handles->send_prev_handle, (void*)d_local));
+    }
+
+    if (handles->has_next) {
+        const double* last_row_ptr = d_local + (n_local - grid_size);
+        CUDA_CHECK(cudaIpcGetMemHandle(&handles->send_next_handle, (void*)last_row_ptr));
+    }
+
+    MPI_Request requests[4];
+    int req_count = 0;
+    cudaIpcMemHandle_t recv_prev_handle, recv_next_handle;
+
+    if (handles->has_prev) {
+        MPI_Isend(&handles->send_prev_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(&recv_prev_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+    }
+
+    if (handles->has_next) {
+        MPI_Isend(&handles->send_next_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(&recv_next_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+    }
+
+    if (req_count > 0) {
+        MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
+    }
+
+    if (handles->has_prev) {
+        CUDA_CHECK(cudaIpcOpenMemHandle((void**)&handles->remote_prev_ptr,
+                                        recv_prev_handle,
+                                        cudaIpcMemLazyEnablePeerAccess));
+    }
+
+    if (handles->has_next) {
+        CUDA_CHECK(cudaIpcOpenMemHandle((void**)&handles->remote_next_ptr,
+                                        recv_next_handle,
+                                        cudaIpcMemLazyEnablePeerAccess));
+    }
+}
+
+/**
+ * @brief Cleanup CUDA IPC handles
+ */
+static void cleanup_halo_ipc(HaloIPCHandles* handles) {
+    if (handles->remote_prev_ptr != NULL) {
+        CUDA_CHECK(cudaIpcCloseMemHandle(handles->remote_prev_ptr));
+    }
+    if (handles->remote_next_ptr != NULL) {
+        CUDA_CHECK(cudaIpcCloseMemHandle(handles->remote_next_ptr));
+    }
+}
+
+/**
+ * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyAsync
+ */
+static void exchange_halo_p2p_direct(
+    double* d_halo_recv_prev,
+    double* d_halo_recv_next,
+    const HaloIPCHandles* handles,
+    int halo_size,
+    cudaStream_t stream
+) {
+    if (handles->has_prev && handles->remote_prev_ptr != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(
+            d_halo_recv_prev,
+            handles->remote_prev_ptr,
+            halo_size * sizeof(double),
+            cudaMemcpyDeviceToDevice,
+            stream
+        ));
+    }
+
+    if (handles->has_next && handles->remote_next_ptr != NULL) {
+        CUDA_CHECK(cudaMemcpyAsync(
+            d_halo_recv_next,
+            handles->remote_next_ptr,
+            halo_size * sizeof(double),
+            cudaMemcpyDeviceToDevice,
+            stream
+        ));
+    }
+
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+}
+
+/**
  * @brief Exchange halo zones with neighbors using MPI with explicit staging
  * @details Each rank sends its boundary row to neighbors and receives theirs
  *
@@ -462,28 +601,19 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                rank, local_mem / 1e6, halo_mem / 1e3);
     }
 
-    // Allocate pinned host buffers for MPI staging (D2H, H2D)
-    double *h_send_prev, *h_send_next, *h_recv_prev, *h_recv_next;
-    if (rank > 0) {
-        CUDA_CHECK(cudaMallocHost(&h_send_prev, grid_size * sizeof(double)));
-        CUDA_CHECK(cudaMallocHost(&h_recv_prev, grid_size * sizeof(double)));
-    } else {
-        h_send_prev = NULL;
-        h_recv_prev = NULL;
-    }
-    if (rank < world_size - 1) {
-        CUDA_CHECK(cudaMallocHost(&h_send_next, grid_size * sizeof(double)));
-        CUDA_CHECK(cudaMallocHost(&h_recv_next, grid_size * sizeof(double)));
-    } else {
-        h_send_next = NULL;
-        h_recv_next = NULL;
-    }
+    // Setup CUDA IPC for direct GPU-to-GPU halo exchange
+    HaloIPCHandles ipc_handles_x, ipc_handles_r, ipc_handles_p;
 
     // Initialize vectors (local partition only)
     CUDA_CHECK(cudaMemcpy(d_b, &b[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_r_local, 0, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemset(d_p_local, 0, n_local * sizeof(double)));
+
+    // Setup IPC handles AFTER vector initialization
+    setup_halo_ipc(d_x_local, n_local, grid_size, rank, world_size, &ipc_handles_x);
+    setup_halo_ipc(d_r_local, n_local, grid_size, rank, world_size, &ipc_handles_r);
+    setup_halo_ipc(d_p_local, n_local, grid_size, rank, world_size, &ipc_handles_p);
 
     // Start timing
     cudaEvent_t start, stop, timer_start, timer_stop;
@@ -534,10 +664,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                          n_local, row_offset, n, grid_size, stream_compute);
 
     // Stream 2: Halo exchange (parallel with interior)
-    exchange_halo_mpi(d_x_local, d_x_local + (n_local - grid_size),
-                      d_x_halo_prev, d_x_halo_next,
-                      h_send_prev, h_send_next, h_recv_prev, h_recv_next,
-                      grid_size, rank, world_size, stream_comm);
+    exchange_halo_p2p_direct(d_x_halo_prev, d_x_halo_next,
+                             &ipc_handles_x, grid_size, stream_comm);
 
     // Wait for interior compute + halo exchange
     CUDA_CHECK(cudaStreamSynchronize(stream_compute));
@@ -567,14 +695,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
-    exchange_halo_mpi(
-        d_r_local,                                   // First row to prev
-        d_r_local + (n_local - grid_size),           // Last row to next
+    exchange_halo_p2p_direct(
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
+        &ipc_handles_r,                              // IPC handles for r vector
+        grid_size, stream
     );
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -628,10 +753,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         launch_interior_spmv(d_row_ptr, d_col_idx, d_values, d_p_local, d_Ap,
                              n_local, row_offset, n, grid_size, stream_compute);
 
-        exchange_halo_mpi(d_p_local, d_p_local + (n_local - grid_size),
-                          d_p_halo_prev, d_p_halo_next,
-                          h_send_prev, h_send_next, h_recv_prev, h_recv_next,
-                          grid_size, rank, world_size, stream_comm);
+        exchange_halo_p2p_direct(d_p_halo_prev, d_p_halo_next,
+                                 &ipc_handles_p, grid_size, stream_comm);
 
         // Sync and boundary SpMV
         CUDA_CHECK(cudaStreamSynchronize(stream_compute));
@@ -903,11 +1026,10 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (d_r_halo_prev) cudaFree(d_r_halo_prev);
     if (d_r_halo_next) cudaFree(d_r_halo_next);
 
-    // Free host pinned buffers
-    if (h_send_prev) cudaFreeHost(h_send_prev);
-    if (h_send_next) cudaFreeHost(h_send_next);
-    if (h_recv_prev) cudaFreeHost(h_recv_prev);
-    if (h_recv_next) cudaFreeHost(h_recv_next);
+    // Cleanup IPC handles
+    cleanup_halo_ipc(&ipc_handles_x);
+    cleanup_halo_ipc(&ipc_handles_r);
+    cleanup_halo_ipc(&ipc_handles_p);
 
     cublasDestroy(cublas_handle);
     cudaStreamDestroy(stream_compute);
