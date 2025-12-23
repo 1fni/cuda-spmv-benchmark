@@ -164,6 +164,186 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
 }
 
 /**
+ * @brief CUDA IPC handles for remote GPU memory access
+ */
+struct HaloIPCHandles {
+    cudaIpcMemHandle_t send_prev_handle;  // IPC handle for data to send to prev rank
+    cudaIpcMemHandle_t send_next_handle;  // IPC handle for data to send to next rank
+    double* remote_prev_ptr;              // Opened pointer to prev rank's send buffer
+    double* remote_next_ptr;              // Opened pointer to next rank's send buffer
+    bool has_prev;                        // Whether this rank has a previous neighbor
+    bool has_next;                        // Whether this rank has a next neighbor
+};
+
+/**
+ * @brief Setup CUDA peer access and exchange IPC memory handles via MPI
+ *
+ * Each rank shares IPC handles for its local boundary rows with neighbors.
+ * Neighbors open these handles to get direct GPU pointers for cudaMemcpyPeer.
+ *
+ * @param d_local Pointer to local partition on device
+ * @param n_local Number of local rows
+ * @param grid_size Halo size (one grid row)
+ * @param rank MPI rank
+ * @param world_size Number of MPI ranks
+ * @param handles [out] Initialized IPC handles structure
+ */
+static void setup_halo_ipc(
+    const double* d_local,
+    int n_local,
+    int grid_size,
+    int rank,
+    int world_size,
+    HaloIPCHandles* handles
+) {
+    handles->has_prev = (rank > 0);
+    handles->has_next = (rank < world_size - 1);
+    handles->remote_prev_ptr = NULL;
+    handles->remote_next_ptr = NULL;
+
+    // Enable peer access to neighbor GPUs
+    if (handles->has_prev) {
+        int can_access_prev;
+        CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access_prev, rank, rank - 1));
+        if (can_access_prev) {
+            cudaError_t peer_err = cudaDeviceEnablePeerAccess(rank - 1, 0);
+            if (peer_err != cudaSuccess && peer_err != cudaErrorPeerAccessAlreadyEnabled) {
+                CUDA_CHECK(peer_err);
+            }
+        } else {
+            fprintf(stderr, "[Rank %d] Cannot enable peer access to GPU %d\n", rank, rank - 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+
+    if (handles->has_next) {
+        int can_access_next;
+        CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access_next, rank, rank + 1));
+        if (can_access_next) {
+            cudaError_t peer_err = cudaDeviceEnablePeerAccess(rank + 1, 0);
+            if (peer_err != cudaSuccess && peer_err != cudaErrorPeerAccessAlreadyEnabled) {
+                CUDA_CHECK(peer_err);
+            }
+        } else {
+            fprintf(stderr, "[Rank %d] Cannot enable peer access to GPU %d\n", rank, rank + 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+
+    // Create IPC handles for local data to share with neighbors
+    if (handles->has_prev) {
+        // Share first row with prev rank (they need it as their halo_next)
+        CUDA_CHECK(cudaIpcGetMemHandle(&handles->send_prev_handle, (void*)d_local));
+    }
+
+    if (handles->has_next) {
+        // Share last row with next rank (they need it as their halo_prev)
+        const double* last_row_ptr = d_local + (n_local - grid_size);
+        CUDA_CHECK(cudaIpcGetMemHandle(&handles->send_next_handle, (void*)last_row_ptr));
+    }
+
+    // Exchange IPC handles with neighbors via MPI
+    MPI_Request requests[4];
+    int req_count = 0;
+
+    cudaIpcMemHandle_t recv_prev_handle, recv_next_handle;
+
+    if (handles->has_prev) {
+        // Send my first row handle to prev, receive their last row handle
+        MPI_Isend(&handles->send_prev_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(&recv_prev_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+    }
+
+    if (handles->has_next) {
+        // Send my last row handle to next, receive their first row handle
+        MPI_Isend(&handles->send_next_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Irecv(&recv_next_handle, sizeof(cudaIpcMemHandle_t), MPI_BYTE,
+                  rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+    }
+
+    if (req_count > 0) {
+        MPI_Waitall(req_count, requests, MPI_STATUSES_IGNORE);
+    }
+
+    // Open received IPC handles to get remote GPU pointers
+    if (handles->has_prev) {
+        CUDA_CHECK(cudaIpcOpenMemHandle((void**)&handles->remote_prev_ptr,
+                                        recv_prev_handle,
+                                        cudaIpcMemLazyEnablePeerAccess));
+    }
+
+    if (handles->has_next) {
+        CUDA_CHECK(cudaIpcOpenMemHandle((void**)&handles->remote_next_ptr,
+                                        recv_next_handle,
+                                        cudaIpcMemLazyEnablePeerAccess));
+    }
+}
+
+/**
+ * @brief Cleanup CUDA IPC handles
+ */
+static void cleanup_halo_ipc(HaloIPCHandles* handles) {
+    if (handles->remote_prev_ptr != NULL) {
+        CUDA_CHECK(cudaIpcCloseMemHandle(handles->remote_prev_ptr));
+    }
+    if (handles->remote_next_ptr != NULL) {
+        CUDA_CHECK(cudaIpcCloseMemHandle(handles->remote_next_ptr));
+    }
+}
+
+/**
+ * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyAsync
+ *
+ * Zero CPU staging overhead - transfers directly via NVLink/PCIe.
+ * Requires CUDA IPC setup (see setup_halo_ipc).
+ *
+ * For 5-point stencil with row-band partitioning:
+ * - GPU0: copy last row to GPU1's halo_prev, receive GPU1's first row to halo_next
+ * - GPU1: copy first row to GPU0's halo_next, receive GPU0's last row to halo_prev
+ *
+ * Total communication: 2 × grid_size × 8 bytes = 160 KB
+ * Expected latency: ~1 ms (vs 2 ms MPI staging, vs 3.5-5.6 ms NCCL)
+ */
+static void exchange_halo_p2p_direct(
+    double* d_halo_recv_prev,           // Local buffer to receive from prev rank
+    double* d_halo_recv_next,           // Local buffer to receive from next rank
+    const HaloIPCHandles* handles,      // IPC handles with remote pointers
+    int halo_size,                      // Number of elements per halo (grid_size)
+    cudaStream_t stream
+) {
+    // Copy from remote GPU memory to local halo buffers
+    // These operations execute in parallel via NVLink/PCIe
+
+    if (handles->has_prev && handles->remote_prev_ptr != NULL) {
+        // Copy prev rank's last row → my halo_prev
+        CUDA_CHECK(cudaMemcpyAsync(
+            d_halo_recv_prev,               // Destination: local halo buffer
+            handles->remote_prev_ptr,       // Source: remote GPU's last row
+            halo_size * sizeof(double),
+            cudaMemcpyDeviceToDevice,
+            stream
+        ));
+    }
+
+    if (handles->has_next && handles->remote_next_ptr != NULL) {
+        // Copy next rank's first row → my halo_next
+        CUDA_CHECK(cudaMemcpyAsync(
+            d_halo_recv_next,               // Destination: local halo buffer
+            handles->remote_next_ptr,       // Source: remote GPU's first row
+            halo_size * sizeof(double),
+            cudaMemcpyDeviceToDevice,
+            stream
+        ));
+    }
+
+    // Ensure transfers complete before kernel uses halo data
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+}
+
+/**
  * @brief Exchange halo zones with neighbors using MPI with explicit staging
  * @details Each rank sends its boundary row to neighbors and receives theirs
  *
@@ -389,28 +569,20 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                rank, local_mem / 1e6, halo_mem / 1e3);
     }
 
-    // Allocate pinned host buffers for MPI staging (D2H, H2D)
-    double *h_send_prev, *h_send_next, *h_recv_prev, *h_recv_next;
-    if (rank > 0) {
-        CUDA_CHECK(cudaMallocHost(&h_send_prev, grid_size * sizeof(double)));
-        CUDA_CHECK(cudaMallocHost(&h_recv_prev, grid_size * sizeof(double)));
-    } else {
-        h_send_prev = NULL;
-        h_recv_prev = NULL;
-    }
-    if (rank < world_size - 1) {
-        CUDA_CHECK(cudaMallocHost(&h_send_next, grid_size * sizeof(double)));
-        CUDA_CHECK(cudaMallocHost(&h_recv_next, grid_size * sizeof(double)));
-    } else {
-        h_send_next = NULL;
-        h_recv_next = NULL;
-    }
+    // Setup CUDA IPC for direct GPU-to-GPU halo exchange
+    // Create handles for x, r, and p vectors
+    HaloIPCHandles ipc_handles_x, ipc_handles_r, ipc_handles_p;
 
     // Initialize vectors (local partition only)
     CUDA_CHECK(cudaMemcpy(d_b, &b[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_r_local, 0, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemset(d_p_local, 0, n_local * sizeof(double)));
+
+    // Setup IPC handles AFTER vector initialization (need valid device pointers)
+    setup_halo_ipc(d_x_local, n_local, grid_size, rank, world_size, &ipc_handles_x);
+    setup_halo_ipc(d_r_local, n_local, grid_size, rank, world_size, &ipc_handles_r);
+    setup_halo_ipc(d_p_local, n_local, grid_size, rank, world_size, &ipc_handles_p);
 
     // Start timing
     cudaEvent_t start, stop, timer_start, timer_stop;
@@ -455,14 +627,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
-    exchange_halo_mpi(
-        d_x_local,                                   // First row to send to prev
-        d_x_local + (n_local - grid_size),           // Last row to send to next
+    exchange_halo_p2p_direct(
         d_x_halo_prev,                               // Receive from prev
         d_x_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
+        &ipc_handles_x,                              // IPC handles for x vector
+        grid_size, stream
     );
 
     if (config.enable_detailed_timers) {
@@ -497,14 +666,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
-    exchange_halo_mpi(
-        d_r_local,                                   // First row to prev
-        d_r_local + (n_local - grid_size),           // Last row to next
+    exchange_halo_p2p_direct(
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
+        &ipc_handles_r,                              // IPC handles for r vector
+        grid_size, stream
     );
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -694,14 +860,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        exchange_halo_mpi(
-            d_p_local,                                   // First row to prev
-            d_p_local + (n_local - grid_size),           // Last row to next
+        exchange_halo_p2p_direct(
             d_p_halo_prev,                               // Receive from prev
             d_p_halo_next,                               // Receive from next
-            h_send_prev, h_send_next,                    // Host send buffers
-            h_recv_prev, h_recv_next,                    // Host recv buffers
-            grid_size, rank, world_size, stream
+            &ipc_handles_p,                              // IPC handles for p vector
+            grid_size, stream
         );
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -839,11 +1002,10 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (d_r_halo_prev) cudaFree(d_r_halo_prev);
     if (d_r_halo_next) cudaFree(d_r_halo_next);
 
-    // Free host pinned buffers
-    if (h_send_prev) cudaFreeHost(h_send_prev);
-    if (h_send_next) cudaFreeHost(h_send_next);
-    if (h_recv_prev) cudaFreeHost(h_recv_prev);
-    if (h_recv_next) cudaFreeHost(h_recv_next);
+    // Cleanup IPC handles
+    cleanup_halo_ipc(&ipc_handles_x);
+    cleanup_halo_ipc(&ipc_handles_r);
+    cleanup_halo_ipc(&ipc_handles_p);
 
     cublasDestroy(cublas_handle);
     cudaStreamDestroy(stream);
