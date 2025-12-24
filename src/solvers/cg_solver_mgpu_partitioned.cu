@@ -295,10 +295,54 @@ static void cleanup_halo_ipc(HaloIPCHandles* handles) {
 }
 
 /**
+ * @brief Synchronize with neighbor ranks before P2P read
+ *
+ * Ensures that neighbor ranks have finished updating their local data
+ * before this rank reads their memory via CUDA IPC P2P.
+ *
+ * Without this sync, there's a race condition:
+ * - Rank 0 finishes kernel quickly, starts P2P read from Rank 1
+ * - Rank 1 hasn't finished kernel yet → Rank 0 reads partial/stale data
+ * - Result: Numerical variability, non-deterministic convergence
+ *
+ * This is why MPI staging is stable (MPI_Waitall provides implicit sync)
+ * but P2P direct needs explicit inter-rank synchronization.
+ */
+static void sync_with_neighbors(int rank, int world_size) {
+    char dummy = 0;
+    MPI_Request send_reqs[2];
+    int send_count = 0;
+
+    // Send "ready" signal to neighbors
+    if (rank > 0) {
+        MPI_Isend(&dummy, 1, MPI_CHAR, rank - 1, 99, MPI_COMM_WORLD, &send_reqs[send_count++]);
+    }
+    if (rank < world_size - 1) {
+        MPI_Isend(&dummy, 1, MPI_CHAR, rank + 1, 99, MPI_COMM_WORLD, &send_reqs[send_count++]);
+    }
+
+    // Wait for "ready" signal from neighbors
+    if (rank > 0) {
+        MPI_Recv(&dummy, 1, MPI_CHAR, rank - 1, 99, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    if (rank < world_size - 1) {
+        MPI_Recv(&dummy, 1, MPI_CHAR, rank + 1, 99, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    // Wait for my sends to complete
+    if (send_count > 0) {
+        MPI_Waitall(send_count, send_reqs, MPI_STATUSES_IGNORE);
+    }
+}
+
+/**
  * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyAsync
  *
  * Zero CPU staging overhead - transfers directly via NVLink/PCIe.
  * Requires CUDA IPC setup (see setup_halo_ipc).
+ *
+ * IMPORTANT: Must call sync_with_neighbors() BEFORE this function to ensure
+ * neighbor ranks have finished updating their local data.
  *
  * For 5-point stencil with row-band partitioning:
  * - GPU0: copy last row to GPU1's halo_prev, receive GPU1's first row to halo_next
@@ -627,6 +671,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
+    // Sync with neighbors before P2P read
+    sync_with_neighbors(rank, world_size);
+
     exchange_halo_p2p_direct(
         d_x_halo_prev,                               // Receive from prev
         d_x_halo_next,                               // Receive from next
@@ -666,6 +713,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
+
+    // Ensure r_local kernel is done before neighbors read it
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+    sync_with_neighbors(rank, world_size);
+
     exchange_halo_p2p_direct(
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
@@ -860,6 +912,11 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
+
+        // Ensure p_local kernel is done before neighbors read it
+        CUDA_CHECK(cudaStreamSynchronize(stream));
+        sync_with_neighbors(rank, world_size);
+
         exchange_halo_p2p_direct(
             d_p_halo_prev,                               // Receive from prev
             d_p_halo_next,                               // Receive from next
