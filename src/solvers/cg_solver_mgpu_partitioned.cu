@@ -336,8 +336,9 @@ static void sync_with_neighbors(int rank, int world_size) {
 }
 
 /**
- * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyAsync
+ * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyPeerAsync
  *
+ * Uses cudaMemcpyPeerAsync for proper GPU cache coherency (automatic L2 flush/invalidate).
  * Zero CPU staging overhead - transfers directly via NVLink/PCIe.
  * Requires CUDA IPC setup (see setup_halo_ipc).
  *
@@ -356,29 +357,38 @@ static void exchange_halo_p2p_direct(
     double* d_halo_recv_next,           // Local buffer to receive from next rank
     const HaloIPCHandles* handles,      // IPC handles with remote pointers
     int halo_size,                      // Number of elements per halo (grid_size)
-    cudaStream_t stream
+    cudaStream_t stream,
+    int rank,                           // Local GPU device ID
+    int world_size                      // Total number of GPUs
 ) {
-    // Copy from remote GPU memory to local halo buffers
-    // These operations execute in parallel via NVLink/PCIe
+    // Copy from remote GPU memory to local halo buffers using cudaMemcpyPeerAsync
+    // This ensures proper cache coherency (automatic L2 flush/invalidate)
+    // Transfers execute in parallel via NVLink/PCIe
 
     if (handles->has_prev && handles->remote_prev_ptr != NULL) {
         // Copy prev rank's last row → my halo_prev
-        CUDA_CHECK(cudaMemcpyAsync(
+        int src_device = rank - 1;  // Previous GPU
+        int dst_device = rank;      // Local GPU
+        CUDA_CHECK(cudaMemcpyPeerAsync(
             d_halo_recv_prev,               // Destination: local halo buffer
+            dst_device,                     // Destination GPU ID
             handles->remote_prev_ptr,       // Source: remote GPU's last row
+            src_device,                     // Source GPU ID
             halo_size * sizeof(double),
-            cudaMemcpyDeviceToDevice,
             stream
         ));
     }
 
     if (handles->has_next && handles->remote_next_ptr != NULL) {
         // Copy next rank's first row → my halo_next
-        CUDA_CHECK(cudaMemcpyAsync(
+        int src_device = rank + 1;  // Next GPU
+        int dst_device = rank;      // Local GPU
+        CUDA_CHECK(cudaMemcpyPeerAsync(
             d_halo_recv_next,               // Destination: local halo buffer
+            dst_device,                     // Destination GPU ID
             handles->remote_next_ptr,       // Source: remote GPU's first row
+            src_device,                     // Source GPU ID
             halo_size * sizeof(double),
-            cudaMemcpyDeviceToDevice,
             stream
         ));
     }
@@ -678,7 +688,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_prev,                               // Receive from prev
         d_x_halo_next,                               // Receive from next
         &ipc_handles_x,                              // IPC handles for x vector
-        grid_size, stream
+        grid_size, stream,
+        rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
 
     if (config.enable_detailed_timers) {
@@ -722,7 +733,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
         &ipc_handles_r,                              // IPC handles for r vector
-        grid_size, stream
+        grid_size, stream,
+        rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -921,7 +933,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             d_p_halo_prev,                               // Receive from prev
             d_p_halo_next,                               // Receive from next
             &ipc_handles_p,                              // IPC handles for p vector
-            grid_size, stream
+            grid_size, stream,
+            rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
         );
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
