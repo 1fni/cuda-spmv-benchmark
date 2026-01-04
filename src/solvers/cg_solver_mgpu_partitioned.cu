@@ -27,6 +27,7 @@
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <nvtx3/nvToolsExt.h>
 
 #include "spmv.h"
 #include "io.h"
@@ -550,6 +551,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
         // Ap = A * p (local SpMV) - halo-aware kernel
+        nvtxRangePush("SpMV");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -564,6 +566,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_spmv_ms += elapsed_ms;
         }
+        nvtxRangePop();
 
         // alpha = rs_old / (p^T * Ap) - local dot product
         if (config.enable_detailed_timers) {
@@ -596,6 +599,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         double alpha = rs_old / pAp;
 
         // x_local = x_local + alpha * p_local
+        nvtxRangePush("BLAS_AXPY");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -622,6 +626,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             stats->time_blas1_ms += elapsed_ms;
             stats->time_axpy_update_r_ms += elapsed_ms;  // Granular timer
         }
+        nvtxRangePop();
 
         // rs_new = r^T * r - local dot product
         if (config.enable_detailed_timers) {
@@ -691,6 +696,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         }
 
         // P2P halo exchange for p vector (160 KB vs 800 MB AllGather)
+        nvtxRangePush("Halo_Exchange_MPI");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -710,6 +716,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_allgather_ms += elapsed_ms;  // Keep same name for comparison
         }
+        nvtxRangePop();
 
         rs_old = rs_new;
     }
