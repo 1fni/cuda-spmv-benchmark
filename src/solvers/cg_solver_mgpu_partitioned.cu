@@ -407,22 +407,14 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         h_recv_next = NULL;
     }
 
-    // First-touch prefault: Touch all pinned memory pages to force allocation now
-    // (eliminates page faults on first write during MPI staging)
-    if (rank > 0) {
-        memset(h_send_prev, 0, grid_size * sizeof(double));
-        memset(h_recv_prev, 0, grid_size * sizeof(double));
-    }
-    if (rank < world_size - 1) {
-        memset(h_send_next, 0, grid_size * sizeof(double));
-        memset(h_recv_next, 0, grid_size * sizeof(double));
-    }
-
     // Initialize vectors (local partition only)
     CUDA_CHECK(cudaMemcpy(d_b, &b[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_r_local, 0, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemset(d_p_local, 0, n_local * sizeof(double)));
+
+    // Synchronize all ranks before timing to avoid measuring rank arrival skew
+    MPI_Barrier(MPI_COMM_WORLD);
 
     // Start timing
     cudaEvent_t start, stop, timer_start, timer_stop;
