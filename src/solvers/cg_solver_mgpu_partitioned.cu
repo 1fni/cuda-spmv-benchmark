@@ -27,6 +27,7 @@
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <nvtx3/nvToolsExt.h>
 
 #include "spmv.h"
 #include "io.h"
@@ -623,6 +624,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
         // Ap = A * p with stream overlap (halo exchange + compute)
+        nvtxRangePush("SpMV");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -631,10 +633,12 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         launch_interior_spmv(d_row_ptr, d_col_idx, d_values, d_p_local, d_Ap,
                              n_local, row_offset, n, grid_size, stream_compute);
 
+        nvtxRangePush("Halo_Exchange_MPI");
         exchange_halo_mpi(d_p_local, d_p_local + (n_local - grid_size),
                           d_p_halo_prev, d_p_halo_next,
                           h_send_prev, h_send_next, h_recv_prev, h_recv_next,
                           grid_size, rank, world_size, stream_comm);
+        nvtxRangePop();
 
         // Sync and boundary SpMV
         CUDA_CHECK(cudaStreamSynchronize(stream_compute));
@@ -652,6 +656,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_spmv_ms += elapsed_ms;
         }
+        nvtxRangePop();  // SpMV
 
         // alpha = rs_old / (p^T * Ap) - local dot product
         if (config.enable_detailed_timers) {
@@ -683,6 +688,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
         double alpha = rs_old / pAp;
 
+        nvtxRangePush("BLAS_AXPY");
         // x_local = x_local + alpha * p_local
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
@@ -702,6 +708,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
         axpy_kernel<<<blocks_local, threads, 0, stream>>>(-alpha, d_Ap, d_r_local, n_local);
+        nvtxRangePop();
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
