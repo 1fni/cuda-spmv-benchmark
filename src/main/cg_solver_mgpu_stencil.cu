@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <mpi.h>
+#include <cuda_profiler_api.h>
+#include <nvtx3/nvToolsExt.h>
 #include "io.h"
 #include "spmv.h"
 #include "solvers/cg_solver_mgpu_partitioned.h"
@@ -100,7 +102,24 @@ int main(int argc, char** argv) {
         cg_solve_mgpu_partitioned(NULL, &mat, b, x, warmup_config, &warmup_stats);
     }
 
-    // Reset x to zero before benchmark (warmup leaves x = solution)
+    // Reset x to zero before profiled run (warmup leaves x = solution)
+    memset(x, 0, mat.rows * sizeof(double));
+
+    // Single profiled run (captured by nsys, excluded from statistics)
+    if (rank == 0) printf("Running profiled iteration (for nsys)...\n");
+    CGStatsMultiGPU profiled_stats;
+    cudaProfilerStart();
+    nvtxRangePush("CG_Benchmark_Profiled");
+    cg_solve_mgpu_partitioned(NULL, &mat, b, x, config, &profiled_stats);
+    nvtxRangePop();
+    cudaProfilerStop();
+    if (rank == 0) {
+        printf("Profiled run: %s in %d iterations\n",
+               profiled_stats.converged ? "converged" : "failed",
+               profiled_stats.iterations);
+    }
+
+    // Reset x again before benchmark
     memset(x, 0, mat.rows * sizeof(double));
 
     // Benchmark: 10 runs with statistical analysis (match AmgX default)

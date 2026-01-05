@@ -27,6 +27,7 @@
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <nvtx3/nvToolsExt.h>
 
 #include "spmv.h"
 #include "io.h"
@@ -638,6 +639,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     setup_halo_ipc(d_r_local, n_local, grid_size, rank, world_size, &ipc_handles_r);
     setup_halo_ipc(d_p_local, n_local, grid_size, rank, world_size, &ipc_handles_p);
 
+    // Synchronize all ranks before timing to avoid measuring rank arrival skew
+    MPI_Barrier(MPI_COMM_WORLD);
+
     // Start timing
     cudaEvent_t start, stop, timer_start, timer_stop;
     CUDA_CHECK(cudaEventCreate(&start));
@@ -780,6 +784,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
         // Ap = A * p (local SpMV) - halo-aware kernel
+        nvtxRangePush("SpMV");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -794,6 +799,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_spmv_ms += elapsed_ms;
         }
+        nvtxRangePop();
 
         // alpha = rs_old / (p^T * Ap) - local dot product
         if (config.enable_detailed_timers) {
@@ -825,6 +831,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
         double alpha = rs_old / pAp;
 
+        nvtxRangePush("BLAS_AXPY");
         // x_local = x_local + alpha * p_local
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
@@ -852,6 +859,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             stats->time_blas1_ms += elapsed_ms;
             stats->time_axpy_update_r_ms += elapsed_ms;  // Granular timer
         }
+        nvtxRangePop();
 
         // rs_new = r^T * r - local dot product
         if (config.enable_detailed_timers) {
@@ -929,6 +937,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         CUDA_CHECK(cudaStreamSynchronize(stream));
         sync_with_neighbors(rank, world_size);
 
+        nvtxRangePush("Halo_Exchange_P2P");
         exchange_halo_p2p_direct(
             d_p_halo_prev,                               // Receive from prev
             d_p_halo_next,                               // Receive from next
@@ -943,6 +952,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_allgather_ms += elapsed_ms;  // Keep same name for comparison
         }
+        nvtxRangePop();
 
         rs_old = rs_new;
     }
