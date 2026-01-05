@@ -485,6 +485,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     CUDA_CHECK(cudaMemset(d_r_local, 0, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemset(d_p_local, 0, n_local * sizeof(double)));
 
+    // Synchronize all ranks before timing to avoid measuring rank arrival skew
+    MPI_Barrier(MPI_COMM_WORLD);
+
     // Start timing
     cudaEvent_t start, stop, timer_start, timer_stop;
     CUDA_CHECK(cudaEventCreate(&start));
