@@ -685,7 +685,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
-    // Sync with neighbors before P2P read
+    // Ensure x_local is initialized AND all GPU caches are flushed before P2P read
+    CUDA_CHECK(cudaDeviceSynchronize());
     sync_with_neighbors(rank, world_size);
 
     exchange_halo_p2p_direct(
@@ -695,6 +696,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         grid_size, stream,
         rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
+
+    // Ensure all ranks finished P2P copies before continuing
+    sync_with_neighbors(rank, world_size);
 
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -729,8 +733,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
 
-    // Ensure r_local kernel is done before neighbors read it
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+    // Ensure r_local kernel is done AND all GPU caches are flushed before neighbors read it
+    CUDA_CHECK(cudaDeviceSynchronize());
     sync_with_neighbors(rank, world_size);
 
     exchange_halo_p2p_direct(
@@ -740,6 +744,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         grid_size, stream,
         rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
+
+    // Ensure all ranks finished P2P copies before continuing
+    sync_with_neighbors(rank, world_size);
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
         CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -933,8 +940,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
 
-        // Ensure p_local kernel is done before neighbors read it
-        CUDA_CHECK(cudaStreamSynchronize(stream));
+        // Ensure p_local kernel is done AND all GPU caches are flushed before neighbors read it
+        CUDA_CHECK(cudaDeviceSynchronize());  // Stronger than cudaStreamSynchronize
         sync_with_neighbors(rank, world_size);
 
         nvtxRangePush("Halo_Exchange_P2P");
@@ -945,6 +952,9 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             grid_size, stream,
             rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
         );
+
+        // Ensure all ranks finished P2P copies before continuing
+        sync_with_neighbors(rank, world_size);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
