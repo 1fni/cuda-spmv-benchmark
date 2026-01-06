@@ -697,7 +697,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
 
-    // Ensure all ranks finished P2P copies before continuing
+    // Ensure reader GPU cache is also flushed before using halo data
+    CUDA_CHECK(cudaDeviceSynchronize());
     sync_with_neighbors(rank, world_size);
 
     if (config.enable_detailed_timers) {
@@ -745,7 +746,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
 
-    // Ensure all ranks finished P2P copies before continuing
+    // Ensure reader GPU cache is also flushed before using halo data
+    CUDA_CHECK(cudaDeviceSynchronize());
     sync_with_neighbors(rank, world_size);
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -953,7 +955,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
         );
 
-        // Ensure all ranks finished P2P copies before continuing
+        // Ensure reader GPU cache is also flushed before using halo data
+        CUDA_CHECK(cudaDeviceSynchronize());
         sync_with_neighbors(rank, world_size);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
