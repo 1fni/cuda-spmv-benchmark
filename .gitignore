@@ -36,3 +36,6 @@ external/matrix/
 profiling_results/
 test_*.sh
 profile_*.sh
+
+# Personal notes and work-in-progress documentation
+.notes/
