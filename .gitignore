@@ -2,6 +2,7 @@
 build/
 bin/
 results/
+results_archive/
 .dev/
 tags
 *.o
@@ -34,5 +35,9 @@ external/matrix/
 
 # Profiling and test scripts
 profiling_results/
+profile/
 test_*.sh
 profile_*.sh
+
+# Personal notes and work-in-progress documentation
+.notes/
