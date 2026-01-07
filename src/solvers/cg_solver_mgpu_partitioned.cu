@@ -383,34 +383,46 @@ static void sync_with_neighbors(int rank, int world_size) {
 }
 
 /**
- * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyAsync
+ * @brief Direct GPU-to-GPU halo exchange using cudaMemcpyPeerAsync
  *
- * IMPORTANT: Must call sync_with_neighbors() BEFORE this function to ensure
- * neighbor ranks have finished updating their local data.
+ * Uses cudaMemcpyPeerAsync for proper GPU cache coherency (automatic L2 flush/invalidate).
+ * Zero CPU staging overhead - transfers directly via NVLink/PCIe.
+ * Requires CUDA IPC setup (see setup_halo_ipc).
+ *
+ * IMPORTANT: Must call cudaDeviceSynchronize() + sync_with_neighbors() BEFORE
+ * this function to ensure neighbor ranks have flushed their GPU caches.
  */
 static void exchange_halo_p2p_direct(
     double* d_halo_recv_prev,
     double* d_halo_recv_next,
     const HaloIPCHandles* handles,
     int halo_size,
-    cudaStream_t stream
+    cudaStream_t stream,
+    int rank,
+    int world_size
 ) {
     if (handles->has_prev && handles->remote_prev_ptr != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(
-            d_halo_recv_prev,
-            handles->remote_prev_ptr,
+        int src_device = rank - 1;  // Previous GPU
+        int dst_device = rank;      // Local GPU
+        CUDA_CHECK(cudaMemcpyPeerAsync(
+            d_halo_recv_prev,               // Destination: local halo buffer
+            dst_device,                     // Destination GPU ID
+            handles->remote_prev_ptr,       // Source: remote GPU's last row
+            src_device,                     // Source GPU ID
             halo_size * sizeof(double),
-            cudaMemcpyDeviceToDevice,
             stream
         ));
     }
 
     if (handles->has_next && handles->remote_next_ptr != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(
-            d_halo_recv_next,
-            handles->remote_next_ptr,
+        int src_device = rank + 1;  // Next GPU
+        int dst_device = rank;      // Local GPU
+        CUDA_CHECK(cudaMemcpyPeerAsync(
+            d_halo_recv_next,               // Destination: local halo buffer
+            dst_device,                     // Destination GPU ID
+            handles->remote_next_ptr,       // Source: remote GPU's first row
+            src_device,                     // Source GPU ID
             halo_size * sizeof(double),
-            cudaMemcpyDeviceToDevice,
             stream
         ));
     }
@@ -716,7 +728,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
     // Stream 2: Halo exchange (parallel with interior)
     exchange_halo_p2p_direct(d_x_halo_prev, d_x_halo_next,
-                             &ipc_handles_x, grid_size, stream_comm);
+                             &ipc_handles_x, grid_size, stream_comm,
+                             rank, world_size);
 
     // Wait for interior compute + halo exchange
     CUDA_CHECK(cudaStreamSynchronize(stream_compute));
@@ -755,7 +768,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_r_halo_prev,                               // Receive from prev
         d_r_halo_next,                               // Receive from next
         &ipc_handles_r,                              // IPC handles for r vector
-        grid_size, stream
+        grid_size, stream,
+        rank, world_size                             // GPU device IDs for cudaMemcpyPeerAsync
     );
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -816,7 +830,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
         nvtxRangePush("Halo_Exchange_P2P");
         exchange_halo_p2p_direct(d_p_halo_prev, d_p_halo_next,
-                                 &ipc_handles_p, grid_size, stream_comm);
+                                 &ipc_handles_p, grid_size, stream_comm,
+                                 rank, world_size);
 
         // Sync and boundary SpMV
         CUDA_CHECK(cudaStreamSynchronize(stream_compute));
