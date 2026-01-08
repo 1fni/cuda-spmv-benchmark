@@ -544,8 +544,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
                       grid_size, rank, world_size, stream_comm);
 
     // Wait for interior compute + halo exchange
-    CUDA_CHECK(cudaStreamSynchronize(stream_compute));
-    CUDA_CHECK(cudaStreamSynchronize(stream_comm));
+    // Use cudaDeviceSynchronize to ensure cross-stream data visibility
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     // Boundary points (needs halo)
     launch_boundary_spmv(d_row_ptr, d_col_idx, d_values, d_x_local,
@@ -641,8 +641,10 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         nvtxRangePop();
 
         // Sync and boundary SpMV
-        CUDA_CHECK(cudaStreamSynchronize(stream_compute));
-        CUDA_CHECK(cudaStreamSynchronize(stream_comm));
+        // Use cudaDeviceSynchronize instead of per-stream sync to ensure
+        // cross-stream data visibility (halo data written on stream_comm
+        // must be visible to boundary kernel on stream_compute)
+        CUDA_CHECK(cudaDeviceSynchronize());
 
         launch_boundary_spmv(d_row_ptr, d_col_idx, d_values, d_p_local,
                              d_p_halo_prev, d_p_halo_next, d_Ap,
