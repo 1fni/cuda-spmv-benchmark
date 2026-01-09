@@ -57,12 +57,13 @@ __global__ void stencil5_csr_partitioned_halo_kernel(
             val_north = 0.0;
         }
 
-        // West, Center, East: always local for interior
+        // Optimized memory access order: group spatially adjacent accesses first
+        // West, Center, East: stride 1 (cache-friendly, always local for interior)
         double val_west = x_local[idx_west - row_offset];
         double val_center = x_local[idx_center - row_offset];
         double val_east = x_local[idx_east - row_offset];
 
-        // South
+        // South: stride grid_size (separate from contiguous accesses)
         double val_south;
         if (idx_south >= row_offset && idx_south < row_offset + n_local) {
             val_south = x_local[idx_south - row_offset];
@@ -72,10 +73,11 @@ __global__ void stencil5_csr_partitioned_halo_kernel(
             val_south = 0.0;
         }
 
-        sum = values[row_start + 0] * val_north
-            + values[row_start + 1] * val_west
+        // Reorder operations to group contiguous memory accesses (W-C-E) before large-stride (N-S)
+        sum = values[row_start + 1] * val_west
             + values[row_start + 2] * val_center
             + values[row_start + 3] * val_east
+            + values[row_start + 0] * val_north
             + values[row_start + 4] * val_south;
     }
     // Boundary: CSR traversal with halo mapping
