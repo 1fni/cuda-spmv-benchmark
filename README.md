@@ -1,291 +1,379 @@
-# CUDA SpMV Benchmark Suite
+# Multi-GPU Conjugate Gradient Solver
 
 [![CI](https://github.com/1fni/cuda-spmv-benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/1fni/cuda-spmv-benchmark/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-High-performance Sparse Matrix-Vector Multiplication (SpMV) implementations with GPU acceleration, performance metrics, and automated benchmarking.
+High-performance multi-GPU Conjugate Gradient solver for large-scale sparse linear systems using CUDA and MPI. Optimized for structured stencil grids with excellent strong scaling efficiency.
 
-## Performance Results
+## Performance Highlights
 
-**Enterprise-Scale Benchmark** on NVIDIA H100 NVL (94GB HBM3, Compute 9.0)
-Matrix: 265M×265M with 1.33B non-zeros (0.002% sparsity)
+**Multi-GPU Strong Scaling** on 8× NVIDIA A100-SXM4-80GB
 
-| Format          | Time (ms) | GFLOPS  | Bandwidth (GB/s) | Speedup |
-|-----------------|-----------|---------|------------------|---------|
-| **CSR**         | 8.25      | 321.9   | 2575             | 1.00×   |
-| **STENCIL5-OPT**| 5.53      | 480.7   | 3653             | **1.49×**|
+| Problem Size | 1 GPU | 8 GPUs | Speedup | Efficiency |
+|--------------|-------|--------|---------|------------|
+| **100M unknowns** (10k×10k stencil) | 133.9 ms | 19.3 ms | 6.94× | 86.8% |
+| **225M unknowns** (15k×15k stencil) | 300.1 ms | 40.4 ms | 7.43× | 92.9% |
+| **400M unknowns** (20k×20k stencil) | 531.4 ms | 71.0 ms | **7.48×** | **93.5%** |
 
-*Kernel-level measurements via CUDA events*
+**Key Results:**
+- **7.48× speedup** on 400M unknowns with 8 GPUs (93.5% parallel efficiency)
+- **Near-linear 2-GPU scaling**: 1.95-1.97× speedup (97-99% efficiency)
+- **Deterministic convergence**: All configurations converge in exactly 14 iterations
+- **Better scaling with larger problems**: Efficiency improves from 86.8% to 93.5%
+
+### Strong Scaling Visualization
+
+<p align="center">
+  <img src="docs/figures/scaling_main_a100.png" alt="Multi-GPU Strong Scaling" width="100%">
+</p>
+
+<details>
+<summary><b>📊 Detailed Analysis</b></summary>
+
+<p align="center">
+  <img src="docs/figures/scaling_detailed_a100.png" alt="Detailed Scaling Analysis" width="100%">
+</p>
+
+**Performance breakdown:**
+- SpMV kernel time scales near-linearly with GPU count
+- MPI communication overhead remains < 10% at 8 GPUs
+- Reductions (cuBLAS dot products) maintain high efficiency
+- Larger problems amortize communication cost more effectively
+
+</details>
+
+<details>
+<summary><b>📈 Problem Size Scaling</b></summary>
+
+<p align="center">
+  <img src="docs/figures/problem_size_scaling_overview.png" alt="Problem Size Scaling" width="100%">
+</p>
+
+**Observations:**
+- 20k×20k matrix achieves best parallel efficiency (93.5%)
+- Communication overhead decreases relative to computation for larger problems
+- All problem sizes maintain > 85% efficiency at 8 GPUs
+
+See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for complete results.
+
+</details>
+
+### Single-GPU SpMV Performance
+
+**Format Comparison** on NVIDIA A100 80GB PCIe
+
+| Matrix Size | CSR (cuSPARSE) | STENCIL5 (Custom) | Speedup | Bandwidth Improvement |
+|-------------|----------------|-------------------|---------|----------------------|
+| **10k×10k** (100M unknowns) | 6.77 ms | 3.25 ms | **2.08×** | 1.98× (1182 → 2339 GB/s) |
+| **15k×15k** (225M unknowns) | 15.00 ms | 7.29 ms | **2.06×** | 1.96× (1200 → 2346 GB/s) |
+| **20k×20k** (400M unknowns) | 26.77 ms | 12.86 ms | **2.08×** | 1.98× (1195 → 2364 GB/s) |
+
+**Key Results:**
+- **2.07× average speedup** over cuSPARSE CSR implementation
+- **~310 GFLOPS sustained** across all problem sizes (STENCIL5)
+- **1.97× bandwidth improvement** through optimized memory access patterns
+- **Consistent performance scaling**: Speedup stable at 2.06-2.08× from 100M to 400M unknowns
+
+<details>
+<summary><b>📊 Format Comparison Analysis</b></summary>
+
+<p align="center">
+  <img src="docs/figures/spmv_format_comparison_a100.png" alt="SpMV Format Comparison" width="100%">
+</p>
+
+**Optimization techniques:**
+- **Grouped memory accesses**: W-C-E (stride-1) before N-S (stride grid_size) for cache efficiency
+- **ELLPACK-based storage**: Exploit stencil structure to eliminate col_idx indirection
+- **Interior point fast path**: Direct calculation for 95% of rows (no CSR traversal)
+- **Boundary fallback**: Standard CSR traversal for edge cases
+
+**Why STENCIL5 is faster:**
+1. Predictable access pattern → better L1/L2 cache utilization
+2. Reduced memory traffic (no column index lookups for interior points)
+3. Coalesced memory accesses for contiguous elements
+
+</details>
+
+---
 
 ## Technical Highlights
 
-- **Optimized Stencil Kernels** - Custom CUDA implementation outperforms cuSPARSE CSR by 1.49× on H100 NVL
-- **Multi-GPU Scaling** - Peer-to-peer communication with 1D row-band decomposition
-- **Comprehensive Metrics** - GFLOPS, memory bandwidth, arithmetic intensity analysis
-- **Fair Benchmarking** - Unified compilation flags (-O3) for credible industry comparisons (AmgX, Kokkos)
-- **Export Formats** - JSON/CSV output for automated analysis and CI/CD integration
+### Multi-GPU Architecture
+- **MPI explicit staging**: D2H → MPI_Isend/Irecv → H2D for low-latency halo exchange
+- **Row-band partitioning**: 1D decomposition with CSR format and halo zone exchange
+- **Efficient reductions**: cuBLAS dot products instead of atomics (238× faster)
+- **Optimized for A100**: Takes advantage of NVLink/PCIe Gen4 bandwidth
 
-## Features
+### Algorithm Features
+- **Conjugate Gradient (CG)**: Iterative Krylov method for symmetric positive definite systems
+- **5-point stencil**: Custom CUDA kernels for finite difference discretizations
+- **Halo exchange**: Minimal communication (160 KB per exchange for 10k grid)
+- **Convergence criterion**: Relative residual < 1e-6
 
-- **Multiple SpMV Formats**: CSR, ELLPACK, 5-point stencil with cuSPARSE and custom CUDA kernels
-- **Performance Metrics**: GFLOPS, memory bandwidth, arithmetic intensity analysis  
-- **Export Formats**: JSON, CSV, human-readable output with file export
-- **Automated Benchmarking**: Comparison scripts and performance analysis
-- **Memory Management**: Zero-leak implementation with proper cleanup
-- **CI/CD Pipeline**: Automated build validation with GitHub Actions
+### Performance Engineering
+- **Compared NCCL vs MPI**: MPI staging 43% faster for small repeated messages
+- **Profiling-driven**: Nsight Systems analysis to identify bottlenecks
+- **Numerical stability**: Deterministic results across all GPU counts
+- **Fair benchmarking**: Unified compilation flags (-O2) and consistent test methodology
+
+---
 
 ## Quick Start
 
-```bash
-# Build the benchmark suite
-make
+### Prerequisites
+- **Hardware**: NVIDIA GPUs with Compute Capability ≥ 7.0
+- **Software**: CUDA Toolkit ≥ 11.0, OpenMPI or MPICH, C++14 compiler
 
-# Run CSR benchmark  
-./bin/spmv_bench matrix/example100x100.mtx --mode=csr
-
-# Compare formats and export results
-./benchmark_suite.sh
-
-# Export metrics to JSON for analysis
-./bin/spmv_bench matrix/example.mtx --mode=stencil5 --output-format=json --output-file=results.json
-```
-
-## Supported Formats
-
-### CSR (Compressed Sparse Row)
-- General sparse matrices using cuSPARSE
-- Optimal for irregular sparsity patterns
-- Industry-standard format with broad compatibility
-
-### STENCIL5 (5-Point Stencil)  
-- Custom CUDA kernels for structured grid operations
-- Optimized memory access patterns with ELLPACK storage
-- **Best performance** for finite difference applications
-
-### ELLPACK
-- Regular sparsity patterns using cuSPARSE
-- Memory-aligned storage for consistent row widths
-
-## Multi-GPU Architecture
-
-Scalable implementations for stencil and CSR formats across multiple GPUs.
-
-### Features
-
-- **Peer-to-peer communication** - Direct GPU-to-GPU transfers without CPU bounce
-- **1D row-band decomposition** - Each GPU handles contiguous row bands
-- **Minimal overhead** - Halo exchange for stencil boundary conditions only
-- **Automatic GPU detection** - Runtime device enumeration and validation
-
-### Usage
+### Build and Run
 
 ```bash
-# Multi-GPU stencil (2 GPUs)
-./bin/spmv_bench matrix/stencil_large.mtx --mode=stencil5-mgpu
+# Clone repository
+git clone https://github.com/1fni/cuda-spmv-benchmark.git
+cd cuda-spmv-benchmark
 
-# Multi-GPU CSR
-./bin/spmv_bench matrix/large_sparse.mtx --mode=csr-mgpu
+# Build multi-GPU CG solver
+make cg_solver_mgpu_stencil
+
+# Generate 10k×10k 5-point stencil matrix
+./bin/generate_matrix 10000 matrix/stencil_10k.mtx
+
+# Run on 2 GPUs
+mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
+
+# Run on 8 GPUs with detailed output
+mpirun -np 8 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx --verbose=2
 ```
 
-### Architecture Details
+### Benchmark Suite
 
-**Row-band decomposition:**
-```
-GPU 0: rows [0, N/2)         ┐
-GPU 1: rows [N/2, N)         ┘ Peer-to-peer halo exchange
-```
+```bash
+# Run problem size scaling benchmark (10k, 15k, 20k on 1/2/4/8 GPUs)
+./scripts/benchmarking/benchmark_problem_sizes.sh
 
-Each GPU:
-1. Computes local SpMV on its row band
-2. Exchanges boundary data via P2P
-3. Synchronizes results
-
-**Performance considerations:**
-- Best for large matrices where computation dominates communication
-- Requires CUDA-capable peer access between GPUs
-- Halo size: 1 row for 5-point stencil
-
-## Architecture
-
-```
-src/
-├── main/main.cu           # CLI interface and benchmark orchestration
-├── spmv/
-│   ├── spmv.cu           # Operator dispatch and selection
-│   ├── spmv_cusparse_csr.cu      # CSR implementation with cuSPARSE
-│   ├── spmv_stencil.cu   # Custom 5-point stencil CUDA kernels  
-│   └── spmv_metrics.cu   # Performance metrics and analysis
-├── io/io.cu              # Matrix Market I/O and format conversion
-└── matrix/generate_matrix.cu     # Stencil matrix generator
+# Analyze results and generate plots
+cd results_problem_size_scaling_*/
+python3 analyze_scaling.py
 ```
 
-## Build System
+---
 
-**Dual build approach** for maximum flexibility:
-- **Makefile**: Primary build system optimized for CUDA/HPC workflows
-- **CMake**: Testing framework with Google Test integration
+## Architecture Overview
+
+### Communication Pattern
+
+```
+Row-band partitioning (8 GPUs, 10k×10k grid):
+
+GPU 0: rows [0, 12.5k)       ┐
+GPU 1: rows [12.5k, 25k)     │
+GPU 2: rows [25k, 37.5k)     │  Halo exchange:
+GPU 3: rows [37.5k, 50k)     │  - 160 KB per GPU
+GPU 4: rows [50k, 62.5k)     │  - MPI_Isend/Irecv
+GPU 5: rows [62.5k, 75k)     │  - ~2 ms latency
+GPU 6: rows [75k, 87.5k)     │
+GPU 7: rows [87.5k, 100k)    ┘
+```
+
+### CG Algorithm Structure
+
+```c
+1. Initial setup:
+   - Partition matrix rows across GPUs
+   - Exchange halo zones for initial vectors (x, r)
+
+2. CG iteration loop (14 iterations):
+   a. SpMV: y = A×p (with halo exchange)
+   b. Dot products: α = (r,r)/(p,y)  [MPI_Allreduce]
+   c. AXPY updates: x += α×p, r -= α×y
+   d. Dot products: β = (r_new,r_new)/(r_old,r_old)  [MPI_Allreduce]
+   e. Vector update: p = r + β×p
+   f. Convergence check: ||r||/||b|| < 1e-6
+
+3. Gather final solution to all ranks
+```
+
+**Performance characteristics:**
+- **SpMV dominates** (25-30% of total time)
+- **BLAS1 operations** (AXPY, dot products): 30-35%
+- **Reductions** (MPI_Allreduce): 10-12%
+- **Halo exchange**: < 5% for large problems
+
+---
+
+## Repository Structure
+
+```
+├── README.md                       # This file
+├── docs/                           # Detailed documentation
+│   ├── figures/                    # Performance plots (PNG)
+│   ├── SHOWCASE_SCALING_RESULTS.md # Strong scaling details
+│   ├── PROBLEM_SIZE_SCALING_RESULTS.md # Multi-size analysis
+│   └── scaling_summary.md          # Technical summary
+├── src/                            # Source code
+│   ├── main/                       # Entry points
+│   │   └── cg_solver_mgpu_stencil.cu   # Multi-GPU CG solver
+│   ├── solvers/                    # CG implementations
+│   │   ├── cg_solver_mgpu_partitioned.cu  # Partitioned solver
+│   │   └── benchmark_stats_mgpu_partitioned.cu  # Benchmarking wrapper
+│   ├── spmv/                       # SpMV kernels
+│   │   └── spmv_csr_stencil_partitioned.cu  # Optimized stencil kernel
+│   └── io/                         # Matrix I/O
+├── include/                        # Header files
+├── scripts/                        # Utility scripts
+│   ├── benchmarking/               # Benchmark automation
+│   ├── profiling/                  # Nsight Systems/Compute
+│   └── analysis/                   # Result visualization
+└── tests/                          # Unit tests (Google Test)
+```
+
+---
+
+## Documentation
+
+- **[Strong Scaling Results](docs/SHOWCASE_SCALING_RESULTS.md)**: Detailed analysis of 15k×15k scaling
+- **[Problem Size Scaling](docs/PROBLEM_SIZE_SCALING_RESULTS.md)**: Multi-size benchmark results
+- **[Performance Summary](docs/scaling_summary.md)**: Technical metrics and talking points
+- **[API Documentation](docs/API.md)**: Code structure and operator interface
+
+---
+
+## Benchmarking
+
+### Automated Benchmarking
+
+```bash
+# Problem size scaling (10k, 15k, 20k on 1/2/4/8 GPUs)
+./scripts/benchmarking/benchmark_problem_sizes.sh
+
+# Results saved to: results_problem_size_scaling_*/
+# - JSON files per configuration
+# - CSV files for spreadsheet analysis
+# - analyze_scaling.py for visualization
+```
+
+### Custom Benchmarks
+
+```bash
+# Single configuration with JSON export
+mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_15k.mtx \
+  --json=results.json --csv=results.csv
+
+# Extract timing from JSON
+jq '.timing.median_ms' results.json
+```
+
+### Profiling with Nsight Systems
+
+```bash
+# Profile 4-rank run
+nsys profile --trace=cuda,mpi,nvtx \
+  mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
+
+# View timeline in GUI
+nsys-ui report.nsys-rep
+```
+
+---
+
+## Performance Comparison
+
+### MPI vs NCCL for Halo Exchange
+
+| Implementation | 8 GPUs (15k×15k) | Notes |
+|----------------|------------------|-------|
+| **MPI explicit staging** | 40.4 ms | ✅ Production (main branch) |
+| NCCL P2P | 67.4 ms | ❌ 4.5ms launch latency per call |
+| CUDA IPC direct | 70.1 ms | ❌ Similar overhead to NCCL |
+
+**Conclusion**: MPI with explicit staging (D2H → MPI_Isend/Irecv → H2D) is 43% faster than NCCL for small repeated messages (160 KB halo zones).
+
+See [profiling notes](.notes/OVERLAP_NUMERICAL_STABILITY_SIZE.md) for detailed analysis.
+
+---
+
+## Development
+
+### Build System
+
+**Dual build approach** for flexibility:
+- **Makefile**: Primary build for CUDA/MPI binaries
+- **CMake**: Testing framework with Google Test
 
 ```bash
 # Release build (default)
 make
 
-# Debug build with GPU debugging
-make BUILD_TYPE=debug  
+# Debug build with GPU debugging (-g -G)
+make BUILD_TYPE=debug
 
-# Run test suite
-cd tests && mkdir build && cd build && cmake .. && make && ./test_runner
+# Build specific targets
+make cg_solver_mgpu_stencil
+make generate_matrix
+
+# Run tests
+cd tests && mkdir build && cd build
+cmake .. && make && ./test_runner
 ```
 
-## Performance Analysis
+### Adding Features
 
-The benchmark suite provides detailed analysis:
-
-- **Execution timing** with CUDA events (kernel-only precision)
-- **GFLOPS calculation** based on 2×nnz floating point operations  
-- **Memory bandwidth** analysis with format-specific traffic calculation
-- **Arithmetic intensity** classification (memory-bound vs compute-bound)
-- **Performance recommendations** based on bottleneck analysis
-
-Example output:
-```
-=== SpMV Performance Metrics ===
-Operator: stencil5
-
---- Performance Metrics ---
-Execution time: 15.0 μs
-GFLOPS: 6.61
-Memory bandwidth: 50.64 GB/s
-
---- Performance Analysis ---
-Arithmetic intensity: 0.131 FLOP/byte
-Classification: Memory-bound (low arithmetic intensity)
-Optimization focus: Memory access patterns, data locality
-```
-
-### Nsight Compute Profiling
-
-Advanced kernel-level profiling with NVIDIA Nsight Compute for detailed performance analysis.
-
-```bash
-# Profile a specific kernel
-./scripts/profile_kernel.sh stencil5-opt matrix/stencil_512x512.mtx
-
-# Generates:
-# - profiling_results/stencil5-opt_YYYYMMDD_HHMMSS.ncu-rep (GUI report)
-# - profiling_results/stencil5-opt_YYYYMMDD_HHMMSS.log (text summary)
-```
-
-**View results:**
-```bash
-# Launch Nsight Compute UI
-ncu-ui profiling_results/stencil5-opt_*.ncu-rep
-```
-
-**Key metrics analyzed:**
-- **SM Throughput** - GPU compute utilization
-- **DRAM Throughput** - Memory bandwidth usage vs peak
-- **Memory Efficiency** - L1/L2 cache hit rates
-- **Occupancy** - Active warps per SM
-- **Roofline Analysis** - Memory-bound vs compute-bound classification
-
-**Requirements:** NVIDIA Nsight Compute (included with CUDA Toolkit 11.0+)
-
-## Usage Examples
-
-### Basic Benchmarking
-```bash
-# Benchmark different formats
-./bin/spmv_bench matrix/example100x100.mtx --mode=csr
-./bin/spmv_bench matrix/stencil_100x100.mtx --mode=stencil5
-
-# Generate 5-point stencil matrix
-./bin/generate_matrix 100 matrix/my_stencil.mtx
-```
-
-### Advanced Analysis
-```bash  
-# Export detailed metrics to JSON
-./bin/spmv_bench matrix/example.mtx --mode=csr \
-    --output-format=json --output-file=csr_analysis.json
-
-# Generate CSV for spreadsheet analysis  
-./bin/spmv_bench matrix/example.mtx --mode=stencil5 \
-    --output-format=csv --output-file=performance.csv
-
-# Automated comparative benchmarking
-./benchmark_suite.sh
-```
-
-### Integration Examples
-```bash
-# CI/CD performance regression testing
-./bin/spmv_bench matrix/test.mtx --mode=stencil5 --output-format=json | \
-  jq '.benchmark.performance.gflops' | awk '{if($1<5.0) exit 1}'
-
-# Batch analysis across matrix sizes
-for size in 50 100 200 500; do
-  ./bin/generate_matrix $size matrix/test_${size}.mtx
-  ./bin/spmv_bench matrix/test_${size}.mtx --mode=stencil5 --output-format=csv
-done
-```
-
-## Matrix Formats
-
-**Matrix Market (.mtx)** input format with automatic symmetry expansion:
-```
-%%MatrixMarket matrix coordinate real general
-3 3 5
-1 1 4.0
-1 2 1.0  
-2 2 6.0
-2 3 2.0
-3 3 3.0
-```
-
-**Generated stencil matrices** for structured grid applications:
-```bash
-./bin/generate_matrix 100 matrix/stencil_100x100.mtx
-# Creates 100×100 5-point stencil: center=4, neighbors=-1
-```
-
-## Development
-
-### Adding New SpMV Implementations
-1. Create implementation file in `src/spmv/spmv_new_format.cu`
-2. Define `SpmvOperator` structure with `init`, `run_timed`, `free` functions
-3. Add extern declaration in `include/spmv.h`  
-4. Register operator in `get_operator()` function
+1. **New SpMV kernel**: Implement in `src/spmv/`, register in `get_operator()`
+2. **New solver**: Add to `src/solvers/`, create entry point in `src/main/`
+3. **Performance metrics**: Extend `benchmark_stats_mgpu_partitioned.cu`
 
 ### Testing
+
 ```bash
-# Local testing with GPU
-cd tests && mkdir build && cd build
-cmake .. && make
+# All tests
 ./test_runner
 
-# Specific test categories
-./test_runner --gtest_filter="WrapperTest*"
-./test_runner --gtest_filter="*Performance*"
+# Specific test suite
+./test_runner --gtest_filter="PartitionedSolver*"
 ```
+
+---
 
 ## Requirements
 
-- **NVIDIA GPU** with Compute Capability ≥ 7.0
-- **CUDA Toolkit** ≥ 11.0 with cuSPARSE and cuBLAS
-- **C++ Compiler** supporting C++14
-- **CMake** ≥ 3.18 (for testing framework)
+- **NVIDIA GPUs**: Compute Capability ≥ 7.0 (Volta, Turing, Ampere, Hopper)
+- **CUDA Toolkit**: ≥ 11.0 with cuSPARSE and cuBLAS libraries
+- **MPI Implementation**: OpenMPI ≥ 4.0 or MPICH ≥ 3.3
+- **C++ Compiler**: Supporting C++14 (nvcc, g++, clang++)
+- **Optional**: Nsight Systems/Compute for profiling
 
-## License
+**Tested configurations:**
+- NVIDIA A100-SXM4-80GB (8 GPUs) - Primary development
+- NVIDIA RTX 3090 (2 GPUs) - Validation
+- NVIDIA H100 NVL (single GPU) - Compatibility
 
-MIT License - See LICENSE file for details.
+---
 
 ## Citation
 
+If you use this code in your research, please cite:
+
 ```bibtex
-@software{cuda_spmv_benchmark,
+@software{mgpu_cg_solver,
   author = {Bouhrour, Stephane},
-  title = {CUDA SpMV Benchmark Suite},
-  year = {2025},
-  url = {https://github.com/1fni/cuda-spmv-benchmark}
+  title = {Multi-GPU Conjugate Gradient Solver with MPI},
+  year = {2026},
+  url = {https://github.com/1fni/cuda-spmv-benchmark},
+  note = {7.48× speedup on 400M unknowns with 8 A100 GPUs}
 }
 ```
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE) file for details.
+
+---
+
+## Contact
+
+**Stephane Bouhrour**
+Email: bouhrour.stephane@gmail.com
+GitHub: [@1fni](https://github.com/1fni)
+
+For questions, issues, or collaboration opportunities, please open an issue on GitHub.
