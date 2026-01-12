@@ -395,9 +395,41 @@ int main(int argc, char* argv[]) {
     // Mode: double precision, device (GPU), int indices, int pointers
     AMGX_Mode mode = AMGX_mode_dDDI;
 
-    // Open AmgX library
+    // Create resources with explicit MPI communicator (distributed API)
     AMGX_resources_handle rsrc;
-    AMGX_SAFE_CALL(AMGX_resources_create_simple(&rsrc, cfg));
+    MPI_Comm mpi_comm = MPI_COMM_WORLD;
+    void *mpi_comm_ptr = (void*)&mpi_comm;
+    int device_ids[1] = {device_id};
+    if (rank == 0) {
+        printf("Using distributed API with explicit MPI communicator\n");
+    }
+    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, &mpi_comm_ptr, 1, device_ids));
+
+    // Create explicit distribution (partition vector with row offsets)
+    AMGX_distribution_handle dist;
+    AMGX_SAFE_CALL(AMGX_distribution_create(&dist, cfg));
+
+    // Build partition vector: cumulative row offsets for each rank
+    int *partition_vector = (int*)malloc((world_size + 1) * sizeof(int));
+    partition_vector[0] = 0;
+    for (int i = 0; i < world_size; i++) {
+        int local_rows = mat.rows / world_size;
+        if (i == world_size - 1) {
+            local_rows = mat.rows - partition_vector[i];  // Last rank takes remainder
+        }
+        partition_vector[i + 1] = partition_vector[i] + local_rows;
+    }
+
+    if (rank == 0) {
+        printf("Partition vector: ");
+        for (int i = 0; i <= world_size; i++) {
+            printf("%d ", partition_vector[i]);
+        }
+        printf("\n");
+    }
+
+    // Set partition data in distribution
+    AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_vector));
 
     // Create matrix, vectors, and solver
     AMGX_matrix_handle A;
@@ -409,13 +441,14 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
     AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
 
-    // Upload local matrix (AmgX auto-detects MPI context and handles halos)
+    // Upload matrix with explicit distribution
     if (rank == 0) {
-        printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
+        printf("Uploading distributed CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
                n_local, local_nnz);
     }
-    AMGX_SAFE_CALL(AMGX_matrix_upload_all(A, n_local, local_nnz, 1, 1,
-                                           local_row_ptr, local_col_idx, local_values, nullptr));
+    AMGX_SAFE_CALL(AMGX_matrix_upload_distributed(A, mat.rows, n_local, local_nnz, 1, 1,
+                                                   local_row_ptr, local_col_idx, local_values,
+                                                   nullptr, dist));
 
     // Create RHS: b = ones
     if (rank == 0) {
@@ -605,6 +638,7 @@ int main(int argc, char* argv[]) {
     AMGX_vector_destroy(x);
     AMGX_vector_destroy(b);
     AMGX_matrix_destroy(A);
+    AMGX_distribution_destroy(dist);  // Destroy distribution
     AMGX_resources_destroy(rsrc);
     AMGX_config_destroy(cfg);
 
@@ -617,6 +651,7 @@ int main(int argc, char* argv[]) {
     free(local_row_ptr);
     free(local_col_idx);
     free(local_values);
+    free(partition_vector);  // Free partition vector
 
     MPI_Finalize();
     return 0;
