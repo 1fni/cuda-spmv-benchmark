@@ -124,36 +124,98 @@ struct RunResult {
     bool converged;
 };
 
+struct DetailedTimers {
+    double vector_upload_ms;
+    double solve_ms;
+    double vector_download_ms;
+};
+
 RunResult run_amgx_solve_mgpu(AMGX_solver_handle solver,
                                AMGX_vector_handle b,
                                AMGX_vector_handle x,
                                double* d_x,
                                int n_local,
-                               bool verbose,
-                               int rank) {
+                               bool enable_timers,
+                               int rank,
+                               DetailedTimers* timers = nullptr) {
+    // Create CUDA events for GPU-accurate timing
+    cudaEvent_t start, stop, timer_start, timer_stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    if (enable_timers) {
+        CUDA_CHECK(cudaEventCreate(&timer_start));
+        CUDA_CHECK(cudaEventCreate(&timer_stop));
+    }
+
     // Reset solution vector
+    if (enable_timers) CUDA_CHECK(cudaEventRecord(timer_start));
+
     double *h_x_zero = (double*)calloc(n_local, sizeof(double));
     CUDA_CHECK(cudaMemcpy(d_x, h_x_zero, n_local * sizeof(double), cudaMemcpyHostToDevice));
     AMGX_CHECK(AMGX_vector_upload(x, n_local, 1, d_x));
     free(h_x_zero);
 
+    if (enable_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        if (timers) timers->vector_upload_ms = elapsed_ms;
+    }
+
     MPI_Barrier(MPI_COMM_WORLD);  // Sync all ranks before timing
 
-    auto start = std::chrono::high_resolution_clock::now();
+    // Start overall timing
+    CUDA_CHECK(cudaEventRecord(start));
+
+    // AmgX solve (main computation)
+    if (enable_timers) CUDA_CHECK(cudaEventRecord(timer_start));
+
     AMGX_CHECK(AMGX_solver_solve(solver, b, x));
-    auto end = std::chrono::high_resolution_clock::now();
+
+    if (enable_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        if (timers) timers->solve_ms = elapsed_ms;
+    }
 
     // Download solution from AmgX to d_x
+    if (enable_timers) CUDA_CHECK(cudaEventRecord(timer_start));
+
     AMGX_CHECK(AMGX_vector_download(x, d_x));
 
+    if (enable_timers) {
+        CUDA_CHECK(cudaEventRecord(timer_stop));
+        CUDA_CHECK(cudaEventSynchronize(timer_stop));
+        float elapsed_ms;
+        CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
+        if (timers) timers->vector_download_ms = elapsed_ms;
+    }
+
+    // Stop overall timing
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+
     RunResult result;
-    result.time_ms = std::chrono::duration<double, std::milli>(end - start).count();
+    float time_ms;
+    CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
+    result.time_ms = time_ms;
 
     AMGX_SOLVE_STATUS status;
     AMGX_CHECK(AMGX_solver_get_status(solver, &status));
     result.converged = (status == AMGX_SOLVE_SUCCESS);
 
     AMGX_CHECK(AMGX_solver_get_iterations_number(solver, &result.iterations));
+
+    // Cleanup events
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    if (enable_timers) {
+        CUDA_CHECK(cudaEventDestroy(timer_start));
+        CUDA_CHECK(cudaEventDestroy(timer_stop));
+    }
 
     return result;
 }
@@ -193,8 +255,15 @@ int main(int argc, char* argv[]) {
 
     if (argc < 2) {
         if (rank == 0) {
-            fprintf(stderr, "Usage: mpirun -np <N> %s <matrix.mtx> [--tol=1e-6] [--max-iters=1000] [--runs=10] [--json=<file>] [--csv=<file>]\n", argv[0]);
-            fprintf(stderr, "Example: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --json=results/amgx_mgpu.json\n", argv[0]);
+            fprintf(stderr, "Usage: mpirun -np <N> %s <matrix.mtx> [options]\n", argv[0]);
+            fprintf(stderr, "Options:\n");
+            fprintf(stderr, "  --tol=1e-6         Convergence tolerance (default: 1e-6)\n");
+            fprintf(stderr, "  --max-iters=1000   Maximum CG iterations (default: 1000)\n");
+            fprintf(stderr, "  --runs=10          Number of benchmark runs (default: 10)\n");
+            fprintf(stderr, "  --timers           Enable detailed timing breakdown\n");
+            fprintf(stderr, "  --json=<file>      Export results to JSON\n");
+            fprintf(stderr, "  --csv=<file>       Export results to CSV\n");
+            fprintf(stderr, "\nExample: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --timers\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
@@ -204,6 +273,7 @@ int main(int argc, char* argv[]) {
     double tolerance = 1e-6;
     int max_iters = 1000;
     int num_runs = 10;
+    bool enable_timers = false;
     const char* json_file = nullptr;
     const char* csv_file = nullptr;
 
@@ -215,6 +285,8 @@ int main(int argc, char* argv[]) {
             max_iters = atoi(argv[i] + 12);
         } else if (strncmp(argv[i], "--runs=", 7) == 0) {
             num_runs = atoi(argv[i] + 7);
+        } else if (strcmp(argv[i], "--timers") == 0) {
+            enable_timers = true;
         } else if (strncmp(argv[i], "--json=", 7) == 0) {
             json_file = argv[i] + 7;
         } else if (strncmp(argv[i], "--csv=", 6) == 0) {
@@ -361,14 +433,21 @@ int main(int argc, char* argv[]) {
     // Warmup
     if (rank == 0) printf("Warmup (3 runs)...\n");
     for (int i = 0; i < 3; i++) {
-        run_amgx_solve_mgpu(solver, b, x, d_x, n_local, false, rank);
+        run_amgx_solve_mgpu(solver, b, x, d_x, n_local, false, rank, nullptr);
     }
 
     // Benchmark
     if (rank == 0) printf("Running benchmark (%d runs)...\n", num_runs);
     std::vector<RunResult> results;
+    DetailedTimers cumulative_timers = {0.0, 0.0, 0.0};
     for (int i = 0; i < num_runs; i++) {
-        results.push_back(run_amgx_solve_mgpu(solver, b, x, d_x, n_local, false, rank));
+        DetailedTimers run_timers;
+        results.push_back(run_amgx_solve_mgpu(solver, b, x, d_x, n_local, enable_timers, rank, &run_timers));
+        if (enable_timers) {
+            cumulative_timers.vector_upload_ms += run_timers.vector_upload_ms;
+            cumulative_timers.solve_ms += run_timers.solve_ms;
+            cumulative_timers.vector_download_ms += run_timers.vector_download_ms;
+        }
     }
 
     // Verify solution with checksum (download x and compute sum + L2 norm)
@@ -393,10 +472,31 @@ int main(int argc, char* argv[]) {
 
     free(h_x_local);
 
-    // Extract times (rank 0 only, all ranks have same timing)
+    // Extract times from all ranks
     std::vector<double> times;
     for (const auto& r : results) {
         times.push_back(r.time_ms);
+    }
+
+    // Gather timing data from all ranks (all ranks must participate)
+    std::vector<double> all_upload_times, all_solve_times, all_download_times, all_total_times;
+    if (enable_timers) {
+        double avg_upload = cumulative_timers.vector_upload_ms / num_runs;
+        double avg_solve = cumulative_timers.solve_ms / num_runs;
+        double avg_download = cumulative_timers.vector_download_ms / num_runs;
+        double median = calculate_median(times);
+
+        if (rank == 0) {
+            all_upload_times.resize(world_size);
+            all_solve_times.resize(world_size);
+            all_download_times.resize(world_size);
+            all_total_times.resize(world_size);
+        }
+
+        MPI_Gather(&avg_upload, 1, MPI_DOUBLE, all_upload_times.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gather(&avg_solve, 1, MPI_DOUBLE, all_solve_times.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gather(&avg_download, 1, MPI_DOUBLE, all_download_times.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Gather(&median, 1, MPI_DOUBLE, all_total_times.data(), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     }
 
     // Calculate statistics (rank 0)
@@ -438,6 +538,30 @@ int main(int argc, char* argv[]) {
         double gflops = (2.0 * mat.nnz * results[0].iterations) / (median * 1e6);
         printf("GFLOPS: %.3f\n", gflops);
         printf("========================================\n");
+
+        // Print detailed timers if enabled (data already gathered above)
+        if (enable_timers) {
+            printf("\n========================================\n");
+            printf("Detailed Timing Breakdown (Per Rank)\n");
+            printf("========================================\n");
+            printf("Rank | Upload (ms) | Solve (ms) | Download (ms) | Total (ms) | Load Imbal\n");
+            printf("-----|-------------|------------|---------------|------------|-----------\n");
+
+            double min_total = *std::min_element(all_total_times.begin(), all_total_times.end());
+            double max_total = *std::max_element(all_total_times.begin(), all_total_times.end());
+            double load_imbalance = (max_total - min_total) / max_total * 100.0;
+
+            for (int r = 0; r < world_size; r++) {
+                double rank_imbalance = (all_total_times[r] - min_total) / all_total_times[r] * 100.0;
+                printf("%4d | %11.3f | %10.3f | %13.3f | %10.3f | %9.1f%%\n",
+                       r, all_upload_times[r], all_solve_times[r],
+                       all_download_times[r], all_total_times[r], rank_imbalance);
+            }
+
+            printf("-----|-------------|------------|---------------|------------|-----------\n");
+            printf("Overall load imbalance: %.1f%%\n", load_imbalance);
+            printf("========================================\n");
+        }
 
         // Export results
         if (json_file || csv_file) {
