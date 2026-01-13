@@ -257,19 +257,25 @@ int main(int argc, char* argv[]) {
         if (rank == 0) {
             fprintf(stderr, "Usage: mpirun -np <N> %s <matrix.mtx> [options]\n", argv[0]);
             fprintf(stderr, "Options:\n");
+            fprintf(stderr, "  --solver=CG        Solver type: CG or PCG (default: CG)\n");
+            fprintf(stderr, "  --precond=NONE     Preconditioner for PCG: JACOBI, BLOCK_JACOBI, NONE (default: NONE)\n");
             fprintf(stderr, "  --tol=1e-6         Convergence tolerance (default: 1e-6)\n");
-            fprintf(stderr, "  --max-iters=1000   Maximum CG iterations (default: 1000)\n");
+            fprintf(stderr, "  --max-iters=1000   Maximum iterations (default: 1000)\n");
             fprintf(stderr, "  --runs=10          Number of benchmark runs (default: 10)\n");
             fprintf(stderr, "  --timers           Enable detailed timing breakdown\n");
             fprintf(stderr, "  --json=<file>      Export results to JSON\n");
             fprintf(stderr, "  --csv=<file>       Export results to CSV\n");
-            fprintf(stderr, "\nExample: mpirun -np 4 %s matrix/stencil_5000x5000.mtx --runs=10 --timers\n", argv[0]);
+            fprintf(stderr, "\nExamples:\n");
+            fprintf(stderr, "  mpirun -np 4 %s matrix.mtx --solver=CG --runs=10 --timers\n", argv[0]);
+            fprintf(stderr, "  mpirun -np 4 %s matrix.mtx --solver=PCG --precond=JACOBI --runs=10\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
     }
 
     const char* matrix_file = argv[1];
+    const char* solver_type = "CG";      // Default: CG
+    const char* precond_type = "NONE";   // Default: no preconditioner
     double tolerance = 1e-6;
     int max_iters = 1000;
     int num_runs = 10;
@@ -279,7 +285,11 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "--tol=", 6) == 0) {
+        if (strncmp(argv[i], "--solver=", 9) == 0) {
+            solver_type = argv[i] + 9;
+        } else if (strncmp(argv[i], "--precond=", 10) == 0) {
+            precond_type = argv[i] + 10;
+        } else if (strncmp(argv[i], "--tol=", 6) == 0) {
             tolerance = atof(argv[i] + 6);
         } else if (strncmp(argv[i], "--max-iters=", 12) == 0) {
             max_iters = atoi(argv[i] + 12);
@@ -296,9 +306,13 @@ int main(int argc, char* argv[]) {
 
     if (rank == 0) {
         printf("========================================\n");
-        printf("AmgX Multi-GPU CG Solver\n");
+        printf("AmgX Multi-GPU %s Solver\n", solver_type);
         printf("========================================\n");
         printf("Matrix: %s\n", matrix_file);
+        printf("Solver: %s\n", solver_type);
+        if (strcmp(solver_type, "PCG") == 0) {
+            printf("Preconditioner: %s\n", precond_type);
+        }
         printf("MPI ranks: %d\n", world_size);
         printf("Tolerance: %.0e\n", tolerance);
         printf("Max iterations: %d\n", max_iters);
@@ -428,19 +442,36 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_initialize_plugins());
     AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 
-    // Create config for CG solver (unpreconditioned)
+    // Create config string based on solver type
     char config_string[512];
-    snprintf(config_string, sizeof(config_string),
-             "config_version=2, "
-             "solver=CG, "
-             "max_iters=%d, "
-             "convergence=RELATIVE_INI, "
-             "tolerance=%.15e, "
-             "norm=L2, "
-             "print_solve_stats=0, "
-             "monitor_residual=1, "
-             "obtain_timings=0",
-             max_iters, tolerance);
+    if (strcmp(solver_type, "PCG") == 0 && strcmp(precond_type, "NONE") != 0) {
+        // PCG with preconditioner
+        snprintf(config_string, sizeof(config_string),
+                 "config_version=2, "
+                 "solver=PCG, "
+                 "preconditioner=%s, "
+                 "max_iters=%d, "
+                 "convergence=RELATIVE_INI, "
+                 "tolerance=%.15e, "
+                 "norm=L2, "
+                 "print_solve_stats=0, "
+                 "monitor_residual=1, "
+                 "obtain_timings=0",
+                 precond_type, max_iters, tolerance);
+    } else {
+        // CG or PCG without preconditioner
+        snprintf(config_string, sizeof(config_string),
+                 "config_version=2, "
+                 "solver=%s, "
+                 "max_iters=%d, "
+                 "convergence=RELATIVE_INI, "
+                 "tolerance=%.15e, "
+                 "norm=L2, "
+                 "print_solve_stats=0, "
+                 "monitor_residual=1, "
+                 "obtain_timings=0",
+                 solver_type, max_iters, tolerance);
+    }
 
     AMGX_config_handle cfg;
     AMGX_SAFE_CALL(AMGX_config_create(&cfg, config_string));
