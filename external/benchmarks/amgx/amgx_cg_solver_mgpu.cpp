@@ -329,12 +329,22 @@ int main(int argc, char* argv[]) {
         printf("Grid: %dx%d\n\n", grid_size, grid_size);
     }
 
-    // Row-band partitioning
-    int n_local = mat.rows / world_size;
-    int row_offset = rank * n_local;
-    if (rank == world_size - 1) {
-        n_local = mat.rows - row_offset;  // Last rank takes remainder
+    // Build consistent global partition vector FIRST (all ranks must agree)
+    int *partition_vector_tmp = (int*)malloc((world_size + 1) * sizeof(int));
+    partition_vector_tmp[0] = 0;
+    for (int i = 0; i < world_size; i++) {
+        int rows_for_rank = mat.rows / world_size;
+        if (i == world_size - 1) {
+            rows_for_rank = mat.rows - partition_vector_tmp[i];
+        }
+        partition_vector_tmp[i + 1] = partition_vector_tmp[i] + rows_for_rank;
     }
+
+    // Use partition vector to define local range
+    int row_offset = partition_vector_tmp[rank];
+    int n_local = partition_vector_tmp[rank + 1] - partition_vector_tmp[rank];
+
+    free(partition_vector_tmp);
 
     // Create local partition (rows [row_offset : row_offset + n_local))
     int *local_row_ptr = (int*)malloc((n_local + 1) * sizeof(int));
@@ -409,20 +419,16 @@ int main(int argc, char* argv[]) {
     AMGX_distribution_handle dist;
     AMGX_SAFE_CALL(AMGX_distribution_create(&dist, cfg));
 
-    // Build partition vector: cumulative row offsets for each rank
-    // All ranks must have EXACTLY the same global partition vector
+    // Rebuild partition vector (same calculation as earlier - ensures consistency)
     int *partition_vector = (int*)malloc((world_size + 1) * sizeof(int));
-
-    // Gather n_local from all ranks to build consistent global partition
-    int *all_n_local = (int*)malloc(world_size * sizeof(int));
-    MPI_Allgather(&n_local, 1, MPI_INT, all_n_local, 1, MPI_INT, MPI_COMM_WORLD);
-
     partition_vector[0] = 0;
     for (int i = 0; i < world_size; i++) {
-        partition_vector[i + 1] = partition_vector[i] + all_n_local[i];
+        int rows_for_rank = mat.rows / world_size;
+        if (i == world_size - 1) {
+            rows_for_rank = mat.rows - partition_vector[i];
+        }
+        partition_vector[i + 1] = partition_vector[i] + rows_for_rank;
     }
-
-    free(all_n_local);
 
     if (rank == 0) {
         printf("Partition vector: ");
@@ -430,6 +436,13 @@ int main(int argc, char* argv[]) {
             printf("%d ", partition_vector[i]);
         }
         printf("\n");
+    }
+
+    // Verify our row_offset matches partition (sanity check)
+    if (row_offset != partition_vector[rank]) {
+        fprintf(stderr, "[Rank %d] ERROR: row_offset=%d but partition_vector[%d]=%d\n",
+                rank, row_offset, rank, partition_vector[rank]);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     // Set partition data in distribution (must be identical on all ranks)
