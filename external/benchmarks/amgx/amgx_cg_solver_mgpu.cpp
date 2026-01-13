@@ -374,10 +374,52 @@ int main(int argc, char* argv[]) {
         memcpy(&local_values[dst_start], &mat.values[src_start], row_nnz * sizeof(double));
     }
 
-    if (rank == 0) {
-        printf("Partition: rank %d has rows [%d:%d), %d nnz\n\n",
-               rank, row_offset, row_offset + n_local, local_nnz);
+    printf("[Rank %d] Partition: rows [%d:%d), %d nnz\n", rank, row_offset, row_offset + n_local, local_nnz);
+
+    // Validate local CSR data before passing to AmgX
+    bool validation_error = false;
+
+    // Check row_ptr is monotonic and ends at local_nnz
+    if (local_row_ptr[0] != 0) {
+        fprintf(stderr, "[Rank %d] ERROR: local_row_ptr[0]=%d (should be 0)\n", rank, local_row_ptr[0]);
+        validation_error = true;
     }
+    if (local_row_ptr[n_local] != local_nnz) {
+        fprintf(stderr, "[Rank %d] ERROR: local_row_ptr[%d]=%d but local_nnz=%d\n",
+                rank, n_local, local_row_ptr[n_local], local_nnz);
+        validation_error = true;
+    }
+    for (int i = 0; i < n_local; i++) {
+        if (local_row_ptr[i] > local_row_ptr[i+1]) {
+            fprintf(stderr, "[Rank %d] ERROR: row_ptr not monotonic at i=%d: %d > %d\n",
+                    rank, i, local_row_ptr[i], local_row_ptr[i+1]);
+            validation_error = true;
+            break;
+        }
+    }
+
+    // Check column indices are in valid range [0, mat.rows)
+    int min_col = mat.rows, max_col = -1;
+    for (int i = 0; i < local_nnz; i++) {
+        int col = local_col_idx[i];
+        if (col < 0 || col >= mat.rows) {
+            fprintf(stderr, "[Rank %d] ERROR: col_idx[%d]=%d out of range [0,%d)\n",
+                    rank, i, col, mat.rows);
+            validation_error = true;
+            break;
+        }
+        if (col < min_col) min_col = col;
+        if (col > max_col) max_col = col;
+    }
+
+    printf("[Rank %d] Validation: row_ptr OK, col_idx range [%d,%d]\n", rank, min_col, max_col);
+    fflush(stdout);
+
+    if (validation_error) {
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    if (rank == 0) printf("\n");
 
     // Initialize AmgX
     AMGX_SAFE_CALL(AMGX_initialize());
@@ -406,14 +448,15 @@ int main(int argc, char* argv[]) {
     AMGX_Mode mode = AMGX_mode_dDDI;
 
     // Create resources with explicit MPI communicator (distributed API)
+    // NOTE: AmgX expects pointer-to-pointer for MPI communicator (as per NVIDIA example)
     AMGX_resources_handle rsrc;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    void *mpi_comm_ptr = (void*)&mpi_comm;
+    void *amgx_mpi_comm = (void*)&mpi_comm;
     int device_ids[1] = {device_id};
     if (rank == 0) {
         printf("Using distributed API with explicit MPI communicator\n");
     }
-    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, mpi_comm_ptr, 1, device_ids));
+    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, &amgx_mpi_comm, 1, device_ids));
 
     // Create explicit distribution (partition vector with row offsets)
     AMGX_distribution_handle dist;
