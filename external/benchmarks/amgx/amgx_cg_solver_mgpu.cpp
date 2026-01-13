@@ -403,7 +403,7 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         printf("Using distributed API with explicit MPI communicator\n");
     }
-    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, &mpi_comm_ptr, 1, device_ids));
+    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, mpi_comm_ptr, 1, device_ids));
 
     // Create explicit distribution (partition vector with row offsets)
     AMGX_distribution_handle dist;
