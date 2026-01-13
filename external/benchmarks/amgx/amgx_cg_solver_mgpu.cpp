@@ -359,8 +359,8 @@ int main(int argc, char* argv[]) {
         local_row_ptr[i + 1] = local_nnz;
     }
 
-    // Extract local CSR partition with GLOBAL column indices (important for AmgX!)
-    int *local_col_idx = (int*)malloc(local_nnz * sizeof(int));
+    // Extract local CSR partition with GLOBAL column indices (int64_t as per NVIDIA example)
+    int64_t *local_col_idx = (int64_t*)malloc(local_nnz * sizeof(int64_t));
     double *local_values = (double*)malloc(local_nnz * sizeof(double));
 
     for (int i = 0; i < n_local; i++) {
@@ -369,8 +369,10 @@ int main(int argc, char* argv[]) {
         int row_nnz = mat.row_ptr[global_row + 1] - src_start;
         int dst_start = local_row_ptr[i];
 
-        // Copy with GLOBAL column indices (AmgX needs these for halo detection)
-        memcpy(&local_col_idx[dst_start], &mat.col_idx[src_start], row_nnz * sizeof(int));
+        // Copy with GLOBAL column indices (int64_t for AmgX upload_all_global)
+        for (int j = 0; j < row_nnz; j++) {
+            local_col_idx[dst_start + j] = (int64_t)mat.col_idx[src_start + j];
+        }
         memcpy(&local_values[dst_start], &mat.values[src_start], row_nnz * sizeof(double));
     }
 
@@ -399,12 +401,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Check column indices are in valid range [0, mat.rows)
-    int min_col = mat.rows, max_col = -1;
+    int64_t min_col = mat.rows, max_col = -1;
     for (int i = 0; i < local_nnz; i++) {
-        int col = local_col_idx[i];
+        int64_t col = local_col_idx[i];
         if (col < 0 || col >= mat.rows) {
-            fprintf(stderr, "[Rank %d] ERROR: col_idx[%d]=%d out of range [0,%d)\n",
-                    rank, i, col, mat.rows);
+            fprintf(stderr, "[Rank %d] ERROR: col_idx[%d]=%ld out of range [0,%d)\n",
+                    rank, i, (long)col, mat.rows);
             validation_error = true;
             break;
         }
@@ -412,7 +414,7 @@ int main(int argc, char* argv[]) {
         if (col > max_col) max_col = col;
     }
 
-    printf("[Rank %d] Validation: row_ptr OK, col_idx range [%d,%d]\n", rank, min_col, max_col);
+    printf("[Rank %d] Validation: row_ptr OK, col_idx range [%ld,%ld]\n", rank, (long)min_col, (long)max_col);
     fflush(stdout);
 
     if (validation_error) {
@@ -426,12 +428,11 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_initialize_plugins());
     AMGX_SAFE_CALL(AMGX_register_print_callback(&print_callback));
 
-    // Create config for PCG solver (no preconditioning)
+    // Create config for CG solver (unpreconditioned)
     char config_string[512];
     snprintf(config_string, sizeof(config_string),
              "config_version=2, "
-             "solver=PCG, "
-             "preconditioner=NOSOLVER, "
+             "solver=CG, "
              "max_iters=%d, "
              "convergence=RELATIVE_INI, "
              "tolerance=%.15e, "
@@ -470,70 +471,28 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
     AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
 
-    // Now create distribution (partition vector with row offsets)
-    AMGX_distribution_handle dist;
-    AMGX_SAFE_CALL(AMGX_distribution_create(&dist, cfg));
-
-    // NOTE: Not calling AMGX_distribution_set_32bit_colindices() since mode dDDI already specifies int indices
-
-    // Build partition offsets (int64_t as per NVIDIA example)
-    // NOTE: Partition offsets must be int64_t, even when column indices are 32-bit (int)
-    int64_t *partition_offsets = (int64_t*)malloc((world_size + 1) * sizeof(int64_t));
-    partition_offsets[0] = 0;
-    for (int i = 0; i < world_size; i++) {
-        int rows_for_rank = mat.rows / world_size;
-        if (i == world_size - 1) {
-            rows_for_rank = mat.rows - partition_offsets[i];
-        }
-        partition_offsets[i + 1] = partition_offsets[i] + rows_for_rank;
-    }
-
-    // Print partition offsets on ALL ranks for debugging
-    printf("[Rank %d] Partition offsets (int64_t*, ptr=%p): ", rank, (void*)partition_offsets);
-    for (int i = 0; i <= world_size; i++) {
-        printf("%ld ", (long)partition_offsets[i]);
-    }
-    printf("\n");
-    printf("[Rank %d] mat.rows=%d, row_offset=%d, n_local=%d\n", rank, mat.rows, row_offset, n_local);
-    fflush(stdout);
-
-    // Verify our row_offset matches partition (sanity check)
-    if (row_offset != (int)partition_offsets[rank]) {
-        fprintf(stderr, "[Rank %d] ERROR: row_offset=%d but partition_offsets[%d]=%ld\n",
-                rank, row_offset, rank, (long)partition_offsets[rank]);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    // Verify partition offsets are sorted (sanity check before passing to AmgX)
-    for (int i = 0; i < world_size; i++) {
-        if (partition_offsets[i] >= partition_offsets[i+1]) {
-            fprintf(stderr, "[Rank %d] ERROR: Partition not sorted: partition_offsets[%d]=%ld >= partition_offsets[%d]=%ld\n",
-                    rank, i, (long)partition_offsets[i], i+1, (long)partition_offsets[i+1]);
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-    }
-
-    // Verify last element matches total rows
-    if (partition_offsets[world_size] != mat.rows) {
-        fprintf(stderr, "[Rank %d] ERROR: partition_offsets[%d]=%ld but mat.rows=%d\n",
-                rank, world_size, (long)partition_offsets[world_size], mat.rows);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    printf("[Rank %d] Partition offsets validation PASSED - calling AMGX_distribution_set_partition_data\n", rank);
-    fflush(stdout);
-
-    // Set partition data in distribution (must be int64_t as per NVIDIA example)
-    AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_offsets));
-
-    // Upload matrix with explicit distribution (matrix/vectors/solver already created above)
+    // Get number of rings for halo communication (as per NVIDIA example)
+    int nrings;
+    AMGX_SAFE_CALL(AMGX_config_get_default_number_of_rings(cfg, &nrings));
     if (rank == 0) {
-        printf("Uploading distributed CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
+        printf("Using upload_all_global with nrings=%d\n", nrings);
+        printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices int64_t)\n\n",
                n_local, local_nnz);
     }
-    AMGX_SAFE_CALL(AMGX_matrix_upload_distributed(A, mat.rows, n_local, local_nnz, 1, 1,
-                                                   local_row_ptr, local_col_idx, local_values,
-                                                   nullptr, dist));
+
+    // Upload matrix using upload_all_global (NVIDIA recommended approach)
+    // This API automatically handles halo detection and communication setup
+    AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(A,
+                                                  mat.rows,      // global number of rows
+                                                  n_local,       // local number of rows
+                                                  local_nnz,     // local number of nonzeros
+                                                  1, 1,          // block dimensions
+                                                  local_row_ptr, // local row pointers
+                                                  local_col_idx, // global column indices (int64_t)
+                                                  local_values,  // local values
+                                                  NULL,          // no diagonal (CSR format)
+                                                  nrings, nrings, // halo rings
+                                                  NULL));
 
     // Bind vectors to matrix (AmgX analyzes structure and determines halo sizes)
     AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
@@ -733,7 +692,6 @@ int main(int argc, char* argv[]) {
     AMGX_vector_destroy(x);
     AMGX_vector_destroy(b);
     AMGX_matrix_destroy(A);
-    AMGX_distribution_destroy(dist);  // Destroy distribution
     AMGX_resources_destroy(rsrc);
     AMGX_config_destroy(cfg);
 
@@ -746,7 +704,6 @@ int main(int argc, char* argv[]) {
     free(local_row_ptr);
     free(local_col_idx);
     free(local_values);
-    free(partition_offsets);  // Free partition offsets (int64_t array)
 
     MPI_Finalize();
     return 0;
