@@ -448,17 +448,29 @@ int main(int argc, char* argv[]) {
     AMGX_Mode mode = AMGX_mode_dDDI;
 
     // Create resources with explicit MPI communicator (distributed API)
-    // NOTE: AmgX expects pointer-to-pointer for MPI communicator (as per NVIDIA example)
+    // NOTE: OpenMPI defines MPI_Comm as pointer, so &MPI_COMM_WORLD gives MPI_Comm*
+    // Cast to void* to match AmgX API signature
     AMGX_resources_handle rsrc;
     MPI_Comm mpi_comm = MPI_COMM_WORLD;
-    void *amgx_mpi_comm = (void*)&mpi_comm;
     int device_ids[1] = {device_id};
     if (rank == 0) {
         printf("Using distributed API with explicit MPI communicator\n");
+        printf("sizeof(MPI_Comm) = %zu, mpi_comm value = %p\n", sizeof(MPI_Comm), (void*)mpi_comm);
     }
-    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, &amgx_mpi_comm, 1, device_ids));
+    // Pass &mpi_comm directly as void* (AmgX will cast internally to MPI_Comm*)
+    AMGX_SAFE_CALL(AMGX_resources_create(&rsrc, cfg, (void*)&mpi_comm, 1, device_ids));
 
-    // Create explicit distribution (partition vector with row offsets)
+    // Create matrix, vectors, and solver BEFORE distribution (as per NVIDIA example order)
+    AMGX_matrix_handle A;
+    AMGX_vector_handle b, x;
+    AMGX_solver_handle solver;
+
+    AMGX_SAFE_CALL(AMGX_matrix_create(&A, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_vector_create(&b, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
+    AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
+
+    // Now create distribution (partition vector with row offsets)
     AMGX_distribution_handle dist;
     AMGX_SAFE_CALL(AMGX_distribution_create(&dist, cfg));
 
@@ -514,17 +526,7 @@ int main(int argc, char* argv[]) {
     // Set partition data in distribution (must be int64_t as per NVIDIA example)
     AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_offsets));
 
-    // Create matrix, vectors, and solver
-    AMGX_matrix_handle A;
-    AMGX_vector_handle b, x;
-    AMGX_solver_handle solver;
-
-    AMGX_SAFE_CALL(AMGX_matrix_create(&A, rsrc, mode));
-    AMGX_SAFE_CALL(AMGX_vector_create(&b, rsrc, mode));
-    AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
-    AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
-
-    // Upload matrix with explicit distribution
+    // Upload matrix with explicit distribution (matrix/vectors/solver already created above)
     if (rank == 0) {
         printf("Uploading distributed CSR (n_local=%d, nnz_local=%d, global col indices)\n\n",
                n_local, local_nnz);
