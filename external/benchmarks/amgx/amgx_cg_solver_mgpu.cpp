@@ -410,15 +410,19 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_distribution_create(&dist, cfg));
 
     // Build partition vector: cumulative row offsets for each rank
+    // All ranks must have EXACTLY the same global partition vector
     int *partition_vector = (int*)malloc((world_size + 1) * sizeof(int));
+
+    // Gather n_local from all ranks to build consistent global partition
+    int *all_n_local = (int*)malloc(world_size * sizeof(int));
+    MPI_Allgather(&n_local, 1, MPI_INT, all_n_local, 1, MPI_INT, MPI_COMM_WORLD);
+
     partition_vector[0] = 0;
     for (int i = 0; i < world_size; i++) {
-        int local_rows = mat.rows / world_size;
-        if (i == world_size - 1) {
-            local_rows = mat.rows - partition_vector[i];  // Last rank takes remainder
-        }
-        partition_vector[i + 1] = partition_vector[i] + local_rows;
+        partition_vector[i + 1] = partition_vector[i] + all_n_local[i];
     }
+
+    free(all_n_local);
 
     if (rank == 0) {
         printf("Partition vector: ");
@@ -428,7 +432,7 @@ int main(int argc, char* argv[]) {
         printf("\n");
     }
 
-    // Set partition data in distribution
+    // Set partition data in distribution (must be identical on all ranks)
     AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_vector));
 
     // Create matrix, vectors, and solver
