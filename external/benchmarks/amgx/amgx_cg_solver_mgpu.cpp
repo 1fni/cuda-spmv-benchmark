@@ -421,54 +421,55 @@ int main(int argc, char* argv[]) {
 
     // NOTE: Not calling AMGX_distribution_set_32bit_colindices() since mode dDDI already specifies int indices
 
-    // Rebuild partition vector (same calculation as earlier - ensures consistency)
-    int *partition_vector = (int*)malloc((world_size + 1) * sizeof(int));
-    partition_vector[0] = 0;
+    // Build partition offsets (int64_t as per NVIDIA example)
+    // NOTE: Partition offsets must be int64_t, even when column indices are 32-bit (int)
+    int64_t *partition_offsets = (int64_t*)malloc((world_size + 1) * sizeof(int64_t));
+    partition_offsets[0] = 0;
     for (int i = 0; i < world_size; i++) {
         int rows_for_rank = mat.rows / world_size;
         if (i == world_size - 1) {
-            rows_for_rank = mat.rows - partition_vector[i];
+            rows_for_rank = mat.rows - partition_offsets[i];
         }
-        partition_vector[i + 1] = partition_vector[i] + rows_for_rank;
+        partition_offsets[i + 1] = partition_offsets[i] + rows_for_rank;
     }
 
-    // Print partition vector on ALL ranks for debugging
-    printf("[Rank %d] Partition vector (ptr=%p): ", rank, (void*)partition_vector);
+    // Print partition offsets on ALL ranks for debugging
+    printf("[Rank %d] Partition offsets (int64_t*, ptr=%p): ", rank, (void*)partition_offsets);
     for (int i = 0; i <= world_size; i++) {
-        printf("%d ", partition_vector[i]);
+        printf("%ld ", (long)partition_offsets[i]);
     }
     printf("\n");
     printf("[Rank %d] mat.rows=%d, row_offset=%d, n_local=%d\n", rank, mat.rows, row_offset, n_local);
     fflush(stdout);
 
     // Verify our row_offset matches partition (sanity check)
-    if (row_offset != partition_vector[rank]) {
-        fprintf(stderr, "[Rank %d] ERROR: row_offset=%d but partition_vector[%d]=%d\n",
-                rank, row_offset, rank, partition_vector[rank]);
+    if (row_offset != (int)partition_offsets[rank]) {
+        fprintf(stderr, "[Rank %d] ERROR: row_offset=%d but partition_offsets[%d]=%ld\n",
+                rank, row_offset, rank, (long)partition_offsets[rank]);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    // Verify partition vector is sorted (sanity check before passing to AmgX)
+    // Verify partition offsets are sorted (sanity check before passing to AmgX)
     for (int i = 0; i < world_size; i++) {
-        if (partition_vector[i] >= partition_vector[i+1]) {
-            fprintf(stderr, "[Rank %d] ERROR: Partition not sorted: partition_vector[%d]=%d >= partition_vector[%d]=%d\n",
-                    rank, i, partition_vector[i], i+1, partition_vector[i+1]);
+        if (partition_offsets[i] >= partition_offsets[i+1]) {
+            fprintf(stderr, "[Rank %d] ERROR: Partition not sorted: partition_offsets[%d]=%ld >= partition_offsets[%d]=%ld\n",
+                    rank, i, (long)partition_offsets[i], i+1, (long)partition_offsets[i+1]);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
 
     // Verify last element matches total rows
-    if (partition_vector[world_size] != mat.rows) {
-        fprintf(stderr, "[Rank %d] ERROR: partition_vector[%d]=%d but mat.rows=%d\n",
-                rank, world_size, partition_vector[world_size], mat.rows);
+    if (partition_offsets[world_size] != mat.rows) {
+        fprintf(stderr, "[Rank %d] ERROR: partition_offsets[%d]=%ld but mat.rows=%d\n",
+                rank, world_size, (long)partition_offsets[world_size], mat.rows);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    printf("[Rank %d] Partition vector validation PASSED - calling AMGX_distribution_set_partition_data\n", rank);
+    printf("[Rank %d] Partition offsets validation PASSED - calling AMGX_distribution_set_partition_data\n", rank);
     fflush(stdout);
 
-    // Set partition data in distribution (must be identical on all ranks)
-    AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_vector));
+    // Set partition data in distribution (must be int64_t as per NVIDIA example)
+    AMGX_SAFE_CALL(AMGX_distribution_set_partition_data(dist, AMGX_DIST_PARTITION_OFFSETS, partition_offsets));
 
     // Create matrix, vectors, and solver
     AMGX_matrix_handle A;
@@ -690,7 +691,7 @@ int main(int argc, char* argv[]) {
     free(local_row_ptr);
     free(local_col_idx);
     free(local_values);
-    free(partition_vector);  // Free partition vector
+    free(partition_offsets);  // Free partition offsets (int64_t array)
 
     MPI_Finalize();
     return 0;
