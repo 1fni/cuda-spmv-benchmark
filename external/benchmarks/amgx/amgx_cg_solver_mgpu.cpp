@@ -535,6 +535,10 @@ int main(int argc, char* argv[]) {
                                                    local_row_ptr, local_col_idx, local_values,
                                                    nullptr, dist));
 
+    // Bind vectors to matrix (AmgX analyzes structure and determines halo sizes)
+    AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
+    AMGX_SAFE_CALL(AMGX_vector_bind(x, A));
+
     // Create RHS: b = ones
     if (rank == 0) {
         printf("RHS: b = ones, Initial guess: x0 = 0\n\n");
@@ -543,12 +547,17 @@ int main(int argc, char* argv[]) {
     double *h_b = (double*)malloc(n_local * sizeof(double));
     for (int i = 0; i < n_local; i++) h_b[i] = 1.0;
 
+    double *h_x = (double*)calloc(n_local, sizeof(double));  // Initial guess x0 = 0
+
     double *d_b, *d_x;
     CUDA_CHECK(cudaMalloc(&d_b, n_local * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_x, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, n_local * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_x, h_x, n_local * sizeof(double), cudaMemcpyHostToDevice));
 
+    // Upload vectors (AmgX will allocate space for halos internally based on binding)
     AMGX_SAFE_CALL(AMGX_vector_upload(b, n_local, 1, d_b));
+    AMGX_SAFE_CALL(AMGX_vector_upload(x, n_local, 1, d_x));
 
     // Setup solver (builds internal structures + halos)
     AMGX_SAFE_CALL(AMGX_solver_setup(solver, A));
@@ -716,6 +725,7 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     free(h_b);
+    free(h_x);
     CUDA_CHECK(cudaFree(d_b));
     CUDA_CHECK(cudaFree(d_x));
 
