@@ -381,8 +381,8 @@ int main(int argc, char* argv[]) {
         local_row_ptr[i + 1] = local_nnz;
     }
 
-    // Extract local CSR partition with GLOBAL column indices (int64_t as per NVIDIA example)
-    int64_t *local_col_idx = (int64_t*)malloc(local_nnz * sizeof(int64_t));
+    // Extract local CSR partition with GLOBAL column indices (int as per NVIDIA amgx_mpi_capi_agg.c)
+    int *local_col_idx = (int*)malloc(local_nnz * sizeof(int));
     double *local_values = (double*)malloc(local_nnz * sizeof(double));
 
     for (int i = 0; i < n_local; i++) {
@@ -391,9 +391,9 @@ int main(int argc, char* argv[]) {
         int row_nnz = mat.row_ptr[global_row + 1] - src_start;
         int dst_start = local_row_ptr[i];
 
-        // Copy with GLOBAL column indices (int64_t for AmgX upload_all_global)
+        // Copy with GLOBAL column indices (int for AmgX upload_all)
         for (int j = 0; j < row_nnz; j++) {
-            local_col_idx[dst_start + j] = (int64_t)mat.col_idx[src_start + j];
+            local_col_idx[dst_start + j] = mat.col_idx[src_start + j];
         }
         memcpy(&local_values[dst_start], &mat.values[src_start], row_nnz * sizeof(double));
     }
@@ -423,12 +423,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Check column indices are in valid range [0, mat.rows)
-    int64_t min_col = mat.rows, max_col = -1;
+    int min_col = mat.rows, max_col = -1;
     for (int i = 0; i < local_nnz; i++) {
-        int64_t col = local_col_idx[i];
+        int col = local_col_idx[i];
         if (col < 0 || col >= mat.rows) {
-            fprintf(stderr, "[Rank %d] ERROR: col_idx[%d]=%ld out of range [0,%d)\n",
-                    rank, i, (long)col, mat.rows);
+            fprintf(stderr, "[Rank %d] ERROR: col_idx[%d]=%d out of range [0,%d)\n",
+                    rank, i, col, mat.rows);
             validation_error = true;
             break;
         }
@@ -436,7 +436,7 @@ int main(int argc, char* argv[]) {
         if (col > max_col) max_col = col;
     }
 
-    printf("[Rank %d] Validation: row_ptr OK, col_idx range [%ld,%ld]\n", rank, (long)min_col, (long)max_col);
+    printf("[Rank %d] Validation: row_ptr OK, col_idx range [%d,%d]\n", rank, min_col, max_col);
     fflush(stdout);
 
     if (validation_error) {
@@ -517,28 +517,23 @@ int main(int argc, char* argv[]) {
     AMGX_SAFE_CALL(AMGX_vector_create(&x, rsrc, mode));
     AMGX_SAFE_CALL(AMGX_solver_create(&solver, rsrc, mode, cfg));
 
-    // Get number of rings for halo communication (as per NVIDIA example)
-    int nrings;
-    AMGX_SAFE_CALL(AMGX_config_get_default_number_of_rings(cfg, &nrings));
     if (rank == 0) {
-        printf("Using upload_all_global with nrings=%d\n", nrings);
-        printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices int64_t)\n\n",
+        printf("Using upload_all (MPI auto-detect, preconditioner support)\n");
+        printf("Uploading local CSR (n_local=%d, nnz_local=%d, global col indices int)\n\n",
                n_local, local_nnz);
     }
 
-    // Upload matrix using upload_all_global (NVIDIA recommended approach)
-    // This API automatically handles halo detection and communication setup
-    AMGX_SAFE_CALL(AMGX_matrix_upload_all_global(A,
-                                                  mat.rows,      // global number of rows
-                                                  n_local,       // local number of rows
-                                                  local_nnz,     // local number of nonzeros
-                                                  1, 1,          // block dimensions
-                                                  local_row_ptr, // local row pointers
-                                                  local_col_idx, // global column indices (int64_t)
-                                                  local_values,  // local values
-                                                  NULL,          // no diagonal (CSR format)
-                                                  nrings, nrings, // halo rings
-                                                  NULL));
+    // Upload matrix using upload_all (as per NVIDIA amgx_mpi_capi_agg.c example)
+    // This API with int* global column indices supports preconditioners
+    // MPI communication is auto-detected from resources handle
+    AMGX_SAFE_CALL(AMGX_matrix_upload_all(A,
+                                           n_local,       // local number of rows
+                                           local_nnz,     // local number of nonzeros
+                                           1, 1,          // block dimensions
+                                           local_row_ptr, // local row pointers
+                                           local_col_idx, // global column indices (int)
+                                           local_values,  // local values
+                                           NULL));        // no diagonal (CSR format)
 
     // Bind vectors to matrix (AmgX analyzes structure and determines halo sizes)
     AMGX_SAFE_CALL(AMGX_vector_bind(b, A));
