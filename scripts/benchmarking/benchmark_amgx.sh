@@ -44,12 +44,12 @@ echo "============================================================"
 # ============================================================
 # Solver configurations to test
 # ============================================================
-# Format: "SOLVER:PRECONDITIONER:LABEL"
+# Format: "PRECONDITIONER:LABEL"
+# Note: Code uses PCG for all configs; "none" = no preconditioner (CG equivalent)
 CONFIGS=(
-    "CG:NONE:cg"
-    "PCG:NONE:pcg-none"
-    "PCG:JACOBI:pcg-jacobi"
-    "PCG:BLOCK_JACOBI:pcg-blockjacobi"
+    "none:pcg-none"
+    "jacobi:pcg-jacobi"
+    "amg:pcg-amg"
 )
 
 # Rank configurations to test
@@ -107,9 +107,9 @@ fi
 # Loop over solver configs
 for CONFIG in "${CONFIGS[@]}"; do
     # Parse config string
-    IFS=':' read -r SOLVER PRECOND LABEL <<< "$CONFIG"
+    IFS=':' read -r PRECOND LABEL <<< "$CONFIG"
 
-    print_header "CONFIG: $SOLVER (precond=$PRECOND)"
+    print_header "CONFIG: PCG with precond=$PRECOND"
 
     # Run benchmarks for each rank count
     for NP in "${RANKS[@]}"; do
@@ -123,16 +123,13 @@ for CONFIG in "${CONFIGS[@]}"; do
         # Write header to summary
         echo "" >> "$SUMMARY_FILE"
         echo "========================================" >> "$SUMMARY_FILE"
-        echo "Solver: $SOLVER | Precond: $PRECOND | Ranks: $NP" >> "$SUMMARY_FILE"
+        echo "Solver: PCG | Precond: $PRECOND | Ranks: $NP" >> "$SUMMARY_FILE"
         echo "Files: ${BASE_NAME}.{json,csv}" >> "$SUMMARY_FILE"
         echo "========================================" >> "$SUMMARY_FILE"
 
         # Build command with proper flags
         CMD="mpirun --allow-run-as-root -np $NP $EXECUTABLE $MATRIX"
-        CMD="$CMD --solver=$SOLVER"
-        if [ "$PRECOND" != "NONE" ]; then
-            CMD="$CMD --precond=$PRECOND"
-        fi
+        CMD="$CMD --precond=$PRECOND"
         CMD="$CMD --tol=$TOLERANCE --max-iters=$MAX_ITERS --runs=$RUNS"
         CMD="$CMD --json=$JSON_FILE --csv=$CSV_FILE --timers"
 
@@ -145,7 +142,7 @@ for CONFIG in "${CONFIGS[@]}"; do
             echo "  CSV:  $CSV_FILE"
         else
             echo "✗ Test failed (exit code: $?)"
-            echo "FAILED: Solver=$SOLVER, Precond=$PRECOND, Ranks=$NP" >> "$SUMMARY_FILE"
+            echo "FAILED: Precond=$PRECOND, Ranks=$NP" >> "$SUMMARY_FILE"
         fi
 
         # Small delay between tests
