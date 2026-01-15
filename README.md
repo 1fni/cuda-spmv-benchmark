@@ -17,6 +17,25 @@ Matrix: 265M×265M with 1.33B non-zeros (0.002% sparsity)
 
 *Kernel-level measurements via CUDA events*
 
+### Multi-GPU Scaling - AmgX Reference Validation
+
+**Platform**: 8× NVIDIA A100-SXM4-80GB (NVLink, 600 GB/s interconnect)
+
+| Matrix Size | 1 GPU | 2 GPUs | 4 GPUs | 8 GPUs | Speedup | Efficiency |
+|-------------|-------|--------|--------|--------|---------|------------|
+| 10k×10k (100M) | 188.7 ms | 99.0 ms | 50.3 ms | 27.0 ms | **6.99×** | 87% |
+| 15k×15k (225M) | 420.0 ms | 216.4 ms | 111.3 ms | 57.0 ms | **7.36×** | 92% |
+| 20k×20k (400M) | 746.7 ms | 382.5 ms | 194.8 ms | 102.3 ms | **7.30×** | 91% |
+
+*NVIDIA AmgX CG solver, tolerance 1e-6, 14 iterations to convergence*
+
+**Key Findings**:
+- Strong scaling efficiency: 87-92% on 8 GPUs across problem sizes
+- Consistent 7.0-7.4× speedup validating custom CG implementation
+- Size-independent performance from 100M to 400M unknowns
+
+See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed analysis.
+
 ## Technical Highlights
 
 - **Optimized Stencil Kernels** - Custom CUDA implementation outperforms cuSPARSE CSR by 1.49× on H100 NVL
