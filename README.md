@@ -5,6 +5,22 @@
 
 High-performance multi-GPU Conjugate Gradient solver for large-scale sparse linear systems using CUDA and MPI. Optimized for structured stencil grids with excellent strong scaling efficiency.
 
+## Performance Summary
+
+**Custom implementations outperform industry-standard references across all categories**
+
+<p align="center">
+  <img src="docs/figures/performance_summary_horizontal.png" alt="Performance Summary: All Gains" width="100%">
+</p>
+
+- **SpMV kernels**: 2.07× faster than cuSPARSE CSR (single-GPU stencil operations)
+- **CG solver**: 1.40× faster than NVIDIA AmgX (single-GPU, same convergence)
+- **Multi-GPU CG**: 1.42× faster than NVIDIA AmgX (8 GPUs, equivalent scaling efficiency)
+
+All custom implementations maintain performance advantage across problem sizes (100M - 400M unknowns).
+
+---
+
 ## Performance Highlights
 
 **Multi-GPU Strong Scaling** on 8× NVIDIA A100-SXM4-80GB
@@ -62,6 +78,10 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 **Format Comparison** on NVIDIA A100 80GB PCIe
 
+<p align="center">
+  <img src="docs/figures/spmv_format_comparison_a100.png" alt="SpMV Format Comparison" width="100%">
+</p>
+
 | Matrix Size | CSR (cuSPARSE) | STENCIL5 (Custom) | Speedup | Bandwidth Improvement |
 |-------------|----------------|-------------------|---------|----------------------|
 | **10k×10k** (100M unknowns) | 6.77 ms | 3.25 ms | **2.08×** | 1.98× (1182 → 2339 GB/s) |
@@ -75,11 +95,7 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 - **Consistent performance scaling**: Speedup stable at 2.06-2.08× from 100M to 400M unknowns
 
 <details>
-<summary><b>📊 Format Comparison Analysis</b></summary>
-
-<p align="center">
-  <img src="docs/figures/spmv_format_comparison_a100.png" alt="SpMV Format Comparison" width="100%">
-</p>
+<summary><b>📊 Detailed Format Analysis</b></summary>
 
 **Optimization techniques:**
 - **Grouped memory accesses**: W-C-E (stride-1) before N-S (stride grid_size) for cache efficiency
