@@ -100,6 +100,10 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 **Hardware**: 8× NVIDIA A100-SXM4-80GB (same as custom implementation)
 
+<p align="center">
+  <img src="docs/figures/custom_vs_amgx_overview.png" alt="Custom CG vs NVIDIA AmgX Comparison" width="100%">
+</p>
+
 | Matrix Size             | Implementation      | 1 GPU    | 8 GPUs  | Speedup | Efficiency |
 |-------------------------|---------------------|----------|---------|---------|------------|
 | **10k×10k**             | Custom CG           | 133.9 ms | 19.3 ms | 6.94×   | 86.8%      |
