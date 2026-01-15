@@ -94,6 +94,37 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 </details>
 
+### Validation with NVIDIA AmgX
+
+**Industry Reference Comparison** using NVIDIA's AmgX library (CG solver without preconditioner)
+
+**Hardware**: 8× NVIDIA A100-SXM4-80GB (same as custom implementation)
+
+| Matrix Size             | Implementation      | 1 GPU    | 8 GPUs  | Speedup | Efficiency |
+|-------------------------|---------------------|----------|---------|---------|------------|
+| **10k×10k**             | Custom CG           | 133.9 ms | 19.3 ms | 6.94×   | 86.8%      |
+| (100M unknowns)         | **NVIDIA AmgX**     | 188.7 ms | 27.0 ms | 6.99×   | 87.4%      |
+|                         |                     |          |         |         |            |
+| **15k×15k**             | Custom CG           | 300.1 ms | 40.4 ms | 7.43×   | 92.9%      |
+| (225M unknowns)         | **NVIDIA AmgX**     | 420.0 ms | 57.0 ms | 7.36×   | 92.0%      |
+|                         |                     |          |         |         |            |
+| **20k×20k**             | Custom CG           | 531.4 ms | 71.0 ms | **7.48×** | **93.5%**  |
+| (400M unknowns)         | **NVIDIA AmgX**     | 746.7 ms | 102.3 ms | 7.30×   | 91.3%      |
+
+**Key Findings:**
+- **Custom implementation 25-41% faster** than AmgX on single-GPU (optimized stencil kernels)
+- **Equivalent multi-GPU scaling**: 7.0-7.5× speedup with 87-94% efficiency for both
+- **Custom overhead lower**: Better absolute performance maintained across all GPU counts
+- **Validation successful**: Scaling behavior consistent with industry reference
+
+**Why Custom CG is Faster:**
+1. **Specialized stencil kernels**: Direct calculation vs. general CSR traversal
+2. **Reduced memory traffic**: Exploit 5-point structure (no col_idx lookups for interior)
+3. **Optimized communication**: MPI staging tuned for repeated 160KB messages
+4. **Matrix format**: ELLPACK-based storage better for regular patterns than pure CSR
+
+See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX results.
+
 ---
 
 ## Technical Highlights
