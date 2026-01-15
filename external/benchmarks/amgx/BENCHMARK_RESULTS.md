@@ -8,6 +8,14 @@ NVIDIA AmgX reference implementation for Conjugate Gradient solver with multi-GP
 **Tolerance**: 1e-6
 **Benchmark runs**: 10 (outlier removal, median reported)
 
+**Code Version**:
+- Git commit: `c7afefe9fee9b80e85cb932c5bf499e17df0cff9`
+- Branch: `feature/amgx-cg-pcg-comparison`
+- API: `AMGX_matrix_upload_all_global` with `int64_t*` column indices
+- Date: January 13-14, 2026
+
+> **Note**: Results generated with feature branch before API change to `upload_all` (commit `894d1ee`). Both APIs work correctly for CG without preconditioner.
+
 ## Performance Summary
 
 ### 10000×10000 Stencil (100M unknowns, 500M nnz)
