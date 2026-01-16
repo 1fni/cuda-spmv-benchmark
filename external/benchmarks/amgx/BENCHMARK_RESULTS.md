@@ -9,12 +9,12 @@ NVIDIA AmgX reference implementation for Conjugate Gradient solver with multi-GP
 **Benchmark runs**: 10 (outlier removal, median reported)
 
 **Code Version**:
-- Git commit: `c7afefe9fee9b80e85cb932c5bf499e17df0cff9`
-- Branch: `feature/amgx-cg-pcg-comparison`
-- API: `AMGX_matrix_upload_all_global` with `int64_t*` column indices
+- Git commit: `fd66760` (Switch AmgX to upload_all_global API with int64_t)
+- Branch: `feature/amgx-distributed-api` (merged to main)
+- API: `AMGX_matrix_upload_all_global` with `int64_t*` column indices, `nrings=2`
 - Date: January 13-14, 2026
 
-> **Note**: Results generated with feature branch before API change to `upload_all` (commit `894d1ee`). Both APIs work correctly for CG without preconditioner.
+> **Note**: Results below generated on 8× A100-SXM4-80GB (NVLink) with this version. Uses distributed API with automatic halo detection.
 
 ## Performance Summary
 
