@@ -1,11 +1,11 @@
 # AmgX Multi-GPU - Testing Status
 
-**Branch:** `feature/amgx-multigpu`
-**Last update:** 26 novembre 2025
+**Branch:** `main` (merged from `feature/amgx-distributed-api`)
+**Last update:** 14 January 2026
 
-## ✅ Status: Validated
+## ✅ Status: Production Ready
 
-Multi-GPU MPI CG solver with AmgX is functional and exhibits expected behavior for distributed iterative solvers.
+Multi-GPU MPI CG solver with AmgX using distributed API (`AMGX_matrix_upload_all_global`). Excellent scaling (7.0-7.4× on 8 GPUs) with proper load balancing.
 
 ## 📊 Observed Behavior
 
@@ -57,65 +57,58 @@ While the solution path differs slightly, convergence criteria are met:
 - Same iteration count demonstrates consistent convergence
 - Variation well below numerical significance for practical applications
 
-## ⚠️ Known Limitation: Load Imbalance with Simple API
+## ✅ Load Balancing: Resolved with Distributed API
 
-### Observed Issue
+### Previous Issue (Simple API)
 
-When using `AMGX_resources_create_simple()` + `AMGX_matrix_upload_all()`, significant load imbalance observed:
+With `AMGX_resources_create_simple()` + `AMGX_matrix_upload_all()`, 95% load imbalance was observed.
 
-```
-Configuration          | Time (rank 0) | Time (rank 1) | Load Imbalance
------------------------|---------------|---------------|----------------
-500×500 stencil, 2 GPU | 78 ms        | 1624 ms       | 95.2%
-Custom CG solver       | 27 ms        | 28 ms         | 2.3% ✅
-```
+### Solution Implemented
 
-### Root Cause
+Switched to distributed API with `AMGX_matrix_upload_all_global()`:
+- Automatic halo detection via global column indices
+- Proper MPI communicator integration
+- `nrings=2` for extended halo zones
 
-The **simplified API** (`_simple` + `_upload_all`) is designed for ease of use but not optimized for distributed multi-GPU:
-- No explicit MPI communicator configuration
-- No partition vector for work distribution
-- AmgX may not properly balance work across ranks
+### Current Performance (API Distribuée)
 
-### Workaround
+| GPUs | Time (ms) | Speedup | Efficiency |
+|------|-----------|---------|------------|
+| 1    | 188.67    | 1.00×   | 100%       |
+| 2    | 99.04     | 1.90×   | 95%        |
+| 4    | 50.32     | 3.75×   | 94%        |
+| 8    | 26.99     | 6.99×   | 87%        |
 
-For balanced multi-GPU performance, use **distributed API**:
-- `AMGX_resources_create()` with MPI communicator
-- `AMGX_distribution_handle` for explicit partitioning
-- `AMGX_matrix_upload_distributed()` with partition vector
-
-**Note:** This requires significantly more complex implementation.
-
-### Impact on Showcase
-
-✅ **Custom CG solver** demonstrates proper multi-GPU load balancing (2-3% imbalance)
-⚠️ **AmgX multi-GPU** limited to small-scale demonstration with simplified API
+**Load balancing now excellent** - 87-95% efficiency across all GPU counts.
 
 ## 🎯 Conclusion
 
-**Status:** ✅ **Functional with limitations**
+**Status:** ✅ **Production Ready**
 
-The multi-GPU MPI CG solver with AmgX demonstrates correct behavior for distributed iterative methods. The observed checksum variation (~0.15%) is an expected consequence of parallel floating-point arithmetic and does not indicate a bug.
+AmgX with distributed API demonstrates excellent multi-GPU scaling (7.0× on 8 GPUs, 87% efficiency).
 
-**Load balancing limitation** with simplified API is documented. Custom solver achieves proper load distribution.
+**Comparison with Custom CG:**
+- Custom CG: 71.0 ms (8 GPUs, 20k×20k) - **1.44× faster**
+- AmgX: 102.3 ms (8 GPUs, 20k×20k)
 
-**Recommendation:** Accept this behavior as normal for distributed linear solvers. For applications requiring bit-exact reproducibility, deterministic reduction algorithms would be needed (at significant performance cost).
+Custom CG advantage comes from stencil-optimized kernels (2.07× vs cuSPARSE CSR).
+Both implementations show equivalent scaling efficiency (87-94%).
 
 ## Technical Implementation
 
 **Architecture:**
-- Row-band domain decomposition
-- Global column indices for AmgX automatic halo detection
-- MPI-aware resource management
-- Checksum validation: sum + L2 norm via `MPI_Allreduce`
+- Row-band domain decomposition (1D partitioning)
+- Global column indices (`int64_t*`) for AmgX automatic halo detection
+- MPI-aware resource management with proper communicator passing
+- `nrings=2` for extended halo zones
 
-**API:**
-- `AMGX_resources_create_simple()` for resource initialization
-- `AMGX_matrix_upload_all()` with local CSR data + global col indices
-- AmgX handles MPI communication transparently
+**API (Distributed):**
+- `AMGX_resources_create()` with MPI communicator
+- `AMGX_matrix_upload_all_global()` with `int64_t*` column indices
+- AmgX handles halo exchange transparently
 
 **Files:**
-- `amgx_cg_solver_mgpu.cpp` - Multi-GPU MPI solver
+- `amgx_cg_solver_mgpu.cpp` - Multi-GPU MPI solver (distributed API)
 - `amgx_cg_solver.cpp` - Single-GPU baseline
 - `Makefile` - Auto-detection of AmgX installation
-- `README.md` - Build and usage documentation
+- `BENCHMARK_RESULTS.md` - Full performance results

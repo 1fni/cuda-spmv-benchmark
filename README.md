@@ -7,17 +7,22 @@ High-performance multi-GPU Conjugate Gradient solver for large-scale sparse line
 
 ## Performance Summary
 
-**Custom implementations outperform industry-standard references across all categories**
+Exploiting stencil structure enables consistent performance gains over generic sparse solvers, from single-GPU to multi-GPU.
+
+| Configuration        | Custom Stencil CG | NVIDIA AmgX CG | Speedup   |
+|----------------------|------------------:|---------------:|----------:|
+| Single-GPU (20k×20k) |          531.4 ms |       746.7 ms | **1.40×** |
+| 8 GPUs (20k×20k)     |           71.0 ms |       102.3 ms | **1.44×** |
 
 <p align="center">
   <img src="docs/figures/performance_summary_horizontal.png" alt="Performance Summary: All Gains" width="100%">
 </p>
 
-- **SpMV kernels**: 2.07× faster than cuSPARSE CSR (single-GPU stencil operations)
+- **SpMV kernel**: 2.07× faster than cuSPARSE CSR (single-GPU)
 - **CG solver**: 1.40× faster than NVIDIA AmgX (single-GPU, same convergence)
-- **Multi-GPU CG**: 1.42× faster than NVIDIA AmgX (8 GPUs, equivalent scaling efficiency)
+- **Multi-GPU CG**: 1.44× faster than NVIDIA AmgX (8 GPUs, equivalent scaling)
 
-All custom implementations maintain performance advantage across problem sizes (100M - 400M unknowns).
+**Key insight**: Generic solvers cannot exploit known stencil structure for memory access and communication minimization, leading to systematic overhead even when scaling efficiently.
 
 ---
 
@@ -110,40 +115,42 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 </details>
 
-### Validation with NVIDIA AmgX
+### Comparison with NVIDIA AmgX
 
-**Industry Reference Comparison** using NVIDIA's AmgX library (CG solver without preconditioner)
+AmgX is NVIDIA's production-grade multi-GPU solver library, used here as reference implementation.
 
-**Hardware**: 8× NVIDIA A100-SXM4-80GB (same as custom implementation)
+**Hardware**: 8× NVIDIA A100-SXM4-80GB (same configuration for both solvers)
 
 <p align="center">
   <img src="docs/figures/custom_vs_amgx_overview.png" alt="Custom CG vs NVIDIA AmgX Comparison" width="100%">
 </p>
 
-| Matrix Size             | Implementation      | 1 GPU    | 8 GPUs  | Speedup | Efficiency |
-|-------------------------|---------------------|----------|---------|---------|------------|
-| **10k×10k**             | Custom CG           | 133.9 ms | 19.3 ms | 6.94×   | 86.8%      |
-| (100M unknowns)         | **NVIDIA AmgX**     | 188.7 ms | 27.0 ms | 6.99×   | 87.4%      |
-|                         |                     |          |         |         |            |
-| **15k×15k**             | Custom CG           | 300.1 ms | 40.4 ms | 7.43×   | 92.9%      |
-| (225M unknowns)         | **NVIDIA AmgX**     | 420.0 ms | 57.0 ms | 7.36×   | 92.0%      |
-|                         |                     |          |         |         |            |
-| **20k×20k**             | Custom CG           | 531.4 ms | 71.0 ms | **7.48×** | **93.5%**  |
-| (400M unknowns)         | **NVIDIA AmgX**     | 746.7 ms | 102.3 ms | 7.30×   | 91.3%      |
+| Matrix Size     | Implementation  |    1 GPU |   8 GPUs | Speedup | Efficiency |
+|-----------------|-----------------|----------|----------|---------|------------|
+| **10k×10k**     | Custom CG       | 133.9 ms |  19.3 ms |   6.94× |      86.8% |
+| (100M unknowns) | NVIDIA AmgX     | 188.7 ms |  27.0 ms |   6.99× |      87.4% |
+|                 |                 |          |          |         |            |
+| **15k×15k**     | Custom CG       | 300.1 ms |  40.4 ms |   7.43× |      92.9% |
+| (225M unknowns) | NVIDIA AmgX     | 420.0 ms |  57.0 ms |   7.36× |      92.0% |
+|                 |                 |          |          |         |            |
+| **20k×20k**     | Custom CG       | 531.4 ms |  71.0 ms |   7.48× |      93.5% |
+| (400M unknowns) | NVIDIA AmgX     | 746.7 ms | 102.3 ms |   7.30× |      91.3% |
 
 **Key Findings:**
-- **Custom implementation 25-41% faster** than AmgX on single-GPU (optimized stencil kernels)
-- **Equivalent multi-GPU scaling**: 7.0-7.5× speedup with 87-94% efficiency for both
-- **Custom overhead lower**: Better absolute performance maintained across all GPU counts
-- **Validation successful**: Scaling behavior consistent with industry reference
+- **~40% faster at every scale**: Custom CG outperforms AmgX on both single-GPU and 8 GPUs
+- **Same convergence**: Both solvers converge in 14 iterations with identical tolerance
+- **Similar scaling efficiency**: 87-94% for both implementations
 
-**Why Custom CG is Faster:**
-1. **Specialized stencil kernels**: Direct calculation vs. general CSR traversal
-2. **Reduced memory traffic**: Exploit 5-point structure (no col_idx lookups for interior)
-3. **Optimized communication**: MPI staging tuned for repeated 160KB messages
-4. **Matrix format**: ELLPACK-based storage better for regular patterns than pure CSR
+**Why the performance difference?**
 
-See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX results.
+AmgX operates on generic CSR data structures with no knowledge of the underlying problem structure. The custom solver leverages compile-time knowledge of the 5-point stencil to:
+- Reduce memory indirections (no col_idx lookups for interior points)
+- Minimize halo exchange volume (160 KB vs 800 MB with AllGather)
+- Optimize memory access patterns (grouped W-C-E then N-S)
+
+This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The performance gap reflects the benefit of specialization when problem structure is known.
+
+See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX methodology and results.
 
 ---
 
