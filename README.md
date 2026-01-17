@@ -5,6 +5,19 @@
 
 High-performance multi-GPU Conjugate Gradient solver for large-scale sparse linear systems using CUDA and MPI. Optimized for structured stencil grids with excellent strong scaling efficiency.
 
+## TL;DR — Key Numbers
+
+| Metric | Result |
+|--------|--------|
+| **Stencil CG vs NVIDIA AmgX** | 1.40× faster (single-GPU), 1.44× faster (8 GPUs) |
+| **Stencil SpMV vs cuSPARSE CSR** | 2.07× speedup on A100 80GB |
+| **Strong scaling efficiency** | 87–94% from 1→8 GPUs |
+| **Problem size tested** | Up to 400M unknowns (20k×20k stencil) |
+
+**Hardware**: 8× NVIDIA A100-SXM4-80GB
+
+---
+
 ## Performance Summary
 
 Exploiting stencil structure enables consistent performance gains over generic sparse solvers, from single-GPU to multi-GPU.
@@ -151,6 +164,37 @@ AmgX operates on generic CSR data structures with no knowledge of the underlying
 This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The performance gap reflects the benefit of specialization when problem structure is known.
 
 See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX methodology and results.
+
+---
+
+## Methodology
+
+**How results were measured:**
+
+| Parameter | Value |
+|-----------|-------|
+| Runs per configuration | 10 (median reported) |
+| Warmup runs | 3 (discarded) |
+| Timing scope | Solver only (excludes I/O, matrix setup) |
+| Convergence criterion | Relative residual < 1e-6 |
+
+**Compilation flags** (release build):
+```
+nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true -std=c++11
+```
+
+**Reproducibility:**
+```bash
+# Full benchmark suite (single-GPU + multi-GPU + AmgX comparison)
+./scripts/benchmarking/run_all_benchmarks.sh
+
+# Individual benchmarks
+./scripts/benchmarking/benchmark_problem_sizes.sh      # Multi-GPU scaling
+./scripts/benchmarking/benchmark_single_gpu_formats.sh # SpMV comparison
+./scripts/benchmarking/benchmark_amgx.sh               # AmgX comparison
+
+# Results include JSON/CSV with environment info (CUDA version, driver, etc.)
+```
 
 ---
 
