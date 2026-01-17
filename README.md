@@ -185,6 +185,9 @@ nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true
 
 **Reproducibility:**
 ```bash
+# Quick verification (< 2 min, small matrices)
+./scripts/benchmarking/quick_verification.sh
+
 # Full benchmark suite (single-GPU + multi-GPU + AmgX comparison)
 ./scripts/benchmarking/run_all_benchmarks.sh
 
