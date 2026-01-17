@@ -23,9 +23,9 @@
 int main(int argc, char** argv) {
     if (argc < 2) {
         printf("Usage: %s <matrix.mtx> [--mode=<modes>] [--host] [--tol=<tol>] [--maxiter=<n>] [--timers] [--json=<file>] [--csv=<file>]\n", argv[0]);
-        printf("Example: %s matrix/stencil_512x512.mtx --mode=csr,stencil5-csr-direct --json=results/cg.json\n", argv[0]);
+        printf("Example: %s matrix/stencil_512x512.mtx --mode=cusparse-csr,stencil5-csr --json=results/cg.json\n", argv[0]);
         printf("\nOptions:\n");
-        printf("  --mode=<modes>         SpMV operators, comma-separated (default: stencil5-csr-direct)\n");
+        printf("  --mode=<modes>         SpMV operators, comma-separated (default: stencil5-csr)\n");
         printf("  --host                 Use host interface (default: device-native GPU)\n");
         printf("  --tol=<tol>            Convergence tolerance (default: 1e-6)\n");
         printf("  --maxiter=<n>          Maximum iterations (default: 1000)\n");
@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     }
 
     const char* matrix_file = argv[1];
-    const char* modes_string = "stencil5-csr-direct";  // Default
+    const char* modes_string = "stencil5-csr";  // Default
     bool use_device = true;
     bool enable_detailed_timers = false;  // Opt-in with --timers (avoids sync overhead)
     double tolerance = 1e-6;
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
         SpmvOperator* op = get_operator(mode_tokens[i]);
         if (!op) {
             fprintf(stderr, "Error: unknown SpMV mode '%s'\n", mode_tokens[i]);
-            fprintf(stderr, "Available: csr, stencil5-csr-direct, stencil5-opt, ellpack, etc.\n");
+            fprintf(stderr, "Available: cusparse-csr, stencil5-csr\n");
             return 1;
         }
         if (use_device && !op->run_device) {

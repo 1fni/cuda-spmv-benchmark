@@ -35,9 +35,9 @@ int main(int argc, char** argv) {
     if (argc < 2) {
         if (rank == 0) {
             printf("Usage: mpirun -np <N> %s <matrix.mtx> [--mode=<modes>] [--tol=<tol>] [--maxiter=<n>]\n", argv[0]);
-            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --mode=csr,stencil5-csr-direct\n", argv[0]);
+            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --mode=cusparse-csr,stencil5-csr\n", argv[0]);
             printf("\nOptions:\n");
-            printf("  --mode=<modes>         SpMV operators, comma-separated (default: csr)\n");
+            printf("  --mode=<modes>         SpMV operators, comma-separated (default: cusparse-csr)\n");
             printf("  --tol=<tol>            Convergence tolerance (default: 1e-6)\n");
             printf("  --maxiter=<n>          Maximum iterations (default: 100)\n");
         }
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     }
 
     const char* matrix_file = argv[1];
-    const char* modes_string = "csr";  // Default
+    const char* modes_string = "cusparse-csr";  // Default
     double tolerance = 1e-6;
     int max_iters = 1000;
 
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
             SpmvOperator* op = get_operator(mode_tokens[i]);
             if (op == NULL) {
                 fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
-                fprintf(stderr, "Available modes: csr, stencil5-csr-direct\n");
+                fprintf(stderr, "Available modes: cusparse-csr, stencil5-csr\n");
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
         }
