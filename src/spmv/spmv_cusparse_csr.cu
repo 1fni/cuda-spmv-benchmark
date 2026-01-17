@@ -315,7 +315,7 @@ void csr_free()
  *   Provides function pointers for init, run, and free routines.
  */
 SpmvOperator SPMV_CSR = {
-    .name = "csr-cusparse",
+    .name = "cusparse-csr",
     .init = csr_init,
     .run_timed = csr_run_timed,
     .run_device = csr_run_device,

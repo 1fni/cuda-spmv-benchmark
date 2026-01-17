@@ -124,7 +124,7 @@ typedef struct {
 } SpmvOperator;
 
 /** @brief External operator declarations. */
-extern SpmvOperator SPMV_CSR;              // csr-cusparse: cuSPARSE baseline
+extern SpmvOperator SPMV_CSR;              // cusparse-csr: cuSPARSE baseline
 extern SpmvOperator SPMV_STENCIL5_CSR;     // stencil5-csr: optimized stencil (single-GPU)
 extern SpmvOperator SPMV_STENCIL_HALO_MGPU; // stencil5-halo-mgpu: multi-GPU with halo exchange
 

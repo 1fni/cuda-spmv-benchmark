@@ -45,8 +45,8 @@ int main(int argc, char* argv[]) {
     // Check for correct number of command-line arguments
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<mode1[,mode2,...]> [--json=<file>] [--csv=<file>]\n", argv[0]);
-        fprintf(stderr, "Available modes: csr-cusparse, stencil5-csr\n");
-        fprintf(stderr, "Example: %s matrix.mtx --mode=csr-cusparse,stencil5-csr --json=results.json\n", argv[0]);
+        fprintf(stderr, "Available modes: cusparse-csr, stencil5-csr\n");
+        fprintf(stderr, "Example: %s matrix.mtx --mode=cusparse-csr,stencil5-csr --json=results.json\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
         SpmvOperator* op = get_operator(mode_tokens[i]);
         if (op == NULL) {
             fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
-            fprintf(stderr, "Available modes: csr-cusparse, stencil5-csr\n");
+            fprintf(stderr, "Available modes: cusparse-csr, stencil5-csr\n");
             return EXIT_FAILURE;
         }
     }

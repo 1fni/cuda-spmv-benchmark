@@ -73,7 +73,7 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
     double output_vector_bytes = mat->rows * sizeof(double);       // Output vector
 
     // Format-specific memory traffic calculation using real structures
-    if (strcmp(operator_name, "csr-cusparse") == 0) {
+    if (strcmp(operator_name, "cusparse-csr") == 0) {
         // CSR Format (cuSPARSE):
         // - Values: nnz * sizeof(double)
         // - Column indices: nnz * sizeof(int)
@@ -195,7 +195,7 @@ void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
     // Recalculate format-specific memory traffic for JSON details
     extern CSRMatrix csr_mat;
 
-    if (strcmp(metrics->operator_name, "csr-cusparse") == 0 ||
+    if (strcmp(metrics->operator_name, "cusparse-csr") == 0 ||
         strcmp(metrics->operator_name, "stencil5-csr") == 0) {
         // Both use CSR format
         matrix_data_bytes = csr_mat.nb_nonzeros * sizeof(double);
