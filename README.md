@@ -312,13 +312,13 @@ GPU 7: rows [87.5k, 100k)    ┘
 │   ├── PROBLEM_SIZE_SCALING_RESULTS.md # Multi-size analysis
 │   └── scaling_summary.md          # Technical summary
 ├── src/                            # Source code
-│   ├── main/                       # Entry points
-│   │   └── cg_solver_mgpu_stencil.cu   # Multi-GPU CG solver
-│   ├── solvers/                    # CG implementations
-│   │   ├── cg_solver_mgpu_partitioned.cu  # Partitioned solver
-│   │   └── benchmark_stats_mgpu_partitioned.cu  # Benchmarking wrapper
+│   ├── main/                       # Entry points (main functions)
+│   │   └── cg_solver_mgpu_stencil.cu   # Multi-GPU CG entry point
+│   ├── solvers/                    # Solver implementations
+│   │   ├── cg_solver_mgpu_partitioned.cu  # CG algorithm with halo exchange
+│   │   └── benchmark_stats_mgpu_partitioned.cu  # Timing and metrics
 │   ├── spmv/                       # SpMV kernels
-│   │   └── spmv_csr_stencil_partitioned.cu  # Optimized stencil kernel
+│   │   └── spmv_stencil_csr_direct.cu  # Stencil-optimized SpMV
 │   └── io/                         # Matrix I/O
 ├── include/                        # Header files
 ├── scripts/                        # Utility scripts
