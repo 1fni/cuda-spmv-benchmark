@@ -14,7 +14,7 @@ High-performance multi-GPU Conjugate Gradient solver for large-scale sparse line
 | **Strong scaling efficiency** | 87–94% from 1→8 GPUs |
 | **Problem size tested** | Up to 400M unknowns (20k×20k stencil) |
 
-**Hardware**: 8× NVIDIA A100-SXM4-80GB
+**Hardware**: 8× NVIDIA A100-SXM4-80GB · CUDA 12.8 · Driver 575.57
 
 ---
 
@@ -132,7 +132,7 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 AmgX is NVIDIA's production-grade multi-GPU solver library, used here as reference implementation.
 
-**Hardware**: 8× NVIDIA A100-SXM4-80GB (same configuration for both solvers)
+**Hardware**: 8× NVIDIA A100-SXM4-80GB · CUDA 12.8 · Driver 575.57 (same configuration for both solvers)
 
 <p align="center">
   <img src="docs/figures/custom_vs_amgx_overview.png" alt="Custom CG vs NVIDIA AmgX Comparison" width="100%">
