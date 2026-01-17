@@ -123,20 +123,10 @@ typedef struct {
     void (*free)();                                        ///< Resource cleanup function.
 } SpmvOperator;
 
-/** @brief External operator declarations for different formats. */
-extern SpmvOperator SPMV_CSR;
-extern SpmvOperator SPMV_STENCIL5;
-extern SpmvOperator SPMV_STENCIL5_OPTIMIZED;
-extern SpmvOperator SPMV_STENCIL5_SHARED;
-extern SpmvOperator SPMV_STENCIL5_COARSENED;
-extern SpmvOperator SPMV_ELLPACK_NAIVE;
-extern SpmvOperator SPMV_ELLPACK;
-extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES;
-extern SpmvOperator SPMV_STENCIL5_NO_COLINDICES_OPTIMIZED;
-extern SpmvOperator SPMV_STENCIL5_CSR_DIRECT;
-extern SpmvOperator SPMV_STENCIL5_MULTI_GPU;
-extern SpmvOperator SPMV_STENCIL_HALO_MGPU;
-extern SpmvOperator SPMV_CSR_MULTI_GPU;
+/** @brief External operator declarations. */
+extern SpmvOperator SPMV_CSR;              // csr-cusparse: cuSPARSE baseline
+extern SpmvOperator SPMV_STENCIL5_CSR;     // stencil5-csr: optimized stencil (single-GPU)
+extern SpmvOperator SPMV_STENCIL_HALO_MGPU; // stencil5-halo-mgpu: multi-GPU with halo exchange
 
 #ifdef __cplusplus
 extern "C" {

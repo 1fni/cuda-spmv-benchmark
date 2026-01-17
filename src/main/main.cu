@@ -35,7 +35,7 @@
  * The function expects command-line arguments specifying the matrix file and
  * the desired SpMV implementation mode.
  * 
- * Expected usage: ./program <matrix_file.mtx> --mode=<csr|ellpack|stencil>
+ * Expected usage: ./program <matrix_file.mtx> --mode=<csr-cusparse|stencil5-csr>
  * 
  * @param argc Number of command-line arguments
  * @param argv Array of command-line argument strings
@@ -45,8 +45,8 @@ int main(int argc, char* argv[]) {
     // Check for correct number of command-line arguments
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <matrix_file.mtx> --mode=<mode1[,mode2,...]> [--json=<file>] [--csv=<file>]\n", argv[0]);
-        fprintf(stderr, "Available modes: csr, ellpack-naive, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened\n");
-        fprintf(stderr, "Example: %s matrix.mtx --mode=csr,stencil5 --json=results.json\n", argv[0]);
+        fprintf(stderr, "Available modes: csr-cusparse, stencil5-csr\n");
+        fprintf(stderr, "Example: %s matrix.mtx --mode=csr-cusparse,stencil5-csr --json=results.json\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
         SpmvOperator* op = get_operator(mode_tokens[i]);
         if (op == NULL) {
             fprintf(stderr, "Error: Unknown mode '%s'\n", mode_tokens[i]);
-            fprintf(stderr, "Available modes: csr, ellpack-naive, ellpack, stencil5, stencil5-opt, stencil5-shared, stencil5-coarsened, stencil5-mgpu, stencil5-no-colindices, stencil5-no-colindices-opt\n");
+            fprintf(stderr, "Available modes: csr-cusparse, stencil5-csr\n");
             return EXIT_FAILURE;
         }
     }

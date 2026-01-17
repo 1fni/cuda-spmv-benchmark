@@ -65,39 +65,29 @@ void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
     metrics->gflops = (total_flops / execution_time_s) / 1e9;
     
     // Calculate format-specific memory bandwidth utilization using real structures
-    // Memory traffic varies significantly between SpMV formats - use actual data
     extern CSRMatrix csr_mat;            // Global CSR structure
-    extern ELLPACKMatrix ellpack_matrix; // Global ELLPACK structure
-    
+
     double matrix_data_bytes = 0.0;
     double matrix_indices_bytes = 0.0;
     double input_vector_bytes = mat->cols * sizeof(double);        // Input vector
     double output_vector_bytes = mat->rows * sizeof(double);       // Output vector
-    
+
     // Format-specific memory traffic calculation using real structures
-    if (strcmp(operator_name, "csr") == 0) {
-        // CSR Format - use actual CSR structure dimensions:
+    if (strcmp(operator_name, "csr-cusparse") == 0) {
+        // CSR Format (cuSPARSE):
         // - Values: nnz * sizeof(double)
-        // - Column indices: nnz * sizeof(int)  
+        // - Column indices: nnz * sizeof(int)
         // - Row pointers: (rows + 1) * sizeof(int)
         matrix_data_bytes = csr_mat.nb_nonzeros * sizeof(double);
-        matrix_indices_bytes = csr_mat.nb_nonzeros * sizeof(int) + 
+        matrix_indices_bytes = csr_mat.nb_nonzeros * sizeof(int) +
                               (csr_mat.nb_rows + 1) * sizeof(int);
-        
-    } else if (strcmp(operator_name, "ellpack") == 0) {
-        // ELLPACK Format - use actual ELLPACK structure dimensions:
-        // - Values: rows * actual_ell_width * sizeof(double)
-        // - Column indices: rows * actual_ell_width * sizeof(int)
-        matrix_data_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
-        matrix_indices_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
-        
-    } else if (strcmp(operator_name, "stencil5") == 0) {
-        // STENCIL5 Format - uses ELLPACK storage with actual ell_width:
-        // - Uses real ELLPACK structure built from CSR conversion
-        // - Accounts for actual padding and boundary conditions
-        matrix_data_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
-        matrix_indices_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
-        
+
+    } else if (strcmp(operator_name, "stencil5-csr") == 0) {
+        // Stencil CSR Direct - same CSR format, optimized kernel
+        matrix_data_bytes = csr_mat.nb_nonzeros * sizeof(double);
+        matrix_indices_bytes = csr_mat.nb_nonzeros * sizeof(int) +
+                              (csr_mat.nb_rows + 1) * sizeof(int);
+
     } else {
         // Fallback to generic calculation for unknown formats
         matrix_data_bytes = mat->nnz * sizeof(double);
@@ -204,14 +194,12 @@ void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
     
     // Recalculate format-specific memory traffic for JSON details
     extern CSRMatrix csr_mat;
-    extern ELLPACKMatrix ellpack_matrix;
-    
-    if (strcmp(metrics->operator_name, "csr") == 0) {
+
+    if (strcmp(metrics->operator_name, "csr-cusparse") == 0 ||
+        strcmp(metrics->operator_name, "stencil5-csr") == 0) {
+        // Both use CSR format
         matrix_data_bytes = csr_mat.nb_nonzeros * sizeof(double);
         matrix_indices_bytes = csr_mat.nb_nonzeros * sizeof(int) + (csr_mat.nb_rows + 1) * sizeof(int);
-    } else if (strcmp(metrics->operator_name, "stencil5") == 0) {
-        matrix_data_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(double);
-        matrix_indices_bytes = ellpack_matrix.nb_rows * ellpack_matrix.ell_width * sizeof(int);
     } else {
         // Fallback calculation
         matrix_data_bytes = metrics->matrix_nnz * sizeof(double);

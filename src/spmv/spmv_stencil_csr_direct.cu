@@ -301,8 +301,8 @@ void stencil_csr_direct_free() {
 }
 
 // Operator structure
-SpmvOperator SPMV_STENCIL5_CSR_DIRECT = {
-    "stencil5-csr-direct",
+SpmvOperator SPMV_STENCIL5_CSR = {
+    "stencil5-csr",
     stencil_csr_direct_init,
     stencil_csr_direct_run_timed,
     stencil_csr_direct_run_device,
