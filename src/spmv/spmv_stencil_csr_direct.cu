@@ -24,11 +24,11 @@
 #include "io.h"
 
 // Device memory
-static int *d_row_ptr = nullptr;
-static int *d_col_idx = nullptr;
-static double *d_values = nullptr;
-static double *dX = nullptr;
-static double *dY = nullptr;
+static int* d_row_ptr = nullptr;
+static int* d_col_idx = nullptr;
+static double* d_values = nullptr;
+static double* dX = nullptr;
+static double* dY = nullptr;
 
 static const double alpha = 1.0;
 static const double beta = 0.0;
@@ -73,18 +73,14 @@ __device__ inline int calculate_interior_csr_offset(int row, int grid_size) {
  *          Boundary points: standard CSR traversal
  *          Memory access pattern optimized: West-Center-East (contiguous), then North-South
  */
-__global__ void stencil5_csr_direct_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x,
-    double* __restrict__ y,
-    int N,
-    int grid_size,
-    double alpha
-) {
+__global__ void stencil5_csr_direct_kernel(const int* __restrict__ row_ptr,
+                                           const int* __restrict__ col_idx,
+                                           const double* __restrict__ values,
+                                           const double* __restrict__ x, double* __restrict__ y,
+                                           int N, int grid_size, double alpha) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= N) return;
+    if (row >= N)
+        return;
 
     int i = row / grid_size;
     int j = row % grid_size;
@@ -107,17 +103,17 @@ __global__ void stencil5_csr_direct_kernel(
         // Optimized memory access order: group spatially adjacent vec[] accesses
         // West-Center-East (stride 1, contiguous) first, then North-South (stride grid_size)
         sum = values[csr_offset + 1] * x[idx_west]      // West (CSR offset 1)
-            + values[csr_offset + 2] * x[idx_center]    // Center (CSR offset 2)
-            + values[csr_offset + 3] * x[idx_east]      // East (CSR offset 3)
-            + values[csr_offset + 0] * x[idx_north]     // North (CSR offset 0)
-            + values[csr_offset + 4] * x[idx_south];    // South (CSR offset 4)
+              + values[csr_offset + 2] * x[idx_center]  // Center (CSR offset 2)
+              + values[csr_offset + 3] * x[idx_east]    // East (CSR offset 3)
+              + values[csr_offset + 0] * x[idx_north]   // North (CSR offset 0)
+              + values[csr_offset + 4] * x[idx_south];  // South (CSR offset 4)
     }
     // Boundary/corner: standard CSR traversal
     else {
         int row_start = row_ptr[row];
         int row_end = row_ptr[row + 1];
 
-        #pragma unroll 8
+#pragma unroll 8
         for (int k = row_start; k < row_end; k++) {
             sum += values[k] * x[col_idx[k]];
         }
@@ -145,19 +141,15 @@ __global__ void stencil5_csr_direct_kernel(
  * @param grid_size 2D grid dimension (sqrt of matrix size)
  * @param alpha Scalar multiplier
  */
-__global__ void stencil5_csr_direct_mgpu_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x,
-    double* __restrict__ y_local,
-    int row_offset,
-    int local_rows,
-    int grid_size,
-    double alpha
-) {
+__global__ void stencil5_csr_direct_mgpu_kernel(const int* __restrict__ row_ptr,
+                                                const int* __restrict__ col_idx,
+                                                const double* __restrict__ values,
+                                                const double* __restrict__ x,
+                                                double* __restrict__ y_local, int row_offset,
+                                                int local_rows, int grid_size, double alpha) {
     int local_row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (local_row >= local_rows) return;
+    if (local_row >= local_rows)
+        return;
 
     // Global row index in full matrix
     int row = row_offset + local_row;
@@ -177,18 +169,16 @@ __global__ void stencil5_csr_direct_mgpu_kernel(
         int idx_north = row - grid_size;
         int idx_south = row + grid_size;
 
-        sum = values[csr_offset + 1] * x[idx_west]
-            + values[csr_offset + 2] * x[idx_center]
-            + values[csr_offset + 3] * x[idx_east]
-            + values[csr_offset + 0] * x[idx_north]
-            + values[csr_offset + 4] * x[idx_south];
+        sum = values[csr_offset + 1] * x[idx_west] + values[csr_offset + 2] * x[idx_center] +
+              values[csr_offset + 3] * x[idx_east] + values[csr_offset + 0] * x[idx_north] +
+              values[csr_offset + 4] * x[idx_south];
     }
     // Boundary/corner: standard CSR traversal
     else {
         int row_start = row_ptr[row];
         int row_end = row_ptr[row + 1];
 
-        #pragma unroll 8
+#pragma unroll 8
         for (int k = row_start; k < row_end; k++) {
             sum += values[k] * x[col_idx[k]];
         }
@@ -215,18 +205,18 @@ int stencil_csr_direct_init(MatrixData* mat) {
     CUDA_CHECK(cudaMalloc(&dY, csr_mat.nb_rows * sizeof(double)));
 
     // Transfer CSR to device
-    CUDA_CHECK(cudaMemcpy(d_row_ptr, csr_mat.row_ptr,
-                          (csr_mat.nb_rows + 1) * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_col_idx, csr_mat.col_indices,
-                          csr_mat.nb_nonzeros * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_values, csr_mat.values,
-                          csr_mat.nb_nonzeros * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_row_ptr, csr_mat.row_ptr, (csr_mat.nb_rows + 1) * sizeof(int),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_col_idx, csr_mat.col_indices, csr_mat.nb_nonzeros * sizeof(int),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_values, csr_mat.values, csr_mat.nb_nonzeros * sizeof(double),
+                          cudaMemcpyHostToDevice));
 
     // Store grid_size for kernel
     grid_size_stored = mat->grid_size;
 
-    printf("CSR-direct initialized: %d rows, %d nnz, grid %dx%d\n",
-           csr_mat.nb_rows, csr_mat.nb_nonzeros, mat->grid_size, mat->grid_size);
+    printf("CSR-direct initialized: %d rows, %d nnz, grid %dx%d\n", csr_mat.nb_rows,
+           csr_mat.nb_nonzeros, mat->grid_size, mat->grid_size);
 
     return 0;
 }
@@ -246,10 +236,8 @@ int stencil_csr_direct_run_timed(const double* x, double* y, double* kernel_time
 
     CUDA_CHECK(cudaEventRecord(start));
 
-    stencil5_csr_direct_kernel<<<blocks, threads>>>(
-        d_row_ptr, d_col_idx, d_values, dX, dY,
-        csr_mat.nb_rows, grid_size_stored, alpha
-    );
+    stencil5_csr_direct_kernel<<<blocks, threads>>>(d_row_ptr, d_col_idx, d_values, dX, dY,
+                                                    csr_mat.nb_rows, grid_size_stored, alpha);
 
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
@@ -279,10 +267,8 @@ int stencil_csr_direct_run_device(const double* d_x, double* d_y) {
     int threads = 256;
     int blocks = (csr_mat.nb_rows + threads - 1) / threads;
 
-    stencil5_csr_direct_kernel<<<blocks, threads>>>(
-        d_row_ptr, d_col_idx, d_values, d_x, d_y,
-        csr_mat.nb_rows, grid_size_stored, alpha
-    );
+    stencil5_csr_direct_kernel<<<blocks, threads>>>(d_row_ptr, d_col_idx, d_values, d_x, d_y,
+                                                    csr_mat.nb_rows, grid_size_stored, alpha);
 
     return 0;
 }
@@ -293,18 +279,29 @@ int stencil_csr_direct_run_device(const double* d_x, double* d_y) {
 void stencil_csr_direct_free() {
     printf("[STENCIL-CSR-DIRECT] Cleaning up\n");
 
-    if (d_row_ptr) { cudaFree(d_row_ptr); d_row_ptr = nullptr; }
-    if (d_col_idx) { cudaFree(d_col_idx); d_col_idx = nullptr; }
-    if (d_values) { cudaFree(d_values); d_values = nullptr; }
-    if (dX) { cudaFree(dX); dX = nullptr; }
-    if (dY) { cudaFree(dY); dY = nullptr; }
+    if (d_row_ptr) {
+        cudaFree(d_row_ptr);
+        d_row_ptr = nullptr;
+    }
+    if (d_col_idx) {
+        cudaFree(d_col_idx);
+        d_col_idx = nullptr;
+    }
+    if (d_values) {
+        cudaFree(d_values);
+        d_values = nullptr;
+    }
+    if (dX) {
+        cudaFree(dX);
+        dX = nullptr;
+    }
+    if (dY) {
+        cudaFree(dY);
+        dY = nullptr;
+    }
 }
 
 // Operator structure
-SpmvOperator SPMV_STENCIL5_CSR = {
-    "stencil5-csr",
-    stencil_csr_direct_init,
-    stencil_csr_direct_run_timed,
-    stencil_csr_direct_run_device,
-    stencil_csr_direct_free
-};
+SpmvOperator SPMV_STENCIL5_CSR = {"stencil5-csr", stencil_csr_direct_init,
+                                  stencil_csr_direct_run_timed, stencil_csr_direct_run_device,
+                                  stencil_csr_direct_free};

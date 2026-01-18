@@ -32,14 +32,13 @@ int generate_matrix_stencil5(int grid, const char* filename) {
     return write_matrix_market_stencil5(grid, filename);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     if (argc < 3) {
         printf("Usage: %s <grid_dim> <output_filename>\n", argv[0]);
         return 1;
     }
 
-    int grid = atoi(argv[1]);                // 2D grid size
-    const char* filename = argv[2];	   // output file
-    return generate_matrix_stencil5(grid, filename); 
+    int grid = atoi(argv[1]);        // 2D grid size
+    const char* filename = argv[2];  // output file
+    return generate_matrix_stencil5(grid, filename);
 }
-

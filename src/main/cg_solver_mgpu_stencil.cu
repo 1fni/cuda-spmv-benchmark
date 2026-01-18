@@ -29,8 +29,11 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         if (rank == 0) {
-            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--timers] [--json=<file>] [--csv=<file>]\n", argv[0]);
-            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --json=results.json\n", argv[0]);
+            printf(
+                "Usage: mpirun -np <N> %s <matrix.mtx> [--timers] [--json=<file>] [--csv=<file>]\n",
+                argv[0]);
+            printf("Example: mpirun -np 2 %s matrix/stencil_512x512.mtx --json=results.json\n",
+                   argv[0]);
             printf("Options:\n");
             printf("  --timers      Enable detailed timing breakdown (adds GPU sync overhead)\n");
             printf("  --json=<file> Export results to JSON file\n");
@@ -92,7 +95,8 @@ int main(int argc, char** argv) {
     }
 
     // Warmup: 3 full CG runs
-    if (rank == 0) printf("Warmup (3 runs)...\n");
+    if (rank == 0)
+        printf("Warmup (3 runs)...\n");
     CGConfigMultiGPU warmup_config = config;
     warmup_config.verbose = 0;
     CGStatsMultiGPU warmup_stats;
@@ -105,29 +109,30 @@ int main(int argc, char** argv) {
     memset(x, 0, mat.rows * sizeof(double));
 
     // Single profiled run (captured by nsys, excluded from statistics)
-    if (rank == 0) printf("Running profiled iteration (for nsys)...\n");
+    if (rank == 0)
+        printf("Running profiled iteration (for nsys)...\n");
     CGStatsMultiGPU profiled_stats;
     cudaProfilerStart();
     cg_solve_mgpu_partitioned(NULL, &mat, b, x, config, &profiled_stats);
     cudaProfilerStop();
     if (rank == 0) {
         printf("Profiled run: %s in %d iterations\n",
-               profiled_stats.converged ? "converged" : "failed",
-               profiled_stats.iterations);
+               profiled_stats.converged ? "converged" : "failed", profiled_stats.iterations);
     }
 
     // Reset x again before benchmark
     memset(x, 0, mat.rows * sizeof(double));
 
     // Benchmark: 10 runs with statistical analysis (match AmgX default)
-    if (rank == 0) printf("Running benchmark (10 runs)...\n");
+    if (rank == 0)
+        printf("Running benchmark (10 runs)...\n");
     BenchmarkStats bench_stats;
     CGStatsMultiGPU stats;
     cg_benchmark_with_stats_mgpu_partitioned(NULL, &mat, b, x, config, 10, &bench_stats, &stats);
 
     if (rank == 0) {
-        printf("Completed: %d valid runs, %d outliers removed\n",
-               bench_stats.valid_runs, bench_stats.outliers_removed);
+        printf("Completed: %d valid runs, %d outliers removed\n", bench_stats.valid_runs,
+               bench_stats.outliers_removed);
     }
 
     // Display results for verification (rank 0 only)
@@ -135,13 +140,14 @@ int main(int argc, char** argv) {
         printf("\n========================================\n");
         printf("Results:\n");
         printf("========================================\n");
-        printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
+        printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO",
+               stats.iterations);
         printf("Solution norm: %.15e\n", stats.residual_norm);
 
         // Timing summary with statistics
-        printf("\nTime (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, Halo: %.1f%%)\n",
-               bench_stats.median_ms,
-               100.0 * stats.time_spmv_ms / stats.time_total_ms,
+        printf("\nTime (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, Halo: "
+               "%.1f%%)\n",
+               bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
                100.0 * stats.time_blas1_ms / stats.time_total_ms,
                100.0 * stats.time_reductions_ms / stats.time_total_ms,
                100.0 * stats.time_allgather_ms / stats.time_total_ms);
@@ -149,8 +155,8 @@ int main(int argc, char** argv) {
             printf("Note: Use --timers flag to enable detailed timing breakdown\n");
         }
         if (bench_stats.valid_runs > 1) {
-            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
-                   bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
+            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", bench_stats.min_ms,
+                   bench_stats.max_ms, bench_stats.std_dev_ms);
         }
 
         printf("\nCG Solution (first 10 values):\n");
@@ -164,7 +170,8 @@ int main(int argc, char** argv) {
         // Export results if requested
         if (json_file || csv_file) {
             if (json_file) {
-                export_cg_mgpu_json(json_file, "partitioned-halo", &mat, &bench_stats, &stats, world_size);
+                export_cg_mgpu_json(json_file, "partitioned-halo", &mat, &bench_stats, &stats,
+                                    world_size);
                 printf("\nResults exported to JSON: %s\n", json_file);
             }
             if (csv_file) {

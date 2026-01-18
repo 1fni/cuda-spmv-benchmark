@@ -36,10 +36,10 @@
  * @brief Multi-GPU CG configuration (per MPI rank)
  */
 typedef struct {
-    int max_iters;              ///< Maximum iterations
-    double tolerance;           ///< Convergence tolerance
-    int verbose;                ///< Verbosity level (0=silent, 1=summary, 2=per-iter)
-    int enable_detailed_timers; ///< Enable timing breakdown
+    int max_iters;               ///< Maximum iterations
+    double tolerance;            ///< Convergence tolerance
+    int verbose;                 ///< Verbosity level (0=silent, 1=summary, 2=per-iter)
+    int enable_detailed_timers;  ///< Enable timing breakdown
 } CGConfigMultiGPU;
 
 /**
@@ -57,17 +57,17 @@ typedef struct {
     int converged;              ///< 1 if converged
 
     // Granular BLAS1 timings (per-iteration averages)
-    double time_dot_rs_initial_ms;   ///< Initial dot(r,r) before loop
-    double time_dot_pAp_ms;           ///< dot(p, Ap) average per iteration
-    double time_dot_rs_new_ms;        ///< dot(r, r) convergence check average
-    double time_axpy_update_x_ms;    ///< x = x + alpha*p average
-    double time_axpy_update_r_ms;    ///< r = r - alpha*Ap average
-    double time_axpby_update_p_ms;   ///< p = r + beta*p average
-    double time_initial_r_ms;        ///< Initial r = b - A*x0
+    double time_dot_rs_initial_ms;  ///< Initial dot(r,r) before loop
+    double time_dot_pAp_ms;         ///< dot(p, Ap) average per iteration
+    double time_dot_rs_new_ms;      ///< dot(r, r) convergence check average
+    double time_axpy_update_x_ms;   ///< x = x + alpha*p average
+    double time_axpy_update_r_ms;   ///< r = r - alpha*Ap average
+    double time_axpby_update_p_ms;  ///< p = r + beta*p average
+    double time_initial_r_ms;       ///< Initial r = b - A*x0
 
     // Solution validation
-    double solution_sum;             ///< Sum of solution vector elements
-    double solution_norm;            ///< L2 norm of solution vector
+    double solution_sum;   ///< Sum of solution vector elements
+    double solution_norm;  ///< L2 norm of solution vector
 } CGStatsMultiGPU;
 
 /**
@@ -85,11 +85,7 @@ typedef struct {
  * @param stats Output statistics
  * @return 0 on success
  */
-int cg_solve_mgpu(SpmvOperator* spmv_op,
-                  MatrixData* mat,
-                  const double* b,
-                  double* x,
-                  CGConfigMultiGPU config,
-                  CGStatsMultiGPU* stats);
+int cg_solve_mgpu(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                  CGConfigMultiGPU config, CGStatsMultiGPU* stats);
 
-#endif // CG_SOLVER_MGPU_H
+#endif  // CG_SOLVER_MGPU_H

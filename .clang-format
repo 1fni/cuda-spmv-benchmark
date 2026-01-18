@@ -1,0 +1,97 @@
+# Clang-format configuration for CUDA/C++ HPC project
+# Style: LLVM-based with adaptations for CUDA code
+
+BasedOnStyle: LLVM
+
+# Line width: 100 characters (HPC standard)
+ColumnLimit: 100
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+NamespaceIndentation: None
+
+# Braces
+BreakBeforeBraces: Attach
+Cpp11BracedListStyle: true
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: true
+
+# Function declarations/definitions
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+BinPackArguments: true
+BinPackParameters: true
+
+# Spaces
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Includes
+IncludeBlocks: Preserve
+SortIncludes: false
+
+# Pointer/Reference alignment
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# Comments
+ReflowComments: true
+
+# Penalties (influence line breaking decisions)
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# Language and standard
+Language: Cpp
+Standard: c++14
+
+# CUDA-specific: Don't break __global__, __device__, __host__ attributes
+AttributeMacros:
+  - __global__
+  - __device__
+  - __host__
+  - __shared__
+  - __constant__
+  - __managed__
+  - __restrict__
+
+# Macros that should be treated as statements
+StatementMacros:
+  - CUDA_CHECK
+  - CUSPARSE_CHECK
+  - CUBLAS_CHECK
+  - MPI_CHECK
+
+# Keep CUDA kernel launch syntax readable
+# <<<grid, block, shared_mem, stream>>>
+SpaceBeforeCpp11BracedList: false

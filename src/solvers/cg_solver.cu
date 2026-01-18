@@ -45,8 +45,8 @@ __global__ void axpy_kernel(int n, double alpha, const double* x, double* y) {
 /**
  * @brief AXPBY: z = alpha*x + beta*y
  */
-__global__ void axpby_kernel(int n, double alpha, const double* x,
-                              double beta, const double* y, double* z) {
+__global__ void axpby_kernel(int n, double alpha, const double* x, double beta, const double* y,
+                             double* z) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         z[i] = alpha * x[i] + beta * y[i];
@@ -77,7 +77,7 @@ __global__ void axpy_sub_kernel_device(int n, const double* d_alpha, const doubl
  * @brief AXPBY device-pointer version: z = (*alpha)*x + (*beta)*y
  */
 __global__ void axpby_kernel_device(int n, const double* d_alpha, const double* x,
-                                     const double* d_beta, const double* y, double* z) {
+                                    const double* d_beta, const double* y, double* z) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         z[i] = (*d_alpha) * x[i] + (*d_beta) * y[i];
@@ -136,7 +136,8 @@ __global__ void dot_kernel(int n, const double* x, const double* y, double* bloc
  */
 double sum_block_results(const double* d_block_results, int num_blocks) {
     double* h_block_results = (double*)malloc(num_blocks * sizeof(double));
-    CUDA_CHECK(cudaMemcpy(h_block_results, d_block_results, num_blocks * sizeof(double), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_block_results, d_block_results, num_blocks * sizeof(double),
+                          cudaMemcpyDeviceToHost));
 
     double sum = 0.0;
     for (int i = 0; i < num_blocks; i++) {
@@ -150,11 +151,7 @@ double sum_block_results(const double* d_block_results, int num_blocks) {
 /**
  * @brief CG solver implementation
  */
-int cg_solve(SpmvOperator* spmv_op,
-             MatrixData* mat,
-             const double* b,
-             double* x,
-             CGConfig config,
+int cg_solve(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x, CGConfig config,
              CGStats* stats) {
 
     int n = mat->rows;
@@ -198,8 +195,8 @@ int cg_solve(SpmvOperator* spmv_op,
 
     // r0 = b - A*x0
     // Note: current SpMV operators expect host pointers, so we allocate temp host vectors
-    double *h_temp_in = (double*)malloc(n * sizeof(double));
-    double *h_temp_out = (double*)malloc(n * sizeof(double));
+    double* h_temp_in = (double*)malloc(n * sizeof(double));
+    double* h_temp_out = (double*)malloc(n * sizeof(double));
 
     double kernel_time_spmv;
     CUDA_CHECK(cudaEventRecord(start_spmv));
@@ -293,7 +290,8 @@ int cg_solve(SpmvOperator* spmv_op,
         double rel_residual = residual_norm / b_norm;
 
         if (config.verbose >= 2) {
-            printf("[CG] Iter %3d: residual = %e (rel = %e)\n", iter + 1, residual_norm, rel_residual);
+            printf("[CG] Iter %3d: residual = %e (rel = %e)\n", iter + 1, residual_norm,
+                   rel_residual);
         }
 
         // Check convergence
@@ -413,7 +411,8 @@ __global__ void final_sum_kernel(const double* block_results, int num_blocks, do
 /**
  * @brief GPU-side scalar division: result = numerator / denominator
  */
-__global__ void scalar_divide_kernel(const double* numerator, const double* denominator, double* result) {
+__global__ void scalar_divide_kernel(const double* numerator, const double* denominator,
+                                     double* result) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *result = (*numerator) / (*denominator);
     }
@@ -423,7 +422,7 @@ __global__ void scalar_divide_kernel(const double* numerator, const double* deno
  * @brief GPU-side convergence check: converged = (sqrt(rr_new) / b_norm) < tolerance
  */
 __global__ void check_convergence_kernel(const double* rr_new, double b_norm, double tolerance,
-                                          int* converged, double* residual_norm) {
+                                         int* converged, double* residual_norm) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *residual_norm = sqrt(*rr_new);
         double rel_residual = (*residual_norm) / b_norm;
@@ -434,16 +433,13 @@ __global__ void check_convergence_kernel(const double* rr_new, double b_norm, do
 /**
  * @brief CG solver device-native implementation (zero host transfers)
  */
-int cg_solve_device(SpmvOperator* spmv_op,
-                    MatrixData* mat,
-                    const double* b,
-                    double* x,
-                    CGConfig config,
-                    CGStats* stats) {
+int cg_solve_device(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                    CGConfig config, CGStats* stats) {
 
     // Verify device-native support
     if (!spmv_op->run_device) {
-        fprintf(stderr, "[ERROR] Operator '%s' does not support device-native interface\n", spmv_op->name);
+        fprintf(stderr, "[ERROR] Operator '%s' does not support device-native interface\n",
+                spmv_op->name);
         return 1;
     }
 
@@ -455,9 +451,9 @@ int cg_solve_device(SpmvOperator* spmv_op,
 
     // Allocate device vectors
     double *d_x, *d_b, *d_r, *d_p, *d_Ap, *d_block_results;
-    double *d_rr_old, *d_rr_new, *d_pAp;  // Device scalars for dot products
+    double *d_rr_old, *d_rr_new, *d_pAp;         // Device scalars for dot products
     double *d_alpha, *d_beta, *d_residual_norm;  // Device scalars for CG coefficients
-    int *d_converged;  // Device convergence flag
+    int* d_converged;                            // Device convergence flag
 
     CUDA_CHECK(cudaMalloc(&d_x, n * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_b, n * sizeof(double)));
@@ -595,7 +591,8 @@ int cg_solve_device(SpmvOperator* spmv_op,
         }
 
         // Check convergence on GPU
-        check_convergence_kernel<<<1, 1>>>(d_rr_new, b_norm, config.tolerance, d_converged, d_residual_norm);
+        check_convergence_kernel<<<1, 1>>>(d_rr_new, b_norm, config.tolerance, d_converged,
+                                           d_residual_norm);
 
         // Poll convergence flag (async, non-blocking check)
         int h_converged;
@@ -604,9 +601,11 @@ int cg_solve_device(SpmvOperator* spmv_op,
         if (config.verbose >= 2) {
             // For verbose output, transfer residual norm
             double h_residual_norm;
-            CUDA_CHECK(cudaMemcpy(&h_residual_norm, d_residual_norm, sizeof(double), cudaMemcpyDeviceToHost));
+            CUDA_CHECK(cudaMemcpy(&h_residual_norm, d_residual_norm, sizeof(double),
+                                  cudaMemcpyDeviceToHost));
             double rel_residual = h_residual_norm / b_norm;
-            printf("[CG-DEVICE] Iter %3d: residual = %e (rel = %e)\n", iter + 1, h_residual_norm, rel_residual);
+            printf("[CG-DEVICE] Iter %3d: residual = %e (rel = %e)\n", iter + 1, h_residual_norm,
+                   rel_residual);
             final_residual_norm = h_residual_norm;
         }
 
@@ -614,7 +613,8 @@ int cg_solve_device(SpmvOperator* spmv_op,
         if (h_converged) {
             // Transfer final residual for stats
             if (config.verbose < 2) {
-                CUDA_CHECK(cudaMemcpy(&final_residual_norm, d_residual_norm, sizeof(double), cudaMemcpyDeviceToHost));
+                CUDA_CHECK(cudaMemcpy(&final_residual_norm, d_residual_norm, sizeof(double),
+                                      cudaMemcpyDeviceToHost));
             }
             iter++;
             break;

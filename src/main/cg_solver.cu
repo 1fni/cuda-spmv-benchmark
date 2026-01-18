@@ -22,16 +22,24 @@
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--mode=<modes>] [--host] [--tol=<tol>] [--maxiter=<n>] [--timers] [--json=<file>] [--csv=<file>]\n", argv[0]);
-        printf("Example: %s matrix/stencil_512x512.mtx --mode=cusparse-csr,stencil5-csr --json=results/cg.json\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--mode=<modes>] [--host] [--tol=<tol>] [--maxiter=<n>] "
+               "[--timers] [--json=<file>] [--csv=<file>]\n",
+               argv[0]);
+        printf("Example: %s matrix/stencil_512x512.mtx --mode=cusparse-csr,stencil5-csr "
+               "--json=results/cg.json\n",
+               argv[0]);
         printf("\nOptions:\n");
-        printf("  --mode=<modes>         SpMV operators, comma-separated (default: stencil5-csr)\n");
+        printf(
+            "  --mode=<modes>         SpMV operators, comma-separated (default: stencil5-csr)\n");
         printf("  --host                 Use host interface (default: device-native GPU)\n");
         printf("  --tol=<tol>            Convergence tolerance (default: 1e-6)\n");
         printf("  --maxiter=<n>          Maximum iterations (default: 1000)\n");
-        printf("  --timers               Enable detailed per-category timing (adds sync overhead)\n");
-        printf("  --json=<file>          Export results to JSON (one file per mode: <file>_<mode>.json)\n");
-        printf("  --csv=<file>           Export results to CSV (append all modes to single file)\n");
+        printf(
+            "  --timers               Enable detailed per-category timing (adds sync overhead)\n");
+        printf("  --json=<file>          Export results to JSON (one file per mode: "
+               "<file>_<mode>.json)\n");
+        printf(
+            "  --csv=<file>           Export results to CSV (append all modes to single file)\n");
         return 1;
     }
 
@@ -90,7 +98,8 @@ int main(int argc, char** argv) {
             return 1;
         }
         if (use_device && !op->run_device) {
-            fprintf(stderr, "Error: mode '%s' does not support device-native interface\n", mode_tokens[i]);
+            fprintf(stderr, "Error: mode '%s' does not support device-native interface\n",
+                    mode_tokens[i]);
             return 1;
         }
     }
@@ -106,7 +115,8 @@ int main(int argc, char** argv) {
 
     // Multi-mode warning
     if (num_modes > 1) {
-        printf("\nNOTE: Multi-mode benchmark - performance may vary with order due to GPU state.\n");
+        printf(
+            "\nNOTE: Multi-mode benchmark - performance may vary with order due to GPU state.\n");
         printf("      For accurate comparison, run each mode separately.\n");
     }
 
@@ -170,8 +180,8 @@ int main(int argc, char** argv) {
             bench_stats.outliers_removed = 0;
         }
 
-        printf("Completed: %d valid runs, %d outliers removed\n",
-               bench_stats.valid_runs, bench_stats.outliers_removed);
+        printf("Completed: %d valid runs, %d outliers removed\n", bench_stats.valid_runs,
+               bench_stats.outliers_removed);
 
         // Verify solution
         double error = 0.0;
@@ -183,15 +193,15 @@ int main(int argc, char** argv) {
 
         // Summary for this mode
         printf("\n--- Results for %s ---\n", current_mode);
-        printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO", stats.iterations);
+        printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO",
+               stats.iterations);
         printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
-               bench_stats.median_ms,
-               100.0 * stats.time_spmv_ms / stats.time_total_ms,
+               bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
                100.0 * stats.time_blas1_ms / stats.time_total_ms,
                100.0 * stats.time_reductions_ms / stats.time_total_ms);
         if (bench_stats.valid_runs > 1) {
-            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
-                   bench_stats.min_ms, bench_stats.max_ms, bench_stats.std_dev_ms);
+            printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", bench_stats.min_ms,
+                   bench_stats.max_ms, bench_stats.std_dev_ms);
         }
         printf("Solution error (RMS): %e\n", error);
         printf("GFLOPS (SpMV): %.3f\n",

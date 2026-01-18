@@ -37,16 +37,12 @@
  * @brief Simple CSR SpMV kernel (non-optimized, standard)
  * @details One thread per row, standard CSR traversal
  */
-__global__ void csr_spmv_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x,
-    double* __restrict__ y,
-    int num_rows
-) {
+__global__ void csr_spmv_kernel(const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+                                const double* __restrict__ values, const double* __restrict__ x,
+                                double* __restrict__ y, int num_rows) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row >= num_rows) return;
+    if (row >= num_rows)
+        return;
 
     double sum = 0.0;
     int row_start = row_ptr[row];
@@ -63,35 +59,27 @@ __global__ void csr_spmv_kernel(
  * @brief Shared kernel - implementation in src/spmv/spmv_stencil_partitioned_halo_kernel.cu
  */
 extern __global__ void stencil5_csr_partitioned_halo_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x_local,
-    const double* __restrict__ x_halo_prev,
-    const double* __restrict__ x_halo_next,
-    double* __restrict__ y,
-    int n_local,
-    int row_offset,
-    int N,
-    int grid_size
-);
+    const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+    const double* __restrict__ values, const double* __restrict__ x_local,
+    const double* __restrict__ x_halo_prev, const double* __restrict__ x_halo_next,
+    double* __restrict__ y, int n_local, int row_offset, int N, int grid_size);
 
 /**
  * @brief Original SpMV kernel using global vector (for compatibility)
  */
-__global__ void stencil5_csr_direct_partitioned_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x,        // Global vector (full N)
-    double* __restrict__ y,              // Local output (n_local)
-    int n_local,                         // Number of local rows
-    int row_offset,                      // Global row offset
-    int N,                               // Global size
-    int grid_size
-) {
+__global__ void
+stencil5_csr_direct_partitioned_kernel(const int* __restrict__ row_ptr,
+                                       const int* __restrict__ col_idx,
+                                       const double* __restrict__ values,
+                                       const double* __restrict__ x,  // Global vector (full N)
+                                       double* __restrict__ y,        // Local output (n_local)
+                                       int n_local,                   // Number of local rows
+                                       int row_offset,                // Global row offset
+                                       int N,                         // Global size
+                                       int grid_size) {
     int local_row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (local_row >= n_local) return;
+    if (local_row >= n_local)
+        return;
 
     int row = row_offset + local_row;  // Global row for geometry
     int i = row / grid_size;
@@ -115,14 +103,14 @@ __global__ void stencil5_csr_direct_partitioned_kernel(
         // Optimized memory access: W-C-E (stride 1), then N-S (stride grid_size)
         // CSR sorted order: [North, West, Center, East, South]
         sum = values[row_start + 1] * x[idx_west]      // West
-            + values[row_start + 2] * x[idx_center]    // Center
-            + values[row_start + 3] * x[idx_east]      // East
-            + values[row_start + 0] * x[idx_north]     // North
-            + values[row_start + 4] * x[idx_south];    // South
+              + values[row_start + 2] * x[idx_center]  // Center
+              + values[row_start + 3] * x[idx_east]    // East
+              + values[row_start + 0] * x[idx_north]   // North
+              + values[row_start + 4] * x[idx_south];  // South
     }
     // Boundary/corner: standard CSR traversal
     else {
-        #pragma unroll 8
+#pragma unroll 8
         for (int k = row_start; k < row_end; k++) {
             sum += values[k] * x[col_idx[k]];
         }
@@ -154,7 +142,8 @@ __global__ void axpby_kernel(double alpha, const double* x, double beta, double*
 /**
  * @brief Compute local dot product using cuBLAS
  */
-static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x, const double* d_y, int n) {
+static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x, const double* d_y,
+                                int n) {
     double result;
     cublasStatus_t status = cublasDdot(cublas_handle, n, d_x, 1, d_y, 1, &result);
     if (status != CUBLAS_STATUS_SUCCESS) {
@@ -181,33 +170,28 @@ static double compute_local_dot(cublasHandle_t cublas_handle, const double* d_x,
  *
  * Total communication: 2 × grid_size × 8 bytes = 160 KB (vs 800 MB AllGather)
  */
-static void exchange_halo_mpi(
-    const double* d_local_send_prev,    // Data to send to prev rank (or NULL)
-    const double* d_local_send_next,    // Data to send to next rank (or NULL)
-    double* d_halo_recv_prev,           // Buffer to receive from prev rank (or NULL)
-    double* d_halo_recv_next,           // Buffer to receive from next rank (or NULL)
-    double* h_send_prev,                // Host pinned buffer for send to prev
-    double* h_send_next,                // Host pinned buffer for send to next
-    double* h_recv_prev,                // Host pinned buffer for recv from prev
-    double* h_recv_next,                // Host pinned buffer for recv from next
-    int halo_size,                      // Number of elements per halo (grid_size)
-    int rank,
-    int world_size,
-    cudaStream_t stream
-) {
+static void
+exchange_halo_mpi(const double* d_local_send_prev,  // Data to send to prev rank (or NULL)
+                  const double* d_local_send_next,  // Data to send to next rank (or NULL)
+                  double* d_halo_recv_prev,         // Buffer to receive from prev rank (or NULL)
+                  double* d_halo_recv_next,         // Buffer to receive from next rank (or NULL)
+                  double* h_send_prev,              // Host pinned buffer for send to prev
+                  double* h_send_next,              // Host pinned buffer for send to next
+                  double* h_recv_prev,              // Host pinned buffer for recv from prev
+                  double* h_recv_next,              // Host pinned buffer for recv from next
+                  int halo_size,                    // Number of elements per halo (grid_size)
+                  int rank, int world_size, cudaStream_t stream) {
     MPI_Request requests[4];
     int req_count = 0;
 
     // Step 1: Copy device send buffers to host asynchronously
     if (rank > 0 && d_local_send_prev != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(h_send_prev, d_local_send_prev,
-                                    halo_size * sizeof(double),
-                                    cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaMemcpyAsync(h_send_prev, d_local_send_prev, halo_size * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream));
     }
     if (rank < world_size - 1 && d_local_send_next != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(h_send_next, d_local_send_next,
-                                    halo_size * sizeof(double),
-                                    cudaMemcpyDeviceToHost, stream));
+        CUDA_CHECK(cudaMemcpyAsync(h_send_next, d_local_send_next, halo_size * sizeof(double),
+                                   cudaMemcpyDeviceToHost, stream));
     }
 
     // Wait for D2H copies to complete before MPI can access host buffers
@@ -215,12 +199,16 @@ static void exchange_halo_mpi(
 
     // Step 2: Launch all MPI_Isend/Irecv operations
     if (rank > 0) {
-        MPI_Isend(h_send_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
-        MPI_Irecv(h_recv_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Isend(h_send_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD,
+                  &requests[req_count++]);
+        MPI_Irecv(h_recv_prev, halo_size, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD,
+                  &requests[req_count++]);
     }
     if (rank < world_size - 1) {
-        MPI_Isend(h_send_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
-        MPI_Irecv(h_recv_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[req_count++]);
+        MPI_Isend(h_send_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD,
+                  &requests[req_count++]);
+        MPI_Irecv(h_recv_next, halo_size, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD,
+                  &requests[req_count++]);
     }
 
     // Step 3: Wait for all MPI operations to complete
@@ -230,14 +218,12 @@ static void exchange_halo_mpi(
 
     // Step 4: Copy host recv buffers to device halo zones asynchronously
     if (rank > 0 && d_halo_recv_prev != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_prev, h_recv_prev,
-                                    halo_size * sizeof(double),
-                                    cudaMemcpyHostToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_prev, h_recv_prev, halo_size * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream));
     }
     if (rank < world_size - 1 && d_halo_recv_next != NULL) {
-        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_next, h_recv_next,
-                                    halo_size * sizeof(double),
-                                    cudaMemcpyHostToDevice, stream));
+        CUDA_CHECK(cudaMemcpyAsync(d_halo_recv_next, h_recv_next, halo_size * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream));
     }
 
     // Step 5: Ensure H2D copies complete before kernel uses halo data
@@ -247,12 +233,8 @@ static void exchange_halo_mpi(
 /**
  * @brief Multi-GPU CG solver with CSR partitioning
  */
-int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
-                               MatrixData* mat,
-                               const double* b,
-                               double* x,
-                               CGConfigMultiGPU config,
-                               CGStatsMultiGPU* stats) {
+int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                              CGConfigMultiGPU config, CGStatsMultiGPU* stats) {
 
     // MPI initialization
     int rank, world_size;
@@ -291,7 +273,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         CUDA_CHECK(cudaGetDeviceProperties(&prop, rank));
         snprintf(gpu_name, sizeof(gpu_name), "%s", prop.name);
         printf("[Rank %d] GPU %d: %s (CC %d.%d)\n", rank, rank, gpu_name, prop.major, prop.minor);
-        printf("[Rank %d] Rows: [%d:%d) (%d rows)\n", rank, row_offset, row_offset + n_local, n_local);
+        printf("[Rank %d] Rows: [%d:%d) (%d rows)\n", rank, row_offset, row_offset + n_local,
+               n_local);
     }
 
     // Note: Using MPI with explicit staging (no NCCL required)
@@ -324,7 +307,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
     // Allocate local CSR on device
     int *d_row_ptr, *d_col_idx;
-    double *d_values;
+    double* d_values;
 
     CUDA_CHECK(cudaMalloc(&d_row_ptr, (n_local + 1) * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&d_col_idx, local_nnz * sizeof(int)));
@@ -338,15 +321,17 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         local_row_ptr[i] = csr_mat.row_ptr[row_offset + i] - offset;
     }
 
-    CUDA_CHECK(cudaMemcpy(d_row_ptr, local_row_ptr, (n_local + 1) * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_col_idx, &csr_mat.col_indices[offset], local_nnz * sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_values, &csr_mat.values[offset], local_nnz * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(
+        cudaMemcpy(d_row_ptr, local_row_ptr, (n_local + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_col_idx, &csr_mat.col_indices[offset], local_nnz * sizeof(int),
+                          cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_values, &csr_mat.values[offset], local_nnz * sizeof(double),
+                          cudaMemcpyHostToDevice));
 
     free(local_row_ptr);
 
     if (config.verbose >= 1) {
-        printf("[Rank %d] Local CSR: %d rows, %d nnz (%.2f MB)\n",
-               rank, n_local, local_nnz,
+        printf("[Rank %d] Local CSR: %d rows, %d nnz (%.2f MB)\n", rank, n_local, local_nnz,
                (n_local * sizeof(int) + local_nnz * (sizeof(int) + sizeof(double))) / 1e6);
     }
 
@@ -384,10 +369,12 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.verbose >= 1) {
         size_t local_mem = n_local * 5 * sizeof(double);  // x, r, p, Ap, b
         size_t halo_mem = 0;
-        if (rank > 0) halo_mem += grid_size * 2 * sizeof(double);  // p_prev, r_prev
-        if (rank < world_size - 1) halo_mem += grid_size * 2 * sizeof(double);  // p_next, r_next
-        printf("[Rank %d] Vector memory: %.2f MB (local) + %.2f KB (halo)\n",
-               rank, local_mem / 1e6, halo_mem / 1e3);
+        if (rank > 0)
+            halo_mem += grid_size * 2 * sizeof(double);  // p_prev, r_prev
+        if (rank < world_size - 1)
+            halo_mem += grid_size * 2 * sizeof(double);  // p_next, r_next
+        printf("[Rank %d] Vector memory: %.2f MB (local) + %.2f KB (halo)\n", rank, local_mem / 1e6,
+               halo_mem / 1e3);
     }
 
     // Allocate pinned host buffers for MPI staging (D2H, H2D)
@@ -409,7 +396,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
     // Initialize vectors (local partition only)
     CUDA_CHECK(cudaMemcpy(d_b, &b[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
+    CUDA_CHECK(
+        cudaMemcpy(d_x_local, &x[row_offset], n_local * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_r_local, 0, n_local * sizeof(double)));
     CUDA_CHECK(cudaMemset(d_p_local, 0, n_local * sizeof(double)));
 
@@ -459,15 +447,13 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         d_x_halo_next = NULL;
     }
 
-    exchange_halo_mpi(
-        d_x_local,                                   // First row to send to prev
-        d_x_local + (n_local - grid_size),           // Last row to send to next
-        d_x_halo_prev,                               // Receive from prev
-        d_x_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
-    );
+    exchange_halo_mpi(d_x_local,                          // First row to send to prev
+                      d_x_local + (n_local - grid_size),  // Last row to send to next
+                      d_x_halo_prev,                      // Receive from prev
+                      d_x_halo_next,                      // Receive from next
+                      h_send_prev, h_send_next,           // Host send buffers
+                      h_recv_prev, h_recv_next,           // Host recv buffers
+                      grid_size, rank, world_size, stream);
 
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
@@ -479,9 +465,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
     // Initial SpMV: Ap = A*x (using x0 with halo)
     stencil5_csr_partitioned_halo_kernel<<<blocks_local, threads, 0, stream>>>(
-        d_row_ptr, d_col_idx, d_values,
-        d_x_local, d_x_halo_prev, d_x_halo_next,
-        d_Ap, n_local, row_offset, n, grid_size);
+        d_row_ptr, d_col_idx, d_values, d_x_local, d_x_halo_prev, d_x_halo_next, d_Ap, n_local,
+        row_offset, n, grid_size);
 
     // r_local = b - Ap
     if (config.enable_detailed_timers) {
@@ -501,15 +486,13 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_start, stream));
     }
-    exchange_halo_mpi(
-        d_r_local,                                   // First row to prev
-        d_r_local + (n_local - grid_size),           // Last row to next
-        d_r_halo_prev,                               // Receive from prev
-        d_r_halo_next,                               // Receive from next
-        h_send_prev, h_send_next,                    // Host send buffers
-        h_recv_prev, h_recv_next,                    // Host recv buffers
-        grid_size, rank, world_size, stream
-    );
+    exchange_halo_mpi(d_r_local,                          // First row to prev
+                      d_r_local + (n_local - grid_size),  // Last row to next
+                      d_r_halo_prev,                      // Receive from prev
+                      d_r_halo_next,                      // Receive from next
+                      h_send_prev, h_send_next,           // Host send buffers
+                      h_recv_prev, h_recv_next,           // Host recv buffers
+                      grid_size, rank, world_size, stream);
     if (config.enable_detailed_timers) {
         CUDA_CHECK(cudaEventRecord(timer_stop, stream));
         CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -519,14 +502,17 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     }
 
     // p_local = r_local (local copy)
-    CUDA_CHECK(cudaMemcpy(d_p_local, d_r_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
+    CUDA_CHECK(
+        cudaMemcpy(d_p_local, d_r_local, n_local * sizeof(double), cudaMemcpyDeviceToDevice));
 
     // Copy r halo to p halo
     if (rank > 0) {
-        CUDA_CHECK(cudaMemcpy(d_p_halo_prev, d_r_halo_prev, grid_size * sizeof(double), cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpy(d_p_halo_prev, d_r_halo_prev, grid_size * sizeof(double),
+                              cudaMemcpyDeviceToDevice));
     }
     if (rank < world_size - 1) {
-        CUDA_CHECK(cudaMemcpy(d_p_halo_next, d_r_halo_next, grid_size * sizeof(double), cudaMemcpyDeviceToDevice));
+        CUDA_CHECK(cudaMemcpy(d_p_halo_next, d_r_halo_next, grid_size * sizeof(double),
+                              cudaMemcpyDeviceToDevice));
     }
 
     // rs_old = r^T * r (local dot product + AllReduce)
@@ -559,9 +545,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
         stencil5_csr_partitioned_halo_kernel<<<blocks_local, threads, 0, stream>>>(
-            d_row_ptr, d_col_idx, d_values,
-            d_p_local, d_p_halo_prev, d_p_halo_next,
-            d_Ap, n_local, row_offset, n, grid_size);
+            d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next, d_Ap, n_local,
+            row_offset, n, grid_size);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -663,16 +648,15 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         double rel_residual = residual_norm / b_norm;
 
         if (rank == 0 && config.verbose >= 2) {
-            printf("[Iter %3d] Residual: %.6e (rel: %.6e, alpha: %.4e)\n",
-                   iter + 1, residual_norm, rel_residual, alpha);
+            printf("[Iter %3d] Residual: %.6e (rel: %.6e, alpha: %.4e)\n", iter + 1, residual_norm,
+                   rel_residual, alpha);
         }
 
         // Check convergence
         if (rel_residual < config.tolerance) {
             iter++;
             if (rank == 0 && config.verbose >= 1) {
-                printf("\nConverged in %d iterations (residual: %.6e)\n",
-                       iter, residual_norm);
+                printf("\nConverged in %d iterations (residual: %.6e)\n", iter, residual_norm);
             }
 
             stats->converged = 1;
@@ -688,7 +672,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r_local, beta, d_p_local, n_local);
+        axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r_local, beta, d_p_local,
+                                                           n_local);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -703,15 +688,13 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        exchange_halo_mpi(
-            d_p_local,                                   // First row to prev
-            d_p_local + (n_local - grid_size),           // Last row to next
-            d_p_halo_prev,                               // Receive from prev
-            d_p_halo_next,                               // Receive from next
-            h_send_prev, h_send_next,                    // Host send buffers
-            h_recv_prev, h_recv_next,                    // Host recv buffers
-            grid_size, rank, world_size, stream
-        );
+        exchange_halo_mpi(d_p_local,                          // First row to prev
+                          d_p_local + (n_local - grid_size),  // Last row to next
+                          d_p_halo_prev,                      // Receive from prev
+                          d_p_halo_next,                      // Receive from next
+                          h_send_prev, h_send_next,           // Host send buffers
+                          h_recv_prev, h_recv_next,           // Host recv buffers
+                          grid_size, rank, world_size, stream);
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
@@ -782,11 +765,16 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
 
             if (config.verbose >= 1 && config.enable_detailed_timers) {
                 printf("\nDetailed Timing Breakdown:\n");
-                printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / stats->time_total_ms);
-                printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / stats->time_total_ms);
-                printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / stats->time_total_ms);
-                printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / stats->time_total_ms);
-                printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / stats->time_total_ms);
+                printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms,
+                       100.0 * stats->time_spmv_ms / stats->time_total_ms);
+                printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms,
+                       100.0 * stats->time_blas1_ms / stats->time_total_ms);
+                printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms,
+                       100.0 * stats->time_reductions_ms / stats->time_total_ms);
+                printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms,
+                       100.0 * stats->time_allreduce_ms / stats->time_total_ms);
+                printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms,
+                       100.0 * stats->time_allgather_ms / stats->time_total_ms);
 
                 printf("\nGranular BLAS1 Breakdown (per-iteration avg):\n");
                 printf("  Initial r=b-Ax0:  %.3f ms\n", stats->time_initial_r_ms);
@@ -805,11 +793,16 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
         printf("Total time: %.2f ms\n", stats->time_total_ms);
         if (config.enable_detailed_timers) {
             printf("\nDetailed Timing Breakdown:\n");
-            printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms, 100.0 * stats->time_spmv_ms / time_ms);
-            printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms, 100.0 * stats->time_blas1_ms / time_ms);
-            printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms, 100.0 * stats->time_reductions_ms / time_ms);
-            printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms, 100.0 * stats->time_allreduce_ms / time_ms);
-            printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms, 100.0 * stats->time_allgather_ms / time_ms);
+            printf("  SpMV:       %.2f ms (%.1f%%)\n", stats->time_spmv_ms,
+                   100.0 * stats->time_spmv_ms / time_ms);
+            printf("  BLAS1:      %.2f ms (%.1f%%)\n", stats->time_blas1_ms,
+                   100.0 * stats->time_blas1_ms / time_ms);
+            printf("  Reductions: %.2f ms (%.1f%%)\n", stats->time_reductions_ms,
+                   100.0 * stats->time_reductions_ms / time_ms);
+            printf("  AllReduce:  %.2f ms (%.1f%%)\n", stats->time_allreduce_ms,
+                   100.0 * stats->time_allreduce_ms / time_ms);
+            printf("  Halo P2P:   %.2f ms (%.1f%%) [was AllGather]\n", stats->time_allgather_ms,
+                   100.0 * stats->time_allgather_ms / time_ms);
 
             printf("\nGranular BLAS1 Breakdown (per-iteration avg):\n");
             printf("  Initial r=b-Ax0:  %.3f ms\n", stats->time_initial_r_ms);
@@ -826,7 +819,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     }
 
     // Copy result back (local partition only)
-    CUDA_CHECK(cudaMemcpy(&x[row_offset], d_x_local, n_local * sizeof(double), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(
+        cudaMemcpy(&x[row_offset], d_x_local, n_local * sizeof(double), cudaMemcpyDeviceToHost));
 
     // Gather full solution to rank 0
     MPI_Gather(&x[row_offset], n_local, MPI_DOUBLE, x, n_local, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -853,18 +847,28 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     cudaFree(d_values);
 
     // Cleanup halo buffers
-    if (d_x_halo_prev) cudaFree(d_x_halo_prev);
-    if (d_x_halo_next) cudaFree(d_x_halo_next);
-    if (d_p_halo_prev) cudaFree(d_p_halo_prev);
-    if (d_p_halo_next) cudaFree(d_p_halo_next);
-    if (d_r_halo_prev) cudaFree(d_r_halo_prev);
-    if (d_r_halo_next) cudaFree(d_r_halo_next);
+    if (d_x_halo_prev)
+        cudaFree(d_x_halo_prev);
+    if (d_x_halo_next)
+        cudaFree(d_x_halo_next);
+    if (d_p_halo_prev)
+        cudaFree(d_p_halo_prev);
+    if (d_p_halo_next)
+        cudaFree(d_p_halo_next);
+    if (d_r_halo_prev)
+        cudaFree(d_r_halo_prev);
+    if (d_r_halo_next)
+        cudaFree(d_r_halo_next);
 
     // Free host pinned buffers
-    if (h_send_prev) cudaFreeHost(h_send_prev);
-    if (h_send_next) cudaFreeHost(h_send_next);
-    if (h_recv_prev) cudaFreeHost(h_recv_prev);
-    if (h_recv_next) cudaFreeHost(h_recv_next);
+    if (h_send_prev)
+        cudaFreeHost(h_send_prev);
+    if (h_send_next)
+        cudaFreeHost(h_send_next);
+    if (h_recv_prev)
+        cudaFreeHost(h_recv_prev);
+    if (h_recv_next)
+        cudaFreeHost(h_recv_next);
 
     cublasDestroy(cublas_handle);
     cudaStreamDestroy(stream);

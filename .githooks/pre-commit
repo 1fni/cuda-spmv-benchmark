@@ -1,0 +1,42 @@
+#!/bin/bash
+# Pre-commit hook: check code formatting with clang-format
+# To bypass (not recommended): git commit --no-verify
+
+# Find staged C++/CUDA files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(cu|h|cpp|hpp)$')
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# Check if clang-format is available
+if command -v clang-format &> /dev/null; then
+    CLANG_FORMAT="clang-format"
+elif command -v clang-format-14 &> /dev/null; then
+    CLANG_FORMAT="clang-format-14"
+else
+    echo "Warning: clang-format not found, skipping format check"
+    exit 0
+fi
+
+# Check formatting
+FORMATTING_ISSUES=""
+for file in $STAGED_FILES; do
+    if [ -f "$file" ]; then
+        DIFF=$($CLANG_FORMAT --style=file "$file" | diff -u "$file" - 2>/dev/null)
+        if [ -n "$DIFF" ]; then
+            FORMATTING_ISSUES="$FORMATTING_ISSUES\n$file"
+        fi
+    fi
+done
+
+if [ -n "$FORMATTING_ISSUES" ]; then
+    echo "Formatting issues in:"
+    echo -e "$FORMATTING_ISSUES"
+    echo ""
+    echo "Run: find src include -name '*.cu' -o -name '*.h' | xargs clang-format -i"
+    echo "Or bypass with: git commit --no-verify"
+    exit 1
+fi
+
+exit 0

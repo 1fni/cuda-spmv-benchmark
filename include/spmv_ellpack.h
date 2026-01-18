@@ -25,14 +25,14 @@
  * @param indices Column indices for each element (row-major).
  * @param values Non-zero values stored in aligned fashion per row.
  */
-struct ELLPACKMatrix{
+struct ELLPACKMatrix {
     int nb_rows;
     int nb_cols;
     int ell_width;
-    int grid_size;      // n pour grille n×n (nouveau champ)
-    int *indices;
+    int grid_size;  // n pour grille n×n (nouveau champ)
+    int* indices;
     int nb_nonzeros;
-    double *values;
+    double* values;
 };
 
 /** @name ELLPACK Matrix Functions
@@ -47,8 +47,9 @@ struct ELLPACKMatrix{
  * @param max_width Pointer to store the computed maximum row width.
  * @return 0 on success, non-zero on failure.
  */
-int build_ellpack_from_csr_struct(const struct CSRMatrix* csr_matrix, ELLPACKMatrix* ellpack_matrix, int* max_width);
+int build_ellpack_from_csr_struct(const struct CSRMatrix* csr_matrix, ELLPACKMatrix* ellpack_matrix,
+                                  int* max_width);
 
 /** @} */
 
-#endif // SPMV_ELLPACK_H
+#endif  // SPMV_ELLPACK_H

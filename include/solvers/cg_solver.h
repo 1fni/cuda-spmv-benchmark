@@ -19,27 +19,27 @@
  * @brief CG solver configuration
  */
 typedef struct {
-    int max_iters;              ///< Maximum iterations
-    double tolerance;           ///< Convergence tolerance (relative residual)
-    int verbose;                ///< Print iteration info (0=silent, 1=summary, 2=per-iter)
-    int enable_detailed_timers; ///< Enable per-category timing (adds ~50-100ms sync overhead)
+    int max_iters;               ///< Maximum iterations
+    double tolerance;            ///< Convergence tolerance (relative residual)
+    int verbose;                 ///< Print iteration info (0=silent, 1=summary, 2=per-iter)
+    int enable_detailed_timers;  ///< Enable per-category timing (adds ~50-100ms sync overhead)
 } CGConfig;
 
 /**
  * @brief CG solver statistics and timing breakdown
  */
 typedef struct {
-    int iterations;           ///< Actual iterations performed
-    double residual_norm;     ///< Final residual norm
-    double time_total_ms;     ///< Total solve time
-    double time_spmv_ms;      ///< SpMV time (accumulated)
-    double time_blas1_ms;     ///< BLAS1 ops time (axpy, etc.)
-    double time_reductions_ms;///< Dot products and norms time
-    int converged;            ///< 1 if converged, 0 otherwise
+    int iterations;             ///< Actual iterations performed
+    double residual_norm;       ///< Final residual norm
+    double time_total_ms;       ///< Total solve time
+    double time_spmv_ms;        ///< SpMV time (accumulated)
+    double time_blas1_ms;       ///< BLAS1 ops time (axpy, etc.)
+    double time_reductions_ms;  ///< Dot products and norms time
+    int converged;              ///< 1 if converged, 0 otherwise
 
     // Solution validation
-    double solution_sum;      ///< Sum of solution vector elements
-    double solution_norm;     ///< L2 norm of solution vector
+    double solution_sum;   ///< Sum of solution vector elements
+    double solution_norm;  ///< L2 norm of solution vector
 } CGStats;
 
 /**
@@ -56,11 +56,7 @@ typedef struct {
  * @param stats Output statistics
  * @return 0 on success, non-zero on error
  */
-int cg_solve(SpmvOperator* spmv_op,
-             MatrixData* mat,
-             const double* b,
-             double* x,
-             CGConfig config,
+int cg_solve(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x, CGConfig config,
              CGStats* stats);
 
 /**
@@ -77,11 +73,7 @@ int cg_solve(SpmvOperator* spmv_op,
  * @param stats Output statistics
  * @return 0 on success, non-zero on error
  */
-int cg_solve_device(SpmvOperator* spmv_op,
-                    MatrixData* mat,
-                    const double* b,
-                    double* x,
-                    CGConfig config,
-                    CGStats* stats);
+int cg_solve_device(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                    CGConfig config, CGStats* stats);
 
-#endif // CG_SOLVER_H
+#endif  // CG_SOLVER_H

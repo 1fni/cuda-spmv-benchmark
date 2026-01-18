@@ -15,20 +15,13 @@
  * @details Uses direct column indices (no indirection) for interior stencil points
  */
 __global__ void stencil5_csr_partitioned_halo_kernel(
-    const int* __restrict__ row_ptr,
-    const int* __restrict__ col_idx,
-    const double* __restrict__ values,
-    const double* __restrict__ x_local,
-    const double* __restrict__ x_halo_prev,
-    const double* __restrict__ x_halo_next,
-    double* __restrict__ y,
-    int n_local,
-    int row_offset,
-    int N,
-    int grid_size
-) {
+    const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+    const double* __restrict__ values, const double* __restrict__ x_local,
+    const double* __restrict__ x_halo_prev, const double* __restrict__ x_halo_next,
+    double* __restrict__ y, int n_local, int row_offset, int N, int grid_size) {
     int local_row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (local_row >= n_local) return;
+    if (local_row >= n_local)
+        return;
 
     int row = row_offset + local_row;
     int i = row / grid_size;
@@ -67,18 +60,17 @@ __global__ void stencil5_csr_partitioned_halo_kernel(
         double val_south;
         if (idx_south >= row_offset && idx_south < row_offset + n_local) {
             val_south = x_local[idx_south - row_offset];
-        } else if (idx_south >= row_offset + n_local && idx_south < row_offset + n_local + grid_size) {
+        } else if (idx_south >= row_offset + n_local &&
+                   idx_south < row_offset + n_local + grid_size) {
             val_south = x_halo_next[idx_south - (row_offset + n_local)];
         } else {
             val_south = 0.0;
         }
 
         // Reorder operations to group contiguous memory accesses (W-C-E) before large-stride (N-S)
-        sum = values[row_start + 1] * val_west
-            + values[row_start + 2] * val_center
-            + values[row_start + 3] * val_east
-            + values[row_start + 0] * val_north
-            + values[row_start + 4] * val_south;
+        sum = values[row_start + 1] * val_west + values[row_start + 2] * val_center +
+              values[row_start + 3] * val_east + values[row_start + 0] * val_north +
+              values[row_start + 4] * val_south;
     }
     // Boundary: CSR traversal with halo mapping
     else {
@@ -88,9 +80,11 @@ __global__ void stencil5_csr_partitioned_halo_kernel(
 
             if (global_col >= row_offset && global_col < row_offset + n_local) {
                 val = x_local[global_col - row_offset];
-            } else if (x_halo_prev != NULL && global_col >= row_offset - grid_size && global_col < row_offset) {
+            } else if (x_halo_prev != NULL && global_col >= row_offset - grid_size &&
+                       global_col < row_offset) {
                 val = x_halo_prev[global_col - (row_offset - grid_size)];
-            } else if (x_halo_next != NULL && global_col >= row_offset + n_local && global_col < row_offset + n_local + grid_size) {
+            } else if (x_halo_next != NULL && global_col >= row_offset + n_local &&
+                       global_col < row_offset + n_local + grid_size) {
                 val = x_halo_next[global_col - (row_offset + n_local)];
             } else {
                 val = 0.0;

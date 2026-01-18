@@ -51,11 +51,11 @@ typedef struct {
  * @brief Stores the raw matrix read from a Matrix Market file.
  */
 typedef struct MatrixData {
-    int rows;       ///< Number of rows in the matrix
-    int cols;       ///< Number of columns in the matrix
-    int nnz;        ///< Number of non-zero elements
-    int grid_size;  ///< Original grid size n for n×n stencil (-1 if not stencil)
-    Entry* entries; ///< Dynamic array of non-zero entries
+    int rows;        ///< Number of rows in the matrix
+    int cols;        ///< Number of columns in the matrix
+    int nnz;         ///< Number of non-zero elements
+    int grid_size;   ///< Original grid size n for n×n stencil (-1 if not stencil)
+    Entry* entries;  ///< Dynamic array of non-zero entries
 } MatrixData;
 
 /* Forward declarations for structures from other headers */
@@ -86,8 +86,7 @@ int read_matrix_type(const char* filename);
  * @param csr_colind Output CSR column indices
  * @param csr_val Output CSR values
  */
-void read_matrix_general(MatrixData* mat, const char* filename,
-                         int* rows, int* cols, int* nnz,
+void read_matrix_general(MatrixData* mat, const char* filename, int* rows, int* cols, int* nnz,
                          int** csr_rowptr, int** csr_colind, double** csr_val);
 
 /**
@@ -103,10 +102,8 @@ void read_matrix_general(MatrixData* mat, const char* filename,
  * @param csr_val Output CSR values
  * @param nnz_general Pointer to store expanded nnz count
  */
-void read_matrix_symtogen(MatrixData* mat, const char* filename,
-                           int* rows, int* cols, int* nnz,
-                           int** csr_rowptr, int** csr_colind, double** csr_val,
-                           int* nnz_general);
+void read_matrix_symtogen(MatrixData* mat, const char* filename, int* rows, int* cols, int* nnz,
+                          int** csr_rowptr, int** csr_colind, double** csr_val, int* nnz_general);
 
 /**
  * @brief Load a Matrix Market file into a MatrixData structure.
@@ -125,7 +122,7 @@ int load_matrix_market(const char* filename, MatrixData* mat);
  * @param max_width Pointer to store the maximum row width
  */
 void convert_csr_to_ellpack(const struct CSRMatrix* csr_matrix,
-                             struct ELLPACKMatrix* ellpack_matrix, int* max_width);
+                            struct ELLPACKMatrix* ellpack_matrix, int* max_width);
 
 /**
  * @brief Generate and write a 5-point stencil matrix in Matrix Market format.
@@ -140,4 +137,4 @@ int write_matrix_market_stencil5(int n, const char* filename);
 }
 #endif
 
-#endif // SPMV_IO_H
+#endif  // SPMV_IO_H

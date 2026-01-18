@@ -25,7 +25,7 @@
  * @param col_indices Array of column indices corresponding to non-zero values.
  * @param values Array of non-zero values.
  */
-struct CSRMatrix{
+struct CSRMatrix {
     int nb_rows;
     int nb_cols;
     int nb_nonzeros;
@@ -48,4 +48,4 @@ int build_csr_struct(struct MatrixData* mat);
 
 /** @} */
 
-#endif // SPMV_CSR_H
+#endif  // SPMV_CSR_H

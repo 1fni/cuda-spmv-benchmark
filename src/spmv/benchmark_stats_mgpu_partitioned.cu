@@ -16,9 +16,9 @@ static int compare_doubles(const void* a, const void* b) {
 static double calculate_median(double* times, int count) {
     qsort(times, count, sizeof(double), compare_doubles);
     if (count % 2 == 0) {
-        return (times[count/2 - 1] + times[count/2]) / 2.0;
+        return (times[count / 2 - 1] + times[count / 2]) / 2.0;
     }
-    return times[count/2];
+    return times[count / 2];
 }
 
 static double calculate_mean(double* times, int count) {
@@ -39,18 +39,14 @@ static double calculate_std_dev(double* times, int count, double mean) {
 }
 
 // CG multi-GPU partitioned benchmark with statistics
-int cg_benchmark_with_stats_mgpu_partitioned(
-    SpmvOperator* spmv_op,
-    MatrixData* mat,
-    double* b,
-    double* x,
-    CGConfigMultiGPU config,
-    int num_runs,
-    BenchmarkStats* bench_stats,
-    CGStatsMultiGPU* final_stats) {
+int cg_benchmark_with_stats_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, double* b,
+                                             double* x, CGConfigMultiGPU config, int num_runs,
+                                             BenchmarkStats* bench_stats,
+                                             CGStatsMultiGPU* final_stats) {
 
     double* times = (double*)malloc(num_runs * sizeof(double));
-    if (!times) return -1;
+    if (!times)
+        return -1;
 
     // Store all stats to pick median run later
     CGStatsMultiGPU* all_stats = (CGStatsMultiGPU*)malloc(num_runs * sizeof(CGStatsMultiGPU));
@@ -112,7 +108,8 @@ int cg_benchmark_with_stats_mgpu_partitioned(
     }
 
     bench_stats->mean_ms = calculate_mean(filtered_times, filtered_count);
-    bench_stats->std_dev_ms = calculate_std_dev(filtered_times, filtered_count, bench_stats->mean_ms);
+    bench_stats->std_dev_ms =
+        calculate_std_dev(filtered_times, filtered_count, bench_stats->mean_ms);
     bench_stats->median_ms = calculate_median(filtered_times, filtered_count);
     bench_stats->min_ms = filtered_times[0];
     bench_stats->max_ms = filtered_times[filtered_count - 1];
@@ -130,4 +127,4 @@ int cg_benchmark_with_stats_mgpu_partitioned(
     return 0;
 }
 
-} // extern "C"
+}  // extern "C"

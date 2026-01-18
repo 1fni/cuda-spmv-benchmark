@@ -47,11 +47,7 @@
  * @param stats Output statistics
  * @return 0 on success
  */
-int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
-                               MatrixData* mat,
-                               const double* b,
-                               double* x,
-                               CGConfigMultiGPU config,
-                               CGStatsMultiGPU* stats);
+int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                              CGConfigMultiGPU config, CGStatsMultiGPU* stats);
 
-#endif // CG_SOLVER_MGPU_PARTITIONED_H
+#endif  // CG_SOLVER_MGPU_PARTITIONED_H

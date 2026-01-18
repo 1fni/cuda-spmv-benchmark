@@ -21,12 +21,12 @@ extern "C" {
 
 /**
  * @brief Optimized CUDA kernel for 5-point stencil SpMV using ELLPACK format.
- * 
+ *
  * @details
  * Kernel optimized for 5-point stencil patterns with separate handling for:
  * - Interior points: direct indexing for optimal performance
  * - Boundary points: general ELLPACK processing with boundary conditions
- * 
+ *
  * @param values ELLPACK matrix values array
  * @param col_indices ELLPACK column indices array
  * @param x Input vector
@@ -37,20 +37,12 @@ extern "C" {
  * @param beta Scalar multiplier for existing result vector
  * @param grid_size 2D grid dimension (N for N×N stencil grid)
  */
-__global__ void stencil5_ellpack_kernel(
-    const double* values, 
-    const int* col_indices, 
-    const double* x, 
-    double* y,
-    int num_rows, 
-    int width, 
-    const double alpha, 
-    const double beta, 
-    int grid_size
-);
+__global__ void stencil5_ellpack_kernel(const double* values, const int* col_indices,
+                                        const double* x, double* y, int num_rows, int width,
+                                        const double alpha, const double beta, int grid_size);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // SPMV_STENCIL_H
+#endif  // SPMV_STENCIL_H

@@ -14,7 +14,8 @@ extern "C" {
  * @param max_display_size Maximum matrix size to display (larger matrices are subsampled)
  * @return 0 on success, non-zero on error
  */
-int generate_sparsity_pattern(const MatrixData* matrix, const char* output_filename, int max_display_size);
+int generate_sparsity_pattern(const MatrixData* matrix, const char* output_filename,
+                              int max_display_size);
 
 /**
  * @brief Generate performance comparison chart
@@ -24,9 +25,9 @@ int generate_sparsity_pattern(const MatrixData* matrix, const char* output_filen
  * @param chart_title Chart title
  * @return 0 on success, non-zero on error
  */
-int generate_performance_chart(const char** operator_names, const double* gflops_values, 
-                              const double* bandwidth_values, int num_results,
-                              const char* output_filename, const char* chart_title);
+int generate_performance_chart(const char** operator_names, const double* gflops_values,
+                               const double* bandwidth_values, int num_results,
+                               const char* output_filename, const char* chart_title);
 
 /**
  * @brief Generate scaling analysis chart
@@ -38,10 +39,10 @@ int generate_performance_chart(const char** operator_names, const double* gflops
  * @return 0 on success, non-zero on error
  */
 int generate_scaling_chart(const int* sizes, const double* performance_data, int num_points,
-                          const char* output_filename, const char* operator_name);
+                           const char* output_filename, const char* operator_name);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // VISUALIZATION_H
+#endif  // VISUALIZATION_H

@@ -20,34 +20,24 @@ extern "C" {
 /**
  * @brief Export CG benchmark results to JSON format
  */
-void export_cg_json(const char* filename,
-                    const char* mode,
-                    const MatrixData* mat,
-                    const BenchmarkStats* bench_stats,
-                    const CGStats* cg_stats);
+void export_cg_json(const char* filename, const char* mode, const MatrixData* mat,
+                    const BenchmarkStats* bench_stats, const CGStats* cg_stats);
 
 /**
  * @brief Export CG multi-GPU benchmark results to JSON
  */
-void export_cg_mgpu_json(const char* filename,
-                         const char* mode,
-                         const MatrixData* mat,
-                         const BenchmarkStats* bench_stats,
-                         const CGStatsMultiGPU* cg_stats,
+void export_cg_mgpu_json(const char* filename, const char* mode, const MatrixData* mat,
+                         const BenchmarkStats* bench_stats, const CGStatsMultiGPU* cg_stats,
                          int num_gpus);
 
 /**
  * @brief Export CG benchmark results to CSV format
  */
-void export_cg_csv(const char* filename,
-                   const char* mode,
-                   const MatrixData* mat,
-                   const BenchmarkStats* bench_stats,
-                   const CGStats* cg_stats,
-                   bool write_header);
+void export_cg_csv(const char* filename, const char* mode, const MatrixData* mat,
+                   const BenchmarkStats* bench_stats, const CGStats* cg_stats, bool write_header);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // CG_METRICS_H
+#endif  // CG_METRICS_H

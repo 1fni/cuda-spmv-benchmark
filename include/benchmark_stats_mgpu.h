@@ -9,15 +9,10 @@ extern "C" {
 #endif
 
 // CG multi-GPU partitioned benchmark wrapper (MPI halo exchange)
-int cg_benchmark_with_stats_mgpu_partitioned(
-    SpmvOperator* spmv_op,
-    MatrixData* mat,
-    double* b,
-    double* x,
-    CGConfigMultiGPU config,
-    int num_runs,
-    BenchmarkStats* bench_stats,
-    CGStatsMultiGPU* final_stats);
+int cg_benchmark_with_stats_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, double* b,
+                                             double* x, CGConfigMultiGPU config, int num_runs,
+                                             BenchmarkStats* bench_stats,
+                                             CGStatsMultiGPU* final_stats);
 
 #ifdef __cplusplus
 }

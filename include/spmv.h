@@ -1,18 +1,21 @@
 /**
  * @file spmv.h
- * @brief Central header for Sparse Matrix-Vector Multiplication (SpMV) operators and shared global structures.
+ * @brief Central header for Sparse Matrix-Vector Multiplication (SpMV) operators and shared global
+ * structures.
  *
  * @details
  * Responsibilities:
- *  - Declare global variables for CSR and ELLPACK structures used across multiple SpMV implementations.
+ *  - Declare global variables for CSR and ELLPACK structures used across multiple SpMV
+ * implementations.
  *  - Provide helper macros for CUDA and cuSPARSE error handling.
- *  - Define the SpmvOperator structure, which acts as a function dispatch table for different SpMV implementations.
+ *  - Define the SpmvOperator structure, which acts as a function dispatch table for different SpMV
+ * implementations.
  *
  * Key Components:
  *  - `CSRMatrix` and `ELLPACKMatrix` global instances for storing matrix formats.
  *  - Function pointer-based `SpmvOperator` for modular algorithm selection.
  *
- * Author: Bouhrour Stephane  
+ * Author: Bouhrour Stephane
  * Date: 2025-07-15
  */
 
@@ -31,7 +34,7 @@ extern "C" {
 extern CSRMatrix csr_mat;
 
 // Local ELLPACK utilities
-int build_ellpack_from_csr_local(CSRMatrix *csr_matrix);
+int build_ellpack_from_csr_local(CSRMatrix* csr_matrix);
 int ensure_ellpack_structure_built(MatrixData* mat);
 extern ELLPACKMatrix ellpack_matrix;
 
@@ -40,25 +43,25 @@ extern ELLPACKMatrix ellpack_matrix;
 #endif
 
 /** @brief CUDA error checking macro. */
-#define CUDA_CHECK(call) \
-{ \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error: %s, line %d\n", cudaGetErrorString(err), __LINE__); \
-        exit(EXIT_FAILURE); \
-    } \
-}
+#define CUDA_CHECK(call)                                                                     \
+    {                                                                                        \
+        cudaError_t err = call;                                                              \
+        if (err != cudaSuccess) {                                                            \
+            fprintf(stderr, "CUDA error: %s, line %d\n", cudaGetErrorString(err), __LINE__); \
+            exit(EXIT_FAILURE);                                                              \
+        }                                                                                    \
+    }
 
 /** @brief cuSPARSE error checking macro. */
-#define CHECK_CUSPARSE(func)                                                   \
-{                                                                              \
-    cusparseStatus_t status = (func);                                          \
-    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
-        printf("cuSPARSE API failed at line %d with error: %s (%d)\n",         \
-               __LINE__, cusparseGetErrorString(status), status);              \
-        return EXIT_FAILURE;                                                   \
-    }                                                                          \
-}
+#define CHECK_CUSPARSE(func)                                                         \
+    {                                                                                \
+        cusparseStatus_t status = (func);                                            \
+        if (status != CUSPARSE_STATUS_SUCCESS) {                                     \
+            printf("cuSPARSE API failed at line %d with error: %s (%d)\n", __LINE__, \
+                   cusparseGetErrorString(status), status);                          \
+            return EXIT_FAILURE;                                                     \
+        }                                                                            \
+    }
 
 /**
  * @struct BenchmarkMetrics
@@ -71,19 +74,19 @@ extern ELLPACKMatrix ellpack_matrix;
  *  - Matrix characteristics for analysis context
  */
 typedef struct {
-    double execution_time_ms;        ///< Total execution time in milliseconds
-    double gflops;                  ///< GFLOPS (Giga Floating Point Operations Per Second)
-    double bandwidth_gb_s;          ///< Memory bandwidth in GB/s
-    int matrix_rows;               ///< Number of matrix rows (N² for stencil)
-    int matrix_cols;               ///< Number of matrix columns (N² for stencil)
-    int matrix_nnz;                ///< Number of non-zero elements
-    int grid_size;                 ///< Original 2D grid dimension (N for NxN stencil)
-    double sparsity_ratio;         ///< Sparsity ratio (nnz / (rows * cols))
-    const char* operator_name;     ///< Name of the SpMV operator used
+    double execution_time_ms;   ///< Total execution time in milliseconds
+    double gflops;              ///< GFLOPS (Giga Floating Point Operations Per Second)
+    double bandwidth_gb_s;      ///< Memory bandwidth in GB/s
+    int matrix_rows;            ///< Number of matrix rows (N² for stencil)
+    int matrix_cols;            ///< Number of matrix columns (N² for stencil)
+    int matrix_nnz;             ///< Number of non-zero elements
+    int grid_size;              ///< Original 2D grid dimension (N for NxN stencil)
+    double sparsity_ratio;      ///< Sparsity ratio (nnz / (rows * cols))
+    const char* operator_name;  ///< Name of the SpMV operator used
 
     // Validation checksums
-    double sum_y;                  ///< Sum of output vector elements
-    double norm2_y;                ///< L2 norm of output vector
+    double sum_y;    ///< Sum of output vector elements
+    double norm2_y;  ///< L2 norm of output vector
 
     struct {
         char name[128];
@@ -120,17 +123,20 @@ typedef struct {
  *  - `free`: Function pointer to release associated resources.
  */
 typedef struct {
-    const char* name;                                      ///< Operator name (e.g., "csr", "ellpack").
-    int (*init)(MatrixData* mat);                          ///< Initialization function for matrix data.
-    int (*run_timed)(const double* x, double* y, double* kernel_time_ms); ///< SpMV with kernel timing (host pointers).
-    int (*run_device)(const double* d_x, double* d_y);    ///< SpMV device-native (GPU pointers, optional, NULL if not supported).
-    void (*free)();                                        ///< Resource cleanup function.
+    const char* name;              ///< Operator name (e.g., "csr", "ellpack").
+    int (*init)(MatrixData* mat);  ///< Initialization function for matrix data.
+    int (*run_timed)(const double* x, double* y,
+                     double* kernel_time_ms);  ///< SpMV with kernel timing (host pointers).
+    int (*run_device)(
+        const double* d_x,
+        double* d_y);  ///< SpMV device-native (GPU pointers, optional, NULL if not supported).
+    void (*free)();    ///< Resource cleanup function.
 } SpmvOperator;
 
 /** @brief External operator declarations. */
-extern SpmvOperator SPMV_CSR;              // cusparse-csr: cuSPARSE baseline
-extern SpmvOperator SPMV_STENCIL5_CSR;     // stencil5-csr: optimized stencil (single-GPU)
-extern SpmvOperator SPMV_STENCIL_HALO_MGPU; // stencil5-halo-mgpu: multi-GPU with halo exchange
+extern SpmvOperator SPMV_CSR;                // cusparse-csr: cuSPARSE baseline
+extern SpmvOperator SPMV_STENCIL5_CSR;       // stencil5-csr: optimized stencil (single-GPU)
+extern SpmvOperator SPMV_STENCIL_HALO_MGPU;  // stencil5-halo-mgpu: multi-GPU with halo exchange
 
 #ifdef __cplusplus
 extern "C" {
@@ -146,12 +152,12 @@ SpmvOperator* get_operator(const char* mode);
 /**
  * @brief Calculates performance metrics for SpMV operations with format-specific memory analysis.
  * @param execution_time_ms Measured execution time in milliseconds
- * @param mat Matrix data structure containing matrix characteristics  
+ * @param mat Matrix data structure containing matrix characteristics
  * @param operator_name Name of the SpMV operator used
  * @param metrics Output structure to store calculated metrics
  */
-void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat, 
-                           const char* operator_name, BenchmarkMetrics* metrics);
+void calculate_spmv_metrics(double execution_time_ms, const MatrixData* mat,
+                            const char* operator_name, BenchmarkMetrics* metrics);
 
 int get_gpu_properties(BenchmarkMetrics* metrics);
 
@@ -180,4 +186,4 @@ void print_metrics_csv(const BenchmarkMetrics* metrics, FILE* output_file);
 }
 #endif
 
-#endif // SPMV_H
+#endif  // SPMV_H
