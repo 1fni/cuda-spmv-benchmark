@@ -334,6 +334,15 @@ int cg_solve(SpmvOperator* spmv_op,
     stats->time_reductions_ms = time_reduce;
     stats->converged = (residual_norm / b_norm < config.tolerance) ? 1 : 0;
 
+    // Compute solution validation checksums
+    double sol_sum = 0.0, sol_norm_sq = 0.0;
+    for (int i = 0; i < n; i++) {
+        sol_sum += x[i];
+        sol_norm_sq += x[i] * x[i];
+    }
+    stats->solution_sum = sol_sum;
+    stats->solution_norm = sqrt(sol_norm_sq);
+
     if (config.verbose >= 1) {
         printf("[CG] Converged: %s\n", stats->converged ? "YES" : "NO");
         printf("[CG] Iterations: %d\n", stats->iterations);
@@ -645,6 +654,15 @@ int cg_solve_device(SpmvOperator* spmv_op,
     stats->time_blas1_ms = time_blas;
     stats->time_reductions_ms = time_reduce;
     stats->converged = (final_residual_norm / b_norm < config.tolerance) ? 1 : 0;
+
+    // Compute solution validation checksums
+    double sol_sum = 0.0, sol_norm_sq = 0.0;
+    for (int i = 0; i < n; i++) {
+        sol_sum += x[i];
+        sol_norm_sq += x[i] * x[i];
+    }
+    stats->solution_sum = sol_sum;
+    stats->solution_norm = sqrt(sol_norm_sq);
 
     if (config.verbose >= 1) {
         printf("[CG-DEVICE] Converged: %s\n", stats->converged ? "YES" : "NO");

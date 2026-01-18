@@ -259,9 +259,13 @@ void print_metrics_json(const BenchmarkMetrics* metrics, FILE* output_file) {
     fprintf(fp, "      \"matrix_data_bytes\": %.0f,\n", matrix_data_bytes);
     fprintf(fp, "      \"matrix_indices_bytes\": %.0f,\n", matrix_indices_bytes);
     fprintf(fp, "      \"vector_bytes\": %.0f,\n", vector_bytes);
-    fprintf(fp, "      \"performance_bound\": \"%s\"\n", 
-           (arithmetic_intensity < 0.5) ? "memory-bound" : 
+    fprintf(fp, "      \"performance_bound\": \"%s\"\n",
+           (arithmetic_intensity < 0.5) ? "memory-bound" :
            (arithmetic_intensity < 2.0) ? "balanced" : "compute-bound");
+    fprintf(fp, "    },\n");
+    fprintf(fp, "    \"validation\": {\n");
+    fprintf(fp, "      \"sum_y\": %.16e,\n", metrics->sum_y);
+    fprintf(fp, "      \"norm2_y\": %.16e\n", metrics->norm2_y);
     fprintf(fp, "    }\n");
     fprintf(fp, "  }\n");
     fprintf(fp, "}\n");
@@ -294,29 +298,31 @@ void print_metrics_csv(const BenchmarkMetrics* metrics, FILE* output_file) {
     if (!header_printed) {
         fprintf(fp, "operator,grid_size,matrix_rows,matrix_cols,matrix_nnz,sparsity_ratio,sparsity_percent,");
         fprintf(fp, "execution_time_ms,execution_time_us,gflops,bandwidth_gb_s,");
-        fprintf(fp, "arithmetic_intensity,total_flops,performance_bound\n");
+        fprintf(fp, "arithmetic_intensity,total_flops,performance_bound,sum_y,norm2_y\n");
         header_printed = 1;
     }
-    
+
     // CSV Data
     fprintf(fp, "%s,%d,%d,%d,%d,%.6f,%.4f,",
            metrics->operator_name,
            metrics->grid_size,
            metrics->matrix_rows,
-           metrics->matrix_cols, 
+           metrics->matrix_cols,
            metrics->matrix_nnz,
            metrics->sparsity_ratio,
            metrics->sparsity_ratio * 100.0);
-    
+
     fprintf(fp, "%.6f,%.1f,%.6f,%.6f,",
            metrics->execution_time_ms,
            metrics->execution_time_ms * 1000.0,
            metrics->gflops,
            metrics->bandwidth_gb_s);
-    
-    fprintf(fp, "%.6f,%.0f,%s\n",
+
+    fprintf(fp, "%.6f,%.0f,%s,%.16e,%.16e\n",
            arithmetic_intensity,
            total_flops,
-           (arithmetic_intensity < 0.5) ? "memory-bound" : 
-           (arithmetic_intensity < 2.0) ? "balanced" : "compute-bound");
+           (arithmetic_intensity < 0.5) ? "memory-bound" :
+           (arithmetic_intensity < 2.0) ? "balanced" : "compute-bound",
+           metrics->sum_y,
+           metrics->norm2_y);
 }

@@ -36,6 +36,10 @@ typedef struct {
     double time_blas1_ms;     ///< BLAS1 ops time (axpy, etc.)
     double time_reductions_ms;///< Dot products and norms time
     int converged;            ///< 1 if converged, 0 otherwise
+
+    // Solution validation
+    double solution_sum;      ///< Sum of solution vector elements
+    double solution_norm;     ///< L2 norm of solution vector
 } CGStats;
 
 /**

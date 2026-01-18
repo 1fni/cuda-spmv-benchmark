@@ -165,15 +165,26 @@ int main(int argc, char* argv[]) {
         printf("Completed: %d valid runs, %d outliers removed\n", 
                bench_stats.valid_runs, bench_stats.outliers_removed);
         
+        // Compute checksum for validation (before export)
+        double sum = 0.0;
+        double norm2 = 0.0;
+        for (int i = 0; i < mat.rows; i++) {
+            sum += y[i];
+            norm2 += y[i] * y[i];
+        }
+        norm2 = sqrt(norm2);
+
         // Calculate performance metrics using median time
         BenchmarkMetrics metrics;
         calculate_spmv_metrics(bench_stats.median_ms, &mat, op->name, &metrics);
-        
+        metrics.sum_y = sum;
+        metrics.norm2_y = norm2;
+
         // Add GPU specifications to metrics
         if (get_gpu_properties(&metrics) != 0) {
             fprintf(stderr, "Warning: Could not retrieve GPU properties\n");
         }
-        
+
         // Always print human-readable metrics to stdout
         print_benchmark_metrics(&metrics, stdout);
 
@@ -200,17 +211,9 @@ int main(int argc, char* argv[]) {
                 printf("Metrics exported to CSV: %s\n", csv_file);
             }
         }
-        
+
         printf("SpMV completed successfully using mode: %s\n", op->name);
 
-        // Compute checksum for validation
-        double sum = 0.0;
-        double norm2 = 0.0;
-        for (int i = 0; i < mat.rows; i++) {
-            sum += y[i];
-            norm2 += y[i] * y[i];
-        }
-        norm2 = sqrt(norm2);
         printf("\n=== Output Checksum ===\n");
         printf("Sum(y):    %.16e\n", sum);
         printf("Norm2(y):  %.16e\n", norm2);

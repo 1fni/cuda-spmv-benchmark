@@ -64,6 +64,10 @@ typedef struct {
     double time_axpy_update_r_ms;    ///< r = r - alpha*Ap average
     double time_axpby_update_p_ms;   ///< p = r + beta*p average
     double time_initial_r_ms;        ///< Initial r = b - A*x0
+
+    // Solution validation
+    double solution_sum;             ///< Sum of solution vector elements
+    double solution_norm;            ///< L2 norm of solution vector
 } CGStatsMultiGPU;
 
 /**

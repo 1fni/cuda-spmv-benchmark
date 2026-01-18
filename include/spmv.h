@@ -80,7 +80,11 @@ typedef struct {
     int grid_size;                 ///< Original 2D grid dimension (N for NxN stencil)
     double sparsity_ratio;         ///< Sparsity ratio (nnz / (rows * cols))
     const char* operator_name;     ///< Name of the SpMV operator used
-    
+
+    // Validation checksums
+    double sum_y;                  ///< Sum of output vector elements
+    double norm2_y;                ///< L2 norm of output vector
+
     struct {
         char name[128];
         int memory_mb;

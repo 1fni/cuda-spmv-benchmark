@@ -831,6 +831,17 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op,
     // Gather full solution to rank 0
     MPI_Gather(&x[row_offset], n_local, MPI_DOUBLE, x, n_local, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+    // Compute solution validation checksums (rank 0 has full solution)
+    if (rank == 0) {
+        double sol_sum = 0.0, sol_norm_sq = 0.0;
+        for (int i = 0; i < n; i++) {
+            sol_sum += x[i];
+            sol_norm_sq += x[i] * x[i];
+        }
+        stats->solution_sum = sol_sum;
+        stats->solution_norm = sqrt(sol_norm_sq);
+    }
+
     // Cleanup
     cudaFree(d_x_local);
     cudaFree(d_r_local);

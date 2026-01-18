@@ -70,10 +70,15 @@ void export_cg_json(const char* filename,
     fprintf(fp, "  \"performance\": {\n");
     double gflops = (2.0 * mat->nnz * cg_stats->iterations) / (cg_stats->time_spmv_ms * 1e6);
     fprintf(fp, "    \"gflops_spmv\": %.3f\n", gflops);
+    fprintf(fp, "  },\n");
+
+    fprintf(fp, "  \"validation\": {\n");
+    fprintf(fp, "    \"solution_sum\": %.16e,\n", cg_stats->solution_sum);
+    fprintf(fp, "    \"solution_norm\": %.16e\n", cg_stats->solution_norm);
     fprintf(fp, "  }\n");
-    
+
     fprintf(fp, "}\n");
-    
+
     fclose(fp);
     printf("Results exported to: %s\n", filename);
 }
@@ -137,10 +142,15 @@ void export_cg_mgpu_json(const char* filename,
     fprintf(fp, "  \"performance\": {\n");
     double gflops = (2.0 * mat->nnz * cg_stats->iterations) / (cg_stats->time_spmv_ms * 1e6);
     fprintf(fp, "    \"gflops_spmv\": %.3f\n", gflops);
+    fprintf(fp, "  },\n");
+
+    fprintf(fp, "  \"validation\": {\n");
+    fprintf(fp, "    \"solution_sum\": %.16e,\n", cg_stats->solution_sum);
+    fprintf(fp, "    \"solution_norm\": %.16e\n", cg_stats->solution_norm);
     fprintf(fp, "  }\n");
-    
+
     fprintf(fp, "}\n");
-    
+
     fclose(fp);
     printf("Results exported to: %s\n", filename);
 }
@@ -164,7 +174,7 @@ void export_cg_csv(const char* filename,
         fprintf(fp, "mode,rows,cols,nnz,grid_size,converged,iterations,residual_norm,");
         fprintf(fp, "median_ms,mean_ms,min_ms,max_ms,std_dev_ms,");
         fprintf(fp, "spmv_ms,blas1_ms,reductions_ms,");
-        fprintf(fp, "valid_runs,outliers_removed,gflops_spmv\n");
+        fprintf(fp, "valid_runs,outliers_removed,gflops_spmv,solution_sum,solution_norm\n");
     }
 
     double gflops = (2.0 * mat->nnz * cg_stats->iterations) / (cg_stats->time_spmv_ms * 1e6);
@@ -177,8 +187,9 @@ void export_cg_csv(const char* filename,
             bench_stats->max_ms, bench_stats->std_dev_ms);
     fprintf(fp, "%.3f,%.3f,%.3f,",
             cg_stats->time_spmv_ms, cg_stats->time_blas1_ms, cg_stats->time_reductions_ms);
-    fprintf(fp, "%d,%d,%.3f\n",
-            bench_stats->valid_runs, bench_stats->outliers_removed, gflops);
+    fprintf(fp, "%d,%d,%.3f,%.16e,%.16e\n",
+            bench_stats->valid_runs, bench_stats->outliers_removed, gflops,
+            cg_stats->solution_sum, cg_stats->solution_norm);
 
     fclose(fp);
     if (write_header) {
