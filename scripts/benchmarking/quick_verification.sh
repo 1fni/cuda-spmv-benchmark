@@ -15,8 +15,9 @@ RESULTS_DIR="results_quick_verification"
 mkdir -p "${RESULTS_DIR}"
 LOG_FILE="${RESULTS_DIR}/verification_${TIMESTAMP}.txt"
 
-# Tee output to both console and log file (filter carriage returns for clean logs)
-exec > >(tee >(sed 's/\r//g' > "${LOG_FILE}")) 2>&1
+# Tee output to both console and log file
+# Filter: remove progress bar lines (keep "Matrix generated:" result)
+exec > >(tee >(sed 's/\r/\n/g' | grep -v "^Writing matrix entries:" > "${LOG_FILE}")) 2>&1
 
 echo "=============================================="
 echo "Quick Verification Script"
