@@ -93,11 +93,35 @@ for path in "./bin/amgx_cg_solver" "./external/benchmarks/amgx/amgx_cg_solver"; 
 done
 
 if [ -n "$AMGX_BIN" ]; then
-    echo "=== Test 4: AmgX CG Solver ==="
+    echo "=== Test 4: AmgX CG Solver (Single-GPU) ==="
     "$AMGX_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
     echo ""
 else
     echo "=== Test 4: Skipped (AmgX not built) ==="
+    echo ""
+fi
+
+# Test 5: Multi-GPU AmgX (if available and multiple GPUs)
+AMGX_MGPU_BIN=""
+for path in "./bin/amgx_cg_solver_mgpu" "./external/benchmarks/amgx/amgx_cg_solver_mgpu"; do
+    if [ -f "$path" ]; then
+        AMGX_MGPU_BIN="$path"
+        break
+    fi
+done
+
+if [ -n "$AMGX_MGPU_BIN" ] && [ "$HAS_MPI" = "1" ]; then
+    NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+    if [ "$NUM_GPUS" -ge 2 ]; then
+        echo "=== Test 5: AmgX CG Solver (Multi-GPU, 2 GPUs) ==="
+        mpirun --allow-run-as-root -np 2 "$AMGX_MGPU_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
+        echo ""
+    else
+        echo "=== Test 5: Skipped (need ≥2 GPUs) ==="
+        echo ""
+    fi
+else
+    echo "=== Test 5: Skipped (AmgX multi-GPU not built or MPI unavailable) ==="
     echo ""
 fi
 

@@ -195,8 +195,8 @@ int main(int argc, char** argv) {
         printf("\n--- Results for %s ---\n", current_mode);
         printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO",
                stats.iterations);
-        // Only show breakdown if detailed timing was collected
-        if (stats.time_spmv_ms > 0 || stats.time_blas1_ms > 0 || stats.time_reductions_ms > 0) {
+        // Only show breakdown if --timers flag was used
+        if (config.enable_detailed_timers) {
             printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
                    bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
                    100.0 * stats.time_blas1_ms / stats.time_total_ms,
