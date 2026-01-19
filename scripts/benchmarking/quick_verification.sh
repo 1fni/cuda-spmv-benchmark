@@ -9,11 +9,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${SCRIPT_DIR}/../.."
 cd "${PROJECT_DIR}"
 
+# Create results directory and log file
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR="results_quick_verification"
+mkdir -p "${RESULTS_DIR}"
+LOG_FILE="${RESULTS_DIR}/verification_${TIMESTAMP}.txt"
+
+# Tee output to both console and log file
+exec > >(tee -a "${LOG_FILE}") 2>&1
+
 echo "=============================================="
 echo "Quick Verification Script"
 echo "=============================================="
 echo "Tests all components with small matrices"
 echo "Expected runtime: < 2 minutes"
+echo "Results saved to: ${LOG_FILE}"
 echo ""
 
 # Capture environment
@@ -72,9 +82,18 @@ else
 fi
 
 # Test 4: AmgX (if available)
-if [ -f "./bin/amgx_cg_solver" ]; then
+# Check multiple possible locations for AmgX binary
+AMGX_BIN=""
+for path in "./bin/amgx_cg_solver" "./external/benchmarks/amgx/amgx_cg_solver"; do
+    if [ -f "$path" ]; then
+        AMGX_BIN="$path"
+        break
+    fi
+done
+
+if [ -n "$AMGX_BIN" ]; then
     echo "=== Test 4: AmgX CG Solver ==="
-    ./bin/amgx_cg_solver "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time)" || true
+    "$AMGX_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time)" || true
     echo ""
 else
     echo "=== Test 4: Skipped (AmgX not built) ==="
@@ -87,6 +106,8 @@ rm -f "${MATRIX_FILE}"
 echo "=============================================="
 echo "Verification Complete"
 echo "=============================================="
+echo "Finished: $(date)"
+echo "Results saved to: ${LOG_FILE}"
 echo ""
 echo "All tests passed if no errors above."
 echo "For full benchmarks with large matrices, run:"
