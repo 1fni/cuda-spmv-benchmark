@@ -208,9 +208,15 @@ int main(int argc, char** argv) {
             printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", bench_stats.min_ms,
                    bench_stats.max_ms, bench_stats.std_dev_ms);
         }
-        printf("Solution error (RMS): %e\n", error);
-        printf("GFLOPS (SpMV): %.3f\n",
-               (2.0 * mat.nnz * stats.iterations) / (stats.time_spmv_ms * 1e6));
+        // Solution checksum for verification
+        double sum_x = 0.0, norm2_x = 0.0;
+        for (int i = 0; i < mat.rows; i++) {
+            sum_x += x[i];
+            norm2_x += x[i] * x[i];
+        }
+        printf("\n=== Output Checksum ===\n");
+        printf("Sum(x):    %.16e\n", sum_x);
+        printf("Norm2(x):  %.16e\n", sqrt(norm2_x));
 
         // Export results if requested
         if (json_file) {

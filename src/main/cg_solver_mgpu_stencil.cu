@@ -160,12 +160,15 @@ int main(int argc, char** argv) {
                    bench_stats.max_ms, bench_stats.std_dev_ms);
         }
 
-        printf("\nCG Solution (first 10 values):\n");
-        for (int i = 0; i < 10 && i < mat.rows; i++) {
-            printf("x[%d] = %.15e\n", i, x[i]);
+        // Solution checksum for verification
+        double sum_x = 0.0, norm2_x = 0.0;
+        for (int i = 0; i < mat.rows; i++) {
+            sum_x += x[i];
+            norm2_x += x[i] * x[i];
         }
-        printf("...\n");
-        printf("x[%d] = %.15e (last)\n", mat.rows - 1, x[mat.rows - 1]);
+        printf("\n=== Output Checksum ===\n");
+        printf("Sum(x):    %.16e\n", sum_x);
+        printf("Norm2(x):  %.16e\n", sqrt(norm2_x));
         printf("========================================\n");
 
         // Export results if requested

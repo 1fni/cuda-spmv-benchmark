@@ -63,7 +63,7 @@ echo ""
 
 # Test 2: Single-GPU CG Solver
 echo "=== Test 2: Single-GPU CG Solver ==="
-./bin/cg_solver "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Residual)" || true
+./bin/cg_solver "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
 echo ""
 
 # Test 3: Multi-GPU CG (if MPI available)
@@ -71,7 +71,7 @@ if [ "$HAS_MPI" = "1" ]; then
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
     if [ "$NUM_GPUS" -ge 2 ]; then
         echo "=== Test 3: Multi-GPU CG Solver (2 GPUs) ==="
-        mpirun --allow-run-as-root -np 2 ./bin/cg_solver_mgpu_stencil "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Speedup|Efficiency)" || true
+        mpirun --allow-run-as-root -np 2 ./bin/cg_solver_mgpu_stencil "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
         echo ""
     else
         echo "=== Test 3: Skipped (need ≥2 GPUs, found ${NUM_GPUS}) ==="
