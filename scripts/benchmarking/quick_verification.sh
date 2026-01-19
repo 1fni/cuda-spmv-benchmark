@@ -94,7 +94,7 @@ done
 
 if [ -n "$AMGX_BIN" ]; then
     echo "=== Test 4: AmgX CG Solver ==="
-    "$AMGX_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time)" || true
+    "$AMGX_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
     echo ""
 else
     echo "=== Test 4: Skipped (AmgX not built) ==="

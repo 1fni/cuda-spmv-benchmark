@@ -18,27 +18,30 @@
 #include <algorithm>
 #include "amgx_benchmark.h"
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
+#define CUDA_CHECK(call)                                                     \
+    do {                                                                     \
+        cudaError_t err = call;                                              \
+        if (err != cudaSuccess) {                                            \
+            fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, \
+                    cudaGetErrorString(err));                                \
+            exit(EXIT_FAILURE);                                              \
+        }                                                                    \
+    } while (0)
 
-#define AMGX_CHECK(call) do { \
-    AMGX_RC err = call; \
-    if (err != AMGX_RC_OK) { \
-        fprintf(stderr, "AMGX error at %s:%d: code %d\n", __FILE__, __LINE__, err); \
-        exit(EXIT_FAILURE); \
-    } \
-} while(0)
+#define AMGX_CHECK(call)                                                                \
+    do {                                                                                \
+        AMGX_RC err = call;                                                             \
+        if (err != AMGX_RC_OK) {                                                        \
+            fprintf(stderr, "AMGX error at %s:%d: code %d\n", __FILE__, __LINE__, err); \
+            exit(EXIT_FAILURE);                                                         \
+        }                                                                               \
+    } while (0)
 
 struct MatrixMarket {
     int rows, cols, nnz;
-    int *row_ptr;
-    int *col_idx;
-    double *values;
+    int* row_ptr;
+    int* col_idx;
+    double* values;
 };
 
 MatrixMarket read_matrix_market(const char* filename) {
@@ -51,16 +54,17 @@ MatrixMarket read_matrix_market(const char* filename) {
     // Skip comments
     char line[1024];
     while (fgets(line, sizeof(line), f)) {
-        if (line[0] != '%') break;
+        if (line[0] != '%')
+            break;
     }
 
     MatrixMarket mat;
     sscanf(line, "%d %d %d", &mat.rows, &mat.cols, &mat.nnz);
 
     // Temporary storage for COO format
-    int *coo_rows = (int*)malloc(mat.nnz * sizeof(int));
-    int *coo_cols = (int*)malloc(mat.nnz * sizeof(int));
-    double *coo_vals = (double*)malloc(mat.nnz * sizeof(double));
+    int* coo_rows = (int*)malloc(mat.nnz * sizeof(int));
+    int* coo_cols = (int*)malloc(mat.nnz * sizeof(int));
+    double* coo_vals = (double*)malloc(mat.nnz * sizeof(double));
 
     for (int i = 0; i < mat.nnz; i++) {
         int ret = fscanf(f, "%d %d %lf", &coo_rows[i], &coo_cols[i], &coo_vals[i]);
@@ -68,7 +72,7 @@ MatrixMarket read_matrix_market(const char* filename) {
             fprintf(stderr, "Error reading matrix line %d\n", i);
             exit(EXIT_FAILURE);
         }
-        coo_rows[i]--; // 1-based to 0-based
+        coo_rows[i]--;  // 1-based to 0-based
         coo_cols[i]--;
     }
     fclose(f);
@@ -89,7 +93,7 @@ MatrixMarket read_matrix_market(const char* filename) {
     }
 
     // Fill CSR arrays
-    int *local_count = (int*)calloc(mat.rows, sizeof(int));
+    int* local_count = (int*)calloc(mat.rows, sizeof(int));
     for (int i = 0; i < mat.nnz; i++) {
         int r = coo_rows[i];
         int dst = mat.row_ptr[r] + local_count[r]++;
@@ -111,14 +115,10 @@ struct RunResult {
     bool converged;
 };
 
-RunResult run_amgx_solve(AMGX_solver_handle solver,
-                         AMGX_vector_handle b,
-                         AMGX_vector_handle x,
-                         double* d_x,
-                         int rows,
-                         bool verbose) {
+RunResult run_amgx_solve(AMGX_solver_handle solver, AMGX_vector_handle b, AMGX_vector_handle x,
+                         double* d_x, int rows, bool verbose) {
     // Reset solution vector
-    double *h_x_zero = (double*)calloc(rows, sizeof(double));
+    double* h_x_zero = (double*)calloc(rows, sizeof(double));
     CUDA_CHECK(cudaMemcpy(d_x, h_x_zero, rows * sizeof(double), cudaMemcpyHostToDevice));
     AMGX_CHECK(AMGX_vector_upload(x, rows, 1, d_x));
     free(h_x_zero);
@@ -155,14 +155,15 @@ double calculate_median(std::vector<double>& times) {
     std::sort(times.begin(), times.end());
     size_t n = times.size();
     if (n % 2 == 0) {
-        return (times[n/2 - 1] + times[n/2]) / 2.0;
+        return (times[n / 2 - 1] + times[n / 2]) / 2.0;
     }
-    return times[n/2];
+    return times[n / 2];
 }
 
 double calculate_mean(const std::vector<double>& times) {
     double sum = 0.0;
-    for (double t : times) sum += t;
+    for (double t : times)
+        sum += t;
     return sum / times.size();
 }
 
@@ -177,8 +178,13 @@ double calculate_std_dev(const std::vector<double>& times, double mean) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <matrix.mtx> [--tol=1e-6] [--max-iters=1000] [--runs=10] [--json=<file>] [--csv=<file>]\n", argv[0]);
-        fprintf(stderr, "Example: %s matrix/stencil_5000x5000.mtx --runs=10 --json=results/amgx.json\n", argv[0]);
+        fprintf(stderr,
+                "Usage: %s <matrix.mtx> [--tol=1e-6] [--max-iters=1000] [--runs=10] "
+                "[--json=<file>] [--csv=<file>]\n",
+                argv[0]);
+        fprintf(stderr,
+                "Example: %s matrix/stencil_5000x5000.mtx --runs=10 --json=results/amgx.json\n",
+                argv[0]);
         return 1;
     }
 
@@ -255,13 +261,14 @@ int main(int argc, char* argv[]) {
     AMGX_CHECK(AMGX_solver_create(&solver, rsrc, AMGX_mode_dDDI, cfg));
 
     // Upload matrix
-    AMGX_CHECK(AMGX_matrix_upload_all(A, mat.rows, mat.nnz, 1, 1,
-                                      mat.row_ptr, mat.col_idx, mat.values, nullptr));
+    AMGX_CHECK(AMGX_matrix_upload_all(A, mat.rows, mat.nnz, 1, 1, mat.row_ptr, mat.col_idx,
+                                      mat.values, nullptr));
 
     // Create RHS: b = ones
     printf("RHS: b = ones, Initial guess: x0 = 0\n\n");
-    double *h_b = (double*)malloc(mat.rows * sizeof(double));
-    for (int i = 0; i < mat.rows; i++) h_b[i] = 1.0;
+    double* h_b = (double*)malloc(mat.rows * sizeof(double));
+    for (int i = 0; i < mat.rows; i++)
+        h_b[i] = 1.0;
 
     double *d_b, *d_x;
     CUDA_CHECK(cudaMalloc(&d_b, mat.rows * sizeof(double)));
@@ -287,7 +294,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Verify solution with checksum (download x and compute sum + L2 norm)
-    double *h_x = (double*)malloc(mat.rows * sizeof(double));
+    double* h_x = (double*)malloc(mat.rows * sizeof(double));
     CUDA_CHECK(cudaMemcpy(h_x, d_x, mat.rows * sizeof(double), cudaMemcpyDeviceToHost));
 
     double sum = 0.0;
@@ -298,7 +305,6 @@ int main(int argc, char* argv[]) {
     }
     double norm = sqrt(norm2);
 
-    printf("Solution verification: sum=%.15e, L2_norm=%.15e\n\n", sum, norm);
     free(h_x);
 
     // Extract times
@@ -329,8 +335,8 @@ int main(int argc, char* argv[]) {
 
     int outliers_removed = times.size() - filtered_times.size();
 
-    printf("Completed: %zu valid runs, %d outliers removed\n\n",
-           filtered_times.size(), outliers_removed);
+    printf("Completed: %zu valid runs, %d outliers removed\n\n", filtered_times.size(),
+           outliers_removed);
 
     // Print results
     printf("========================================\n");
@@ -339,28 +345,29 @@ int main(int argc, char* argv[]) {
     printf("Converged: %s\n", results[0].converged ? "YES" : "NO");
     printf("Iterations: %d\n", results[0].iterations);
     printf("Time (median): %.3f ms\n", median);
-    printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n",
-           min_time, max_time, final_std);
+    printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", min_time, max_time, final_std);
 
     double gflops = (2.0 * mat.nnz * results[0].iterations) / (median * 1e6);
     printf("GFLOPS: %.3f\n", gflops);
+
+    printf("\n=== Output Checksum ===\n");
+    printf("Sum(x):    %.16e\n", sum);
+    printf("Norm2(x):  %.16e\n", norm);
     printf("========================================\n");
 
     // Export results
     if (json_file || csv_file) {
         MatrixInfo mat_info = {mat.rows, mat.cols, mat.nnz, grid_size};
-        BenchmarkResults bench_results = {
-            results[0].converged,
-            results[0].iterations,
-            median,  // time_total_ms (reuse for consistency)
-            median,
-            final_mean,
-            min_time,
-            max_time,
-            final_std,
-            (int)filtered_times.size(),
-            outliers_removed
-        };
+        BenchmarkResults bench_results = {results[0].converged,
+                                          results[0].iterations,
+                                          median,  // time_total_ms (reuse for consistency)
+                                          median,
+                                          final_mean,
+                                          min_time,
+                                          max_time,
+                                          final_std,
+                                          (int)filtered_times.size(),
+                                          outliers_removed};
 
         if (json_file) {
             export_amgx_json(json_file, "single-gpu", &mat_info, &bench_results);

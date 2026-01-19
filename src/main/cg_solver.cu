@@ -195,10 +195,15 @@ int main(int argc, char** argv) {
         printf("\n--- Results for %s ---\n", current_mode);
         printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO",
                stats.iterations);
-        printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
-               bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
-               100.0 * stats.time_blas1_ms / stats.time_total_ms,
-               100.0 * stats.time_reductions_ms / stats.time_total_ms);
+        // Only show breakdown if detailed timing was collected
+        if (stats.time_spmv_ms > 0 || stats.time_blas1_ms > 0 || stats.time_reductions_ms > 0) {
+            printf("Time (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%)\n",
+                   bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
+                   100.0 * stats.time_blas1_ms / stats.time_total_ms,
+                   100.0 * stats.time_reductions_ms / stats.time_total_ms);
+        } else {
+            printf("Time (median): %.3f ms\n", bench_stats.median_ms);
+        }
         if (bench_stats.valid_runs > 1) {
             printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", bench_stats.min_ms,
                    bench_stats.max_ms, bench_stats.std_dev_ms);

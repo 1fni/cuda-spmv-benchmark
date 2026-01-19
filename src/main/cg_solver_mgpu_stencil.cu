@@ -145,14 +145,15 @@ int main(int argc, char** argv) {
         printf("Solution norm: %.15e\n", stats.residual_norm);
 
         // Timing summary with statistics
-        printf("\nTime (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, Halo: "
-               "%.1f%%)\n",
-               bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
-               100.0 * stats.time_blas1_ms / stats.time_total_ms,
-               100.0 * stats.time_reductions_ms / stats.time_total_ms,
-               100.0 * stats.time_allgather_ms / stats.time_total_ms);
-        if (!config.enable_detailed_timers) {
-            printf("Note: Use --timers flag to enable detailed timing breakdown\n");
+        if (config.enable_detailed_timers) {
+            printf("\nTime (median): %.3f ms (SpMV: %.1f%%, BLAS1: %.1f%%, Reductions: %.1f%%, "
+                   "Halo: %.1f%%)\n",
+                   bench_stats.median_ms, 100.0 * stats.time_spmv_ms / stats.time_total_ms,
+                   100.0 * stats.time_blas1_ms / stats.time_total_ms,
+                   100.0 * stats.time_reductions_ms / stats.time_total_ms,
+                   100.0 * stats.time_allgather_ms / stats.time_total_ms);
+        } else {
+            printf("\nTime (median): %.3f ms\n", bench_stats.median_ms);
         }
         if (bench_stats.valid_runs > 1) {
             printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", bench_stats.min_ms,
