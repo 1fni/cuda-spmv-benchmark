@@ -1,8 +1,14 @@
 # Build artifacts
 build/
 bin/
-results/
 results_archive/
+results_*_*/
+
+# Results: track structure, ignore content
+results/raw/*.txt
+results/json/*.json
+results/figures/*.png
+results/figures/*.pdf
 .dev/
 tags
 *.o
