@@ -79,13 +79,13 @@ echo "=== Generating test matrix (${SMALL_SIZE}×${SMALL_SIZE}) ==="
 echo ""
 
 # Test 1: Single-GPU SpMV
-echo "=== Test 1: Single-GPU SpMV Benchmark ==="
+echo "=== Test 1: SpMV Benchmark (Single-GPU) ==="
 echo "Testing modes: cusparse-csr, stencil5-csr"
 ./bin/spmv_bench "${MATRIX_FILE}" --mode=cusparse-csr,stencil5-csr 2>&1 | grep -E "(Testing|Execution time|GFLOPS|Speedup|Checksum|Sum\(y\))" || true
 echo ""
 
 # Test 2: Single-GPU CG Solver
-echo "=== Test 2: Single-GPU CG Solver ==="
+echo "=== Test 2: CG Solver (Single-GPU) ==="
 ./bin/cg_solver "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
 echo ""
 
