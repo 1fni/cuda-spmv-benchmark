@@ -184,21 +184,23 @@ See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/B
 nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true -std=c++11
 ```
 
-**Reproducibility:**
+**Reproducibility — One Command:**
 ```bash
-# Quick verification (< 2 min, small matrices)
-./scripts/benchmarking/quick_verification.sh
+# Full benchmarks (5000×5000 matrix, ~10 min)
+./scripts/run_all.sh
 
-# Full benchmark suite (single-GPU + multi-GPU + AmgX comparison)
-./scripts/benchmarking/run_all_benchmarks.sh
+# Quick verification (512×512, ~2 min)
+./scripts/run_all.sh --quick
 
-# Individual benchmarks
-./scripts/benchmarking/benchmark_problem_sizes.sh      # Multi-GPU scaling
-./scripts/benchmarking/benchmark_single_gpu_formats.sh # SpMV comparison
-./scripts/benchmarking/benchmark_amgx.sh               # AmgX comparison
+# Custom matrix size
+./scripts/run_all.sh --size=10000
 
-# Results include JSON/CSV with environment info (CUDA version, driver, etc.)
+# Generate figures from results
+pip install -r scripts/plotting/requirements.txt
+python scripts/plotting/plot_results.py
 ```
+
+Results are saved to `results/raw/` (TXT) and `results/json/` (structured data).
 
 ---
 
@@ -230,13 +232,22 @@ nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true
 - **Hardware**: NVIDIA GPUs with Compute Capability ≥ 7.0
 - **Software**: CUDA Toolkit ≥ 11.0, OpenMPI or MPICH, C++14 compiler
 
-### Build and Run
+### Reproduce All Results (One Command)
 
 ```bash
-# Clone repository
 git clone https://github.com/1fni/cuda-spmv-benchmark.git
 cd cuda-spmv-benchmark
 
+# Run everything: build, benchmark, save results
+./scripts/run_all.sh
+
+# Quick verification (~2 min)
+./scripts/run_all.sh --quick
+```
+
+### Manual Build and Run
+
+```bash
 # Build multi-GPU CG solver
 make cg_solver_mgpu_stencil
 
@@ -246,19 +257,8 @@ make cg_solver_mgpu_stencil
 # Run on 2 GPUs
 mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
 
-# Run on 8 GPUs with detailed output
-mpirun -np 8 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx --verbose=2
-```
-
-### Benchmark Suite
-
-```bash
-# Run problem size scaling benchmark (10k, 15k, 20k on 1/2/4/8 GPUs)
-./scripts/benchmarking/benchmark_problem_sizes.sh
-
-# Analyze results and generate plots
-cd results_problem_size_scaling_*/
-python3 analyze_scaling.py
+# Run on 8 GPUs
+mpirun -np 8 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
 ```
 
 ---
@@ -310,25 +310,22 @@ GPU 7: rows [87.5k, 100k)    ┘
 
 ```
 ├── README.md                       # This file
-├── docs/                           # Detailed documentation
-│   ├── figures/                    # Performance plots (PNG)
-│   ├── SHOWCASE_SCALING_RESULTS.md # Strong scaling details
-│   ├── PROBLEM_SIZE_SCALING_RESULTS.md # Multi-size analysis
-│   └── scaling_summary.md          # Technical summary
+├── scripts/
+│   ├── run_all.sh                  # ONE COMMAND to reproduce all results
+│   ├── benchmarking/               # Individual benchmark scripts
+│   └── plotting/                   # Python visualization (matplotlib)
+├── results/
+│   ├── raw/                        # Raw benchmark outputs (TXT)
+│   ├── json/                       # Structured results (JSON)
+│   └── figures/                    # Generated plots (PNG)
 ├── src/                            # Source code
-│   ├── main/                       # Entry points (main functions)
-│   │   └── cg_solver_mgpu_stencil.cu   # Multi-GPU CG entry point
-│   ├── solvers/                    # Solver implementations
-│   │   ├── cg_solver_mgpu_partitioned.cu  # CG algorithm with halo exchange
-│   │   └── benchmark_stats_mgpu_partitioned.cu  # Timing and metrics
+│   ├── main/                       # Entry points
+│   ├── solvers/                    # CG solver implementations
 │   ├── spmv/                       # SpMV kernels
-│   │   └── spmv_stencil_csr_direct.cu  # Stencil-optimized SpMV
 │   └── io/                         # Matrix I/O
 ├── include/                        # Header files
-├── scripts/                        # Utility scripts
-│   ├── benchmarking/               # Benchmark automation
-│   ├── profiling/                  # Nsight Systems/Compute
-│   └── analysis/                   # Result visualization
+├── docs/                           # Documentation & pre-generated figures
+├── external/benchmarks/amgx/       # NVIDIA AmgX comparison
 └── tests/                          # Unit tests (Google Test)
 ```
 
@@ -345,27 +342,26 @@ GPU 7: rows [87.5k, 100k)    ┘
 
 ## Benchmarking
 
-### Automated Benchmarking
+### One Command
 
 ```bash
-# Problem size scaling (10k, 15k, 20k on 1/2/4/8 GPUs)
-./scripts/benchmarking/benchmark_problem_sizes.sh
-
-# Results saved to: results_problem_size_scaling_*/
-# - JSON files per configuration
-# - CSV files for spreadsheet analysis
-# - analyze_scaling.py for visualization
+./scripts/run_all.sh
 ```
+
+This builds all components, runs benchmarks, and saves results to:
+- `results/raw/` — Raw TXT outputs
+- `results/json/` — Structured JSON data
+- `results/figures/` — Generated plots (after running plotting script)
 
 ### Custom Benchmarks
 
 ```bash
 # Single configuration with JSON export
 mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_15k.mtx \
-  --json=results.json --csv=results.csv
+  --json=results/json/custom.json
 
 # Extract timing from JSON
-jq '.timing.median_ms' results.json
+jq '.timing.median_ms' results/json/custom.json
 ```
 
 ### Profiling with Nsight Systems
