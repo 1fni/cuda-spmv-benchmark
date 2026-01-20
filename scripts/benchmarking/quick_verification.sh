@@ -45,6 +45,29 @@ else
     echo "MPI not found - skipping multi-GPU build"
     HAS_MPI=0
 fi
+
+# Build AmgX benchmarks if library is available
+HAS_AMGX=0
+AMGX_HEADER=""
+for path in "external/amgx-src/include/amgx_c.h" "external/amgx/include/amgx_c.h" "/usr/local/include/amgx_c.h"; do
+    if [ -f "$path" ]; then
+        AMGX_HEADER="$path"
+        break
+    fi
+done
+
+if [ -n "$AMGX_HEADER" ]; then
+    echo "AmgX found: $AMGX_HEADER"
+    make -C external/benchmarks/amgx amgx_cg_solver 2>&1 | tail -2
+    if [ -f "external/benchmarks/amgx/amgx_cg_solver" ]; then
+        HAS_AMGX=1
+        if [ "$HAS_MPI" = "1" ]; then
+            make -C external/benchmarks/amgx amgx_cg_solver_mgpu 2>&1 | tail -2
+        fi
+    fi
+else
+    echo "AmgX not found - skipping AmgX build"
+fi
 echo ""
 
 # Generate small test matrix
