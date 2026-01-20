@@ -21,23 +21,43 @@ external/benchmarks/kokkos/generate_kokkos_matrix
 # Scripts for results management (keep out of main)
 scripts/save_results_to_git.sh
 
-# Matrix files - ignore all except example3x3.mtx
+# Matrix files - ignore all except small examples
 *.mtx
 !matrix/example3x3.mtx
+!matrix/example81x81.mtx
 
-# External dependencies (Kokkos, etc.)
+# Large generated matrices (no extension)
+matrix/[0-9]*
+
+# External dependencies (Kokkos, AmgX source, etc.)
 external/kokkos/
 external/kokkos-kernels/
 external/kokkos-install/
 external/kokkos-kernels-install/
 external/kokkos_cg_baseline
 external/matrix/
+external/amgx-src/
+external/amgx/
+external/benchmarks/AMGX/
+
+# Claude Code instructions (private)
+CLAUDE.md
+
+# Debug files
+*.gdb
 
 # Profiling and test scripts
 profiling_results/
 profile/
 test_*.sh
 profile_*.sh
+
+# Development scripts (keep on dev branch only)
+scripts/setup/
+scripts/benchmark_*k*.sh
+scripts/check_*.py
+scripts/check_*.sh
+scripts/analyze_*.sh
 
 # Personal notes and work-in-progress documentation
 .notes/
