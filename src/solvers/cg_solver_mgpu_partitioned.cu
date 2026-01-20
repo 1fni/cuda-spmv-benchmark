@@ -655,10 +655,6 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         // Check convergence
         if (rel_residual < config.tolerance) {
             iter++;
-            if (rank == 0 && config.verbose >= 1) {
-                printf("\nConverged in %d iterations (residual: %.6e)\n", iter, residual_norm);
-            }
-
             stats->converged = 1;
             stats->iterations = iter;
             stats->residual_norm = residual_norm;

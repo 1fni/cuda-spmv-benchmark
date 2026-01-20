@@ -342,8 +342,8 @@ int main(int argc, char* argv[]) {
     printf("========================================\n");
     printf("Results\n");
     printf("========================================\n");
-    printf("Converged: %s\n", results[0].converged ? "YES" : "NO");
-    printf("Iterations: %d\n", results[0].iterations);
+    printf("Converged: %s in %d iterations\n", results[0].converged ? "YES" : "NO",
+           results[0].iterations);
     printf("Time (median): %.3f ms\n", median);
     printf("Stats: min=%.3f ms, max=%.3f ms, std=%.3f ms\n", min_time, max_time, final_std);
 
