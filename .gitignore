@@ -19,10 +19,7 @@ tags
 
 # External benchmarks compiled binaries
 external/benchmarks/amgx/amgx_*
-external/benchmarks/kokkos/kokkos_*
-external/benchmarks/kokkos/generate_kokkos_matrix
 !external/benchmarks/amgx/*.cpp
-!external/benchmarks/kokkos/*.cpp
 
 # Scripts for results management (keep out of main)
 scripts/save_results_to_git.sh
@@ -35,16 +32,11 @@ scripts/save_results_to_git.sh
 # Large generated matrices (no extension)
 matrix/[0-9]*
 
-# External dependencies (Kokkos, AmgX source, etc.)
-external/kokkos/
-external/kokkos-kernels/
-external/kokkos-install/
-external/kokkos-kernels-install/
-external/kokkos_cg_baseline
-external/matrix/
+# External dependencies (AmgX source, etc.)
 external/amgx-src/
 external/amgx/
 external/benchmarks/AMGX/
+external/matrix/
 
 # Claude Code instructions (private)
 CLAUDE.md
