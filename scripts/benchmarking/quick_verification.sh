@@ -136,7 +136,7 @@ done
 if [ -n "$AMGX_MGPU_BIN" ] && [ "$HAS_MPI" = "1" ]; then
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
     if [ "$NUM_GPUS" -ge 2 ]; then
-        echo "=== Test 5: AmgX CG Solver (Multi-GPU, 2 GPUs) ==="
+        echo "=== Test 5: Multi-GPU AmgX CG Solver (2 GPUs) ==="
         mpirun --allow-run-as-root -np 2 "$AMGX_MGPU_BIN" "${MATRIX_FILE}" 2>&1 | grep -E "(Converged|Iterations|Time|Checksum|Sum\(|Norm)" || true
         echo ""
     else
