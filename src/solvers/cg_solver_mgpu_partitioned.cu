@@ -539,6 +539,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
     // CG iteration loop
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
+        nvtxRangePush("CG_Iteration");
+
         // Ap = A * p (local SpMV) - halo-aware kernel
         nvtxRangePush("SpMV");
         if (config.enable_detailed_timers) {
@@ -557,6 +559,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         nvtxRangePop();
 
         // alpha = rs_old / (p^T * Ap) - local dot product
+        nvtxRangePush("Dot_Product");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -569,6 +572,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
             stats->time_reductions_ms += elapsed_ms;
             stats->time_dot_pAp_ms += elapsed_ms;  // Granular timer
         }
+        nvtxRangePop();
 
         // AllReduce for pAp
         if (config.enable_detailed_timers) {
@@ -617,6 +621,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         nvtxRangePop();
 
         // rs_new = r^T * r - local dot product
+        nvtxRangePush("Dot_Product");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -629,6 +634,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
             stats->time_reductions_ms += elapsed_ms;
             stats->time_dot_rs_new_ms += elapsed_ms;  // Granular timer
         }
+        nvtxRangePop();
 
         // AllReduce for rs_new
         if (config.enable_detailed_timers) {
@@ -701,6 +707,8 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         nvtxRangePop();
 
         rs_old = rs_new;
+
+        nvtxRangePop();  // CG_Iteration
     }
 
     // Check if max iterations reached
