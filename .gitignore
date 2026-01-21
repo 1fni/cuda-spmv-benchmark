@@ -32,11 +32,16 @@ scripts/save_results_to_git.sh
 # Large generated matrices (no extension)
 matrix/[0-9]*
 
-# External dependencies (AmgX source, etc.)
+# External dependencies (AmgX, Kokkos installs, etc.)
 external/amgx-src/
 external/amgx/
 external/benchmarks/AMGX/
 external/matrix/
+external/kokkos/
+external/kokkos-kernels/
+external/kokkos-install/
+external/kokkos-kernels-install/
+external/kokkos_cg_baseline
 
 # Claude Code instructions (private)
 CLAUDE.md
@@ -51,7 +56,7 @@ test_*.sh
 profile_*.sh
 
 # Development scripts (keep on dev branch only)
-scripts/setup/
+scripts/setup/setup_lium.sh
 scripts/benchmark_*k*.sh
 scripts/check_*.py
 scripts/check_*.sh
