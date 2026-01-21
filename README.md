@@ -299,9 +299,9 @@ GPU 7: rows [87.5k, 100k)    ┘
 ```
 
 **Performance characteristics:**
-- **SpMV dominates** (25-30% of total time)
-- **BLAS1 operations** (AXPY, dot products): 30-35%
-- **Reductions** (MPI_Allreduce): 10-12%
+- **SpMV dominates** (~40-50% of total time)
+- **BLAS1 operations** (AXPY, dot products): ~40-45%
+- **Reductions** (MPI_Allreduce): ~10-15%
 - **Halo exchange**: < 5% for large problems
 
 ---
@@ -318,6 +318,10 @@ GPU 7: rows [87.5k, 100k)    ┘
 │   ├── raw/                        # Raw benchmark outputs (TXT)
 │   ├── json/                       # Structured results (JSON)
 │   └── figures/                    # Generated plots (PNG)
+├── profiling/
+│   ├── nsys/                       # Nsight Systems timeline profiles
+│   ├── ncu/                        # Nsight Compute roofline analysis
+│   └── images/                     # Exported screenshots
 ├── src/                            # Source code
 │   ├── main/                       # Entry points
 │   ├── solvers/                    # CG solver implementations
@@ -368,29 +372,13 @@ jq '.timing.median_ms' results/json/custom.json
 ### Profiling with Nsight Systems
 
 ```bash
-# Profile 4-rank run
-nsys profile --trace=cuda,mpi,nvtx \
+# Profile solver iterations only (excludes setup/teardown)
+nsys profile --trace=cuda,mpi,nvtx --capture-range=nvtx --nvtx-capture="solver_iteration" \
   mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
 
 # View timeline in GUI
 nsys-ui report.nsys-rep
 ```
-
----
-
-## Performance Comparison
-
-### MPI vs NCCL for Halo Exchange
-
-| Implementation | 8 GPUs (15k×15k) | Notes |
-|----------------|------------------|-------|
-| **MPI explicit staging** | 40.4 ms | ✅ Production (main branch) |
-| NCCL P2P | 67.4 ms | ❌ 4.5ms launch latency per call |
-| CUDA IPC direct | 70.1 ms | ❌ Similar overhead to NCCL |
-
-**Conclusion**: MPI with explicit staging (D2H → MPI_Isend/Irecv → H2D) is 43% faster than NCCL for small repeated messages (160 KB halo zones).
-
-See [profiling notes](.notes/OVERLAP_NUMERICAL_STABILITY_SIZE.md) for detailed analysis.
 
 ---
 
