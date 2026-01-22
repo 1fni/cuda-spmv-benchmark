@@ -162,6 +162,12 @@ AmgX operates on generic CSR data structures with no knowledge of the underlying
 - Minimize halo exchange volume (160 KB vs 800 MB with AllGather)
 - Optimize memory access patterns (grouped W-C-E then N-S)
 
+<p align="center">
+  <img src="docs/figures/roofline_spmv_comparison.png" alt="Roofline Analysis" width="80%">
+</p>
+
+Roofline analysis confirms both kernels are memory-bound, but the stencil kernel achieves **2× higher throughput** by eliminating index indirection. See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for detailed breakdown.
+
 This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The performance gap reflects the benefit of specialization when problem structure is known.
 
 See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX methodology and results.

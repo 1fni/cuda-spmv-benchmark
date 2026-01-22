@@ -83,37 +83,35 @@ Each interior row has exactly 5 non-zeros at fixed offsets: `-grid_size`, `-1`, 
 
 Profiled on RTX 4060 Laptop GPU (7k×7k matrix, same relative behavior):
 
-**cuSPARSE CSR SpMV:**
+<p align="center">
+  <img src="figures/roofline_spmv_comparison.png" alt="Roofline Comparison" width="90%">
+</p>
 
+| Kernel | Duration | Memory Throughput | Performance |
+|--------|----------|-------------------|-------------|
+| cuSPARSE CSR | 22.99 ms | 67% | 21.3 GFLOP/s |
+| Custom Stencil | 11.25 ms | **95%** | **43.6 GFLOP/s** |
+
+**Key observations:**
+- Both kernels are **memory-bound** (positioned on the sloped part of the roofline)
+- Stencil achieves **95% memory throughput** vs 67% for CSR
+- The 2× speedup comes from better memory system utilization, not more compute
+- CSR's index indirection creates irregular access patterns that reduce effective bandwidth
+
+<details>
+<summary><b>Raw Nsight Compute Screenshots</b></summary>
+
+**cuSPARSE CSR:**
 <p align="center">
   <img src="figures/profiling_roofline_cusparse_csr.png" alt="cuSPARSE CSR Roofline" width="100%">
 </p>
 
-| Metric | Value |
-|--------|------:|
-| Duration | 22.99 ms |
-| Compute (SM) Throughput | 82.77% |
-| Memory Throughput | 67.04% |
-| DRAM Throughput | 67.04% |
-
-**Custom Stencil SpMV:**
-
+**Custom Stencil:**
 <p align="center">
   <img src="figures/profiling_roofline_stencil.png" alt="Stencil Kernel Roofline" width="100%">
 </p>
 
-| Metric | Value |
-|--------|------:|
-| Duration | 11.38 ms |
-| Compute (SM) Throughput | 48.13% |
-| Memory Throughput | **94.21%** |
-| DRAM Throughput | **94.21%** |
-
-**Key observations:**
-- Both kernels are **memory-bound** (positioned on the left side of the roofline)
-- Stencil achieves **94% memory throughput** vs 67% for CSR
-- The 2× speedup comes from better memory system utilization, not more compute
-- CSR's index indirection creates irregular access patterns that reduce effective bandwidth
+</details>
 
 ### Arithmetic Intensity Analysis
 
