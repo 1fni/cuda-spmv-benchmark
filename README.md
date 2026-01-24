@@ -159,10 +159,27 @@ AmgX is NVIDIA's production-grade multi-GPU solver library, used here as referen
 
 Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. By exploiting the known 5-point stencil structure, the custom kernel achieves 2× higher throughput—translating to 1.4× overall solver speedup.
 
-<details>
-<summary><b>🔬 Profiling Deep Dive</b></summary>
+### Timeline Comparison (Nsight Systems)
 
-**Kernel Distribution** (from Nsight Systems):
+CG iteration timeline on 2 GPUs (4k×4k matrix). SpMV kernel (green) dominates execution time in both solvers:
+
+| Custom CG | NVIDIA AmgX |
+|:---------:|:-----------:|
+| <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%"> | <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%"> |
+| Stencil SpMV executes faster | Generic CSR SpMV takes longer |
+
+### Why the SpMV Difference (Roofline)
+
+Both SpMV kernels are **memory-bound**, but the stencil kernel achieves **95% memory throughput** vs 67% for CSR:
+
+<p align="center">
+  <img src="docs/figures/roofline_spmv_comparison.png" alt="Roofline Analysis" width="80%">
+</p>
+
+Eliminating index indirection doubles effective bandwidth—the stencil kernel moves 45% less data per row.
+
+<details>
+<summary><b>📊 Detailed Kernel Breakdown</b></summary>
 
 | Kernel Type | AmgX | Custom CG |
 |-------------|-----:|----------:|
@@ -171,42 +188,16 @@ Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. 
 | Dot products | 10% | 16% |
 | Other | 14% | <1% |
 
-**Timeline Comparison** (4k×4k, 2 GPUs):
-
-*Custom CG Solver:*
-<p align="center">
-  <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%">
-</p>
-
-The green bars (`stencil5_csr_partitioned_halo_kernel`) dominate each iteration. Small colored bars show BLAS operations (dot, axpy). MPI sync is minimal.
-
-<!-- TODO: Add AmgX screenshot
-*NVIDIA AmgX:*
-<p align="center">
-  <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%">
-</p>
--->
-
-**Roofline Analysis** (Nsight Compute):
-
-<p align="center">
-  <img src="docs/figures/roofline_spmv_comparison.png" alt="Roofline Analysis" width="80%">
-</p>
-
-Both kernels are memory-bound, but the stencil kernel achieves **95% memory throughput** vs 67% for CSR—a 2× performance difference from better memory access patterns alone.
-
-</details>
-
 **Key optimizations:**
-- **No index indirection**: Column indices computed from row index (no `col_idx` lookups)
+- **No index indirection**: Column indices computed from row index
 - **Minimal halo exchange**: 160 KB per neighbor vs 800 MB with AllGather
 - **Grouped memory accesses**: W-C-E (stride-1) then N-S (stride grid_size)
 
-Performance gains come from a more efficient SpMV kernel and reduced communication volume—not from compute-communication overlap.
+</details>
 
-This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The gap reflects the benefit of specialization when problem structure is known. See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology.
+Performance gains come from a more efficient SpMV kernel and reduced communication volume—not from compute-communication overlap. This is not a limitation of AmgX; it correctly handles arbitrary sparse matrices. The gap reflects the benefit of specialization when problem structure is known.
 
-See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX methodology and results.
+See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology and [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for AmgX details.
 
 ---
 
