@@ -13,6 +13,7 @@
 #include <math.h>
 #include <cuda_runtime.h>
 #include <amgx_c.h>
+#include <nvtx3/nvToolsExt.h>
 #include <chrono>
 #include <vector>
 #include <algorithm>
@@ -290,7 +291,11 @@ int main(int argc, char* argv[]) {
     printf("Running benchmark (%d runs)...\n", num_runs);
     std::vector<RunResult> results;
     for (int i = 0; i < num_runs; i++) {
+        if (i == 5)
+            nvtxRangePush("AmgX_Solve");  // Mark run 5 for profiling
         results.push_back(run_amgx_solve(solver, b, x, d_x, mat.rows, false));
+        if (i == 5)
+            nvtxRangePop();
     }
 
     // Verify solution with checksum (download x and compute sum + L2 norm)

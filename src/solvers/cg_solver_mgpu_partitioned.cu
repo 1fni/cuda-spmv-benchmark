@@ -537,6 +537,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
     }
 
     // CG iteration loop
+    nvtxRangePush("CG_Solver");
     int iter;
     for (iter = 0; iter < config.max_iters; iter++) {
         nvtxRangePush("CG_Iteration");
@@ -710,6 +711,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
 
         nvtxRangePop();  // CG_Iteration
     }
+    nvtxRangePop();  // CG_Solver
 
     // Check if max iterations reached
     if (iter == config.max_iters && rank == 0) {

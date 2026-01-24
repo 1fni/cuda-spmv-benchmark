@@ -157,18 +157,54 @@ AmgX is NVIDIA's production-grade multi-GPU solver library, used here as referen
 
 **Why the performance difference?**
 
-AmgX operates on generic CSR data structures with no knowledge of the underlying problem structure. The custom solver leverages compile-time knowledge of the 5-point stencil to:
-- Reduce memory indirections (no col_idx lookups for interior points)
-- Minimize halo exchange volume (160 KB vs 800 MB with AllGather)
-- Optimize memory access patterns (grouped W-C-E then N-S)
+Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. By exploiting the known 5-point stencil structure, the custom kernel achieves 2× higher throughput—translating to 1.4× overall solver speedup.
+
+<details>
+<summary><b>🔬 Profiling Deep Dive</b></summary>
+
+**Kernel Distribution** (from Nsight Systems):
+
+| Kernel Type | AmgX | Custom CG |
+|-------------|-----:|----------:|
+| SpMV | 48% | 41% |
+| AXPY/AXPBY | 28% | 42% |
+| Dot products | 10% | 16% |
+| Other | 14% | <1% |
+
+**Timeline Comparison** (4k×4k, 2 GPUs):
+
+*Custom CG Solver:*
+<p align="center">
+  <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%">
+</p>
+
+The green bars (`stencil5_csr_partitioned_halo_kernel`) dominate each iteration. Small colored bars show BLAS operations (dot, axpy). MPI sync is minimal.
+
+<!-- TODO: Add AmgX screenshot
+*NVIDIA AmgX:*
+<p align="center">
+  <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%">
+</p>
+-->
+
+**Roofline Analysis** (Nsight Compute):
 
 <p align="center">
   <img src="docs/figures/roofline_spmv_comparison.png" alt="Roofline Analysis" width="80%">
 </p>
 
-Roofline analysis confirms both kernels are memory-bound, but the stencil kernel achieves **2× higher throughput** by eliminating index indirection. See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for detailed breakdown.
+Both kernels are memory-bound, but the stencil kernel achieves **95% memory throughput** vs 67% for CSR—a 2× performance difference from better memory access patterns alone.
 
-This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The performance gap reflects the benefit of specialization when problem structure is known.
+</details>
+
+**Key optimizations:**
+- **No index indirection**: Column indices computed from row index (no `col_idx` lookups)
+- **Minimal halo exchange**: 160 KB per neighbor vs 800 MB with AllGather
+- **Grouped memory accesses**: W-C-E (stride-1) then N-S (stride grid_size)
+
+Performance gains come from a more efficient SpMV kernel and reduced communication volume—not from compute-communication overlap.
+
+This is not a limitation of AmgX—it correctly handles arbitrary sparse matrices. The gap reflects the benefit of specialization when problem structure is known. See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology.
 
 See [`external/benchmarks/amgx/BENCHMARK_RESULTS.md`](external/benchmarks/amgx/BENCHMARK_RESULTS.md) for detailed AmgX methodology and results.
 

@@ -52,12 +52,12 @@ CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 .PHONY: spmv gen cg cg_mgpu cg_mgpu_stencil
 
 # Main target
-all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
+all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG) $(BIN_MGPU_STENCIL)
 
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  make              - Build all single-GPU binaries (default)"
+	@echo "  make              - Build all binaries (including multi-GPU solver)"
 	@echo ""
 	@echo "Explicit targets (match binary names):"
 	@echo "  make spmv_bench              - Build bin/spmv_bench"

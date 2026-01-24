@@ -15,6 +15,7 @@
 #include <mpi.h>
 #include <cuda_runtime.h>
 #include <amgx_c.h>
+#include <nvtx3/nvToolsExt.h>
 #include <chrono>
 #include <vector>
 #include <algorithm>
@@ -551,6 +552,8 @@ int main(int argc, char* argv[]) {
     std::vector<RunResult> results;
     DetailedTimers cumulative_timers = {0.0, 0.0, 0.0};
     for (int i = 0; i < num_runs; i++) {
+        if (i == 5)
+            nvtxRangePush("AmgX_Solve");  // Mark run 5 for profiling
         DetailedTimers run_timers;
         results.push_back(
             run_amgx_solve_mgpu(solver, b, x, d_x, n_local, enable_timers, rank, &run_timers));
@@ -559,6 +562,8 @@ int main(int argc, char* argv[]) {
             cumulative_timers.solve_ms += run_timers.solve_ms;
             cumulative_timers.vector_download_ms += run_timers.vector_download_ms;
         }
+        if (i == 5)
+            nvtxRangePop();
     }
 
     // Verify solution with checksum (download x and compute sum + L2 norm)

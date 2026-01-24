@@ -157,8 +157,27 @@ Compare to naive AllGather: 100M doubles × 8 bytes = 800 MB (5000× more data).
 
 Both implementations scale well, but the custom solver **maintains its single-GPU advantage** at every scale.
 
-<!-- TODO: Add timeline comparison when available -->
-<!-- ![Multi-GPU Timeline](figures/profiling_multigpu_timeline.png) -->
+### Timeline Comparison (Nsight Systems)
+
+**Custom CG Solver** (4k×4k, 2 GPUs):
+
+<p align="center">
+  <img src="figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%">
+</p>
+
+The timeline shows the CG iteration pattern:
+- **Green bars**: `stencil5_csr_partitioned_halo_kernel` (SpMV) - dominates each iteration
+- **Small colored bars**: `void dot_kernel`, `axpy_kernel`, `axpby_kernel` - BLAS operations
+- **MPI row**: Brief synchronization points for halo exchange
+
+**NVIDIA AmgX** (4k×4k, 2 GPUs):
+
+<!-- TODO: Add AmgX screenshot for comparison -->
+<p align="center">
+  <em>[AmgX timeline to be added: amgx_cg_nsys_profile_4k_2n.png]</em>
+</p>
+
+**Key observation**: Performance gains come from more efficient SpMV kernel and reduced communication volume, not from compute-communication overlap. MPI halo exchange is synchronous in both implementations.
 
 ---
 
@@ -242,7 +261,8 @@ ncu --set roofline -o roofline_stencil \
 
 ## Future Work
 
-- [ ] Generate annotated Nsight Systems screenshots on A100
+- [x] ~~Generate annotated Nsight Systems screenshots on A100~~ (added Custom CG timeline)
+- [ ] Add AmgX timeline screenshot for side-by-side comparison
 - [x] ~~Create roofline comparison figure from Nsight Compute~~ (added RTX 4060 profiles)
 - [ ] Profile larger problem sizes (15k, 20k) for scaling analysis
 - [ ] Analyze kernel occupancy and register pressure
