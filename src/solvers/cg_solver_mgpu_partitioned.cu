@@ -120,9 +120,10 @@ stencil5_csr_direct_partitioned_kernel(const int* __restrict__ row_ptr,
 }
 
 /**
- * @brief AXPY kernel: y = alpha * x + y
+ * @brief AXPY kernel: y = alpha * x + y (scalar version)
  */
-__global__ void axpy_kernel(double alpha, const double* x, double* y, int n) {
+__global__ void axpy_kernel(double alpha, const double* __restrict__ x, double* __restrict__ y,
+                            int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         y[i] = alpha * x[i] + y[i];
@@ -130,12 +131,82 @@ __global__ void axpy_kernel(double alpha, const double* x, double* y, int n) {
 }
 
 /**
- * @brief AXPBY kernel: y = alpha * x + beta * y
+ * @brief AXPY kernel with double2 vectorization for better memory throughput
  */
-__global__ void axpby_kernel(double alpha, const double* x, double beta, double* y, int n) {
+__global__ void axpy_kernel_vec2(double alpha, const double2* __restrict__ x,
+                                 double2* __restrict__ y, int n2) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n2) {
+        double2 xv = x[i];
+        double2 yv = y[i];
+        yv.x += alpha * xv.x;
+        yv.y += alpha * xv.y;
+        y[i] = yv;
+    }
+}
+
+/**
+ * @brief AXPBY kernel: y = alpha * x + beta * y (scalar version)
+ */
+__global__ void axpby_kernel(double alpha, const double* __restrict__ x, double beta,
+                             double* __restrict__ y, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         y[i] = alpha * x[i] + beta * y[i];
+    }
+}
+
+/**
+ * @brief AXPBY kernel with double2 vectorization
+ */
+__global__ void axpby_kernel_vec2(double alpha, const double2* __restrict__ x, double beta,
+                                  double2* __restrict__ y, int n2) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n2) {
+        double2 xv = x[i];
+        double2 yv = y[i];
+        yv.x = alpha * xv.x + beta * yv.x;
+        yv.y = alpha * xv.y + beta * yv.y;
+        y[i] = yv;
+    }
+}
+
+/**
+ * @brief Fused AXPY kernel: performs two AXPY operations in one kernel launch
+ *        x = x + alpha * p
+ *        r = r - alpha * Ap
+ * Reduces kernel launch overhead and improves instruction-level parallelism
+ */
+__global__ void fused_axpy_axpy_kernel(double alpha, const double* __restrict__ p,
+                                       const double* __restrict__ Ap, double* __restrict__ x,
+                                       double* __restrict__ r, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        x[i] += alpha * p[i];
+        r[i] -= alpha * Ap[i];
+    }
+}
+
+/**
+ * @brief Fused AXPY kernel with double2 vectorization
+ */
+__global__ void fused_axpy_axpy_kernel_vec2(double alpha, const double2* __restrict__ p,
+                                            const double2* __restrict__ Ap, double2* __restrict__ x,
+                                            double2* __restrict__ r, int n2) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n2) {
+        double2 pv = p[i];
+        double2 Apv = Ap[i];
+        double2 xv = x[i];
+        double2 rv = r[i];
+
+        xv.x += alpha * pv.x;
+        xv.y += alpha * pv.y;
+        rv.x -= alpha * Apv.x;
+        rv.y -= alpha * Apv.y;
+
+        x[i] = xv;
+        r[i] = rv;
     }
 }
 
@@ -591,33 +662,33 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
 
         double alpha = rs_old / pAp;
 
-        // x_local = x_local + alpha * p_local
-        nvtxRangePush("BLAS_AXPY");
+        // Fused AXPY: x = x + alpha*p AND r = r - alpha*Ap in single kernel
+        nvtxRangePush("BLAS_AXPY_FUSED");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
-        }
-        axpy_kernel<<<blocks_local, threads, 0, stream>>>(alpha, d_p_local, d_x_local, n_local);
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_stop, stream));
-            CUDA_CHECK(cudaEventSynchronize(timer_stop));
-            float elapsed_ms;
-            CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
-            stats->time_blas1_ms += elapsed_ms;
-            stats->time_axpy_update_x_ms += elapsed_ms;  // Granular timer
         }
 
-        // r_local = r_local - alpha * Ap_local
-        if (config.enable_detailed_timers) {
-            CUDA_CHECK(cudaEventRecord(timer_start, stream));
+        // Use vectorized kernel if n_local is even, otherwise scalar
+        if (n_local % 2 == 0) {
+            int n2 = n_local / 2;
+            int blocks_vec2 = (n2 + threads - 1) / threads;
+            fused_axpy_axpy_kernel_vec2<<<blocks_vec2, threads, 0, stream>>>(
+                alpha, reinterpret_cast<const double2*>(d_p_local),
+                reinterpret_cast<const double2*>(d_Ap), reinterpret_cast<double2*>(d_x_local),
+                reinterpret_cast<double2*>(d_r_local), n2);
+        } else {
+            fused_axpy_axpy_kernel<<<blocks_local, threads, 0, stream>>>(
+                alpha, d_p_local, d_Ap, d_x_local, d_r_local, n_local);
         }
-        axpy_kernel<<<blocks_local, threads, 0, stream>>>(-alpha, d_Ap, d_r_local, n_local);
+
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
             float elapsed_ms;
             CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, timer_start, timer_stop));
             stats->time_blas1_ms += elapsed_ms;
-            stats->time_axpy_update_r_ms += elapsed_ms;  // Granular timer
+            stats->time_axpy_update_x_ms += elapsed_ms;  // Combined timing for fused kernel
+            stats->time_axpy_update_r_ms += 0.0;         // No separate r update timing
         }
         nvtxRangePop();
 
@@ -671,12 +742,22 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         // beta = rs_new / rs_old
         double beta = rs_new / rs_old;
 
-        // p_local = r_local + beta * p_local
+        // p_local = r_local + beta * p_local (vectorized)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
-        axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r_local, beta, d_p_local,
-                                                           n_local);
+
+        if (n_local % 2 == 0) {
+            int n2 = n_local / 2;
+            int blocks_vec2 = (n2 + threads - 1) / threads;
+            axpby_kernel_vec2<<<blocks_vec2, threads, 0, stream>>>(
+                1.0, reinterpret_cast<const double2*>(d_r_local), beta,
+                reinterpret_cast<double2*>(d_p_local), n2);
+        } else {
+            axpby_kernel<<<blocks_local, threads, 0, stream>>>(1.0, d_r_local, beta, d_p_local,
+                                                               n_local);
+        }
+
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream));
             CUDA_CHECK(cudaEventSynchronize(timer_stop));
