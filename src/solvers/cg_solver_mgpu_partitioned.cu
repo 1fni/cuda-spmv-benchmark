@@ -672,6 +672,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
         double beta = rs_new / rs_old;
 
         // p_local = r_local + beta * p_local
+        nvtxRangePush("BLAS_AXPBY");
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream));
         }
@@ -685,6 +686,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
             stats->time_blas1_ms += elapsed_ms;
             stats->time_axpby_update_p_ms += elapsed_ms;  // Granular timer
         }
+        nvtxRangePop();
 
         // P2P halo exchange for p vector (160 KB vs 800 MB AllGather)
         nvtxRangePush("Halo_Exchange_MPI");

@@ -12,7 +12,14 @@ BUILD_TYPE ?= release
 # Compiler + flags
 NVCC := nvcc
 MPICXX := mpic++
-MPI_INCLUDES := -I/usr/lib/x86_64-linux-gnu/openmpi/include
+
+# Detect MPI availability
+HAS_MPI := $(shell which mpic++ > /dev/null 2>&1 && echo 1 || echo 0)
+ifeq ($(HAS_MPI),1)
+    MPI_INCLUDES := $(shell mpic++ --showme:compile 2>/dev/null || echo "-I/usr/lib/x86_64-linux-gnu/openmpi/include")
+else
+    MPI_INCLUDES :=
+endif
 
 ifeq ($(BUILD_TYPE),debug)
     NVCCFLAGS := -g -G -O0 -std=c++11
@@ -41,23 +48,38 @@ CU_GEN_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_GEN_SRCS))
 BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
 BIN_CG   := $(BIN_DIR)/cg_solver
+BIN_MGPU_STENCIL := $(BIN_DIR)/cg_solver_mgpu_stencil
 
 # CG solver: exclude generator, spmv_bench, and multi-GPU sources
 CU_CG_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/main.cu $(SRC_DIR)/main/cg_solver_mgpu_stencil.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu $(SRC_DIR)/spmv/benchmark_stats_mgpu_partitioned.cu, $(CU_SRCS))
 CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
-.PHONY: all clean help
+.PHONY: all clean help check-mpi-message
 .PHONY: spmv_bench generate_matrix cg_solver cg_solver_mgpu cg_solver_mgpu_stencil
 .PHONY: spmv gen cg cg_mgpu cg_mgpu_stencil
 
-# Main target
-all: $(BIN_SPMV) $(BIN_GEN) $(BIN_CG) $(BIN_MGPU_STENCIL)
+# Main target - conditionally include MPI targets
+ifeq ($(HAS_MPI),1)
+    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_CG) $(BIN_MGPU_STENCIL)
+else
+    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
+endif
+
+all: $(ALL_TARGETS) check-mpi-message
+
+check-mpi-message:
+ifeq ($(HAS_MPI),0)
+	@echo ""
+	@echo "NOTE: MPI not found (mpic++ not in PATH)"
+	@echo "      Skipped: cg_solver_mgpu_stencil"
+	@echo "      Install OpenMPI/MPICH to build multi-GPU solver"
+endif
 
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  make              - Build all binaries (including multi-GPU solver)"
+	@echo "  make              - Build all binaries (multi-GPU if MPI available)"
 	@echo ""
 	@echo "Explicit targets (match binary names):"
 	@echo "  make spmv_bench              - Build bin/spmv_bench"
@@ -100,9 +122,6 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
 # ============================================================================
 # Multi-GPU CG Solvers with MPI
 # ============================================================================
-
-# Binaries
-BIN_MGPU_STENCIL := $(BIN_DIR)/cg_solver_mgpu_stencil  # Stencil-optimized (halo P2P)
 
 # MPI objects (shared utilities)
 OBJ_MGPU_IO := $(OBJ_DIR)/mgpu/io.o
