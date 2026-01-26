@@ -665,6 +665,7 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
             stats->converged = 1;
             stats->iterations = iter;
             stats->residual_norm = residual_norm;
+            nvtxRangePop();  // CG_Iteration - must pop before break
             break;
         }
 
