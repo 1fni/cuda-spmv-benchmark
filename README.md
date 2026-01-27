@@ -157,6 +157,8 @@ AmgX is NVIDIA's production-grade multi-GPU solver library, used here as referen
 
 **Why the performance difference?**
 
+> **TL;DR:** SpMV dominates CG performance. A stencil-aware kernel improves memory efficiency, yielding faster iterations without relying on communication overlap.
+
 Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. By exploiting the known 5-point stencil structure, the custom kernel achieves 2× higher throughput—translating to 1.4× overall solver speedup.
 
 ### Timeline Comparison (Nsight Systems)
@@ -172,6 +174,8 @@ Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. 
 </p>
 
 <sub>**Figure 1** — Nsight Systems timeline of one Conjugate Gradient iteration (2 MPI ranks, A100 GPU). Top: custom CG using stencil-optimized CSR SpMV. Bottom: NVIDIA AmgX under the same configuration. CUDA HW tracks show actual GPU kernel execution, MPI tracks highlight halo exchange phases. Although halo exchanges are synchronous in both cases, the custom implementation achieves shorter iteration time due to a faster SpMV kernel and reduced communication volume.</sub>
+
+<sub>*NVTX ranges denote algorithmic phases and do not necessarily correspond to exact GPU kernel execution time; CUDA HW tracks provide the authoritative timing.*</sub>
 
 ### Why the SpMV Difference (Roofline)
 
