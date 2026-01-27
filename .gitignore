@@ -64,3 +64,4 @@ scripts/analyze_*.sh
 
 # Personal notes and work-in-progress documentation
 .notes/
+*.sqlite

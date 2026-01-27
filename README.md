@@ -163,10 +163,15 @@ Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. 
 
 CG iteration timeline on 2 GPUs (4k×4k matrix). SpMV kernel (green) dominates execution time in both solvers:
 
-| Custom CG | NVIDIA AmgX |
-|:---------:|:-----------:|
-| <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%"> | <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%"> |
-| Stencil SpMV executes faster | Generic CSR SpMV takes longer |
+**Custom CG** — Stencil SpMV executes faster:
+<p align="center">
+  <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%">
+</p>
+
+**NVIDIA AmgX** — Generic CSR SpMV takes longer:
+<p align="center">
+  <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%">
+</p>
 
 ### Why the SpMV Difference (Roofline)
 
