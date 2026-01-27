@@ -218,6 +218,7 @@ See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology an
 | Warmup runs | 3 (discarded) |
 | Timing scope | Solver only (excludes I/O, matrix setup) |
 | Convergence criterion | Relative residual < 1e-6 |
+| Profiling tools | Nsight Systems (timeline), Nsight Compute (roofline) |
 
 **Compilation flags** (release build):
 ```
