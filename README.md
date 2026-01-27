@@ -161,8 +161,6 @@ Profiling reveals that AmgX spends **48% of compute time in generic CSR SpMV**. 
 
 ### Timeline Comparison (Nsight Systems)
 
-CG iteration timeline on 2 GPUs (4k×4k matrix). SpMV kernel (green) dominates execution time in both solvers:
-
 **Custom CG** — Stencil SpMV executes faster:
 <p align="center">
   <img src="docs/figures/custom_cg_nsys_profile_4k_2n.png" alt="Custom CG Timeline" width="100%">
@@ -173,15 +171,15 @@ CG iteration timeline on 2 GPUs (4k×4k matrix). SpMV kernel (green) dominates e
   <img src="docs/figures/amgx_cg_nsys_profile_4k_2n.png" alt="AmgX Timeline" width="100%">
 </p>
 
-### Why the SpMV Difference (Roofline)
+<sub>**Figure 1** — Nsight Systems timeline of one Conjugate Gradient iteration (2 MPI ranks, A100 GPU). Top: custom CG using stencil-optimized CSR SpMV. Bottom: NVIDIA AmgX under the same configuration. CUDA HW tracks show actual GPU kernel execution, MPI tracks highlight halo exchange phases. Although halo exchanges are synchronous in both cases, the custom implementation achieves shorter iteration time due to a faster SpMV kernel and reduced communication volume.</sub>
 
-Both SpMV kernels are **memory-bound**, but the stencil kernel achieves **95% memory throughput** vs 67% for CSR:
+### Why the SpMV Difference (Roofline)
 
 <p align="center">
   <img src="docs/figures/roofline_spmv_comparison.png" alt="Roofline Analysis" width="80%">
 </p>
 
-Eliminating index indirection doubles effective bandwidth—the stencil kernel moves 45% less data per row.
+<sub>**Figure 2** — Roofline analysis of SpMV kernels on NVIDIA A100. Both kernels are memory-bound (positioned on the bandwidth roof). The custom stencil kernel achieves **95% memory throughput** vs 67% for cuSPARSE CSR. Performance gains come from improved memory access patterns and reduced indirections, not increased arithmetic intensity.</sub>
 
 <details>
 <summary><b>📊 Detailed Kernel Breakdown</b></summary>
