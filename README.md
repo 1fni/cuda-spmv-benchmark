@@ -367,6 +367,7 @@ GPU 7: rows [87.5k, 100k)    ┘
 │   ├── main/                       # Entry points
 │   ├── solvers/                    # CG solver implementations
 │   ├── spmv/                       # SpMV kernels
+│   ├── matrix/                     # Stencil Matrix Market generator
 │   └── io/                         # Matrix I/O
 ├── include/                        # Header files
 ├── docs/                           # Documentation & pre-generated figures
