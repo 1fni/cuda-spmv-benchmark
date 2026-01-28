@@ -36,7 +36,7 @@
 ## Individual Benchmarks
 
 See [benchmarking/README.md](benchmarking/README.md) for detailed documentation on:
-- `benchmark_single_gpu_formats.sh` - CSR vs STENCIL5 comparison
+- `benchmark_spmv_comparison.sh` - cuSPARSE CSR vs Stencil CSR
 - `benchmark_problem_sizes.sh` - Strong scaling (1→8 GPUs)
 - `benchmark_weak_scaling.sh` - Weak scaling
 - `benchmark_amgx.sh` - AmgX comparison
