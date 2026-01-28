@@ -24,9 +24,8 @@ external/benchmarks/amgx/amgx_*
 # Scripts for results management (keep out of main)
 scripts/save_results_to_git.sh
 
-# Matrix files - ignore all except small examples
+# Matrix files - ignore all except small example
 *.mtx
-!matrix/example3x3.mtx
 !matrix/example81x81.mtx
 
 # Large generated matrices (no extension)

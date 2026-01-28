@@ -1,135 +1,293 @@
-# Benchmarking Scripts
+# Benchmark Scripts Guide
 
-## Recommended Scripts (New - JSON/CSV exports)
+Cinq scripts principaux pour évaluer les performances du solver CG multi-GPU et SpMV standalone.
 
-### 1. `benchmark_suite.sh` ⭐ **[PRIMARY]**
-**Full benchmark suite for A100 8×GPU systems**
+---
+
+## 1. Single-GPU Format Comparison
+
+**Script**: `benchmark_single_gpu_formats.sh`
+
+**Objectif**: Comparer CSR (cuSPARSE) vs STENCIL5-OPT (custom kernel) sur single-GPU
+
+**Test**:
+- Formats: CSR, STENCIL5-OPT
+- Tailles: 5k, 7.5k, 10k, 15k, 20k (25M à 400M unknowns)
+- Hardware: 1 GPU
+
+**Usage**:
+```bash
+cd /path/to/cuda-spmv-benchmark
+./scripts/benchmarking/benchmark_single_gpu_formats.sh
+
+# Résultats dans: results_single_gpu_formats_[GPU]_[DATE]/
+cd results_single_gpu_formats_*/
+python3 analyze_formats.py
+```
+
+**Output**:
+- `format_comparison.png` : 4 panels (time, GFLOPS, bandwidth, speedup)
+- JSON per configuration
+- Summary table avec speedup STENCIL5-OPT vs CSR
+
+**Résultats attendus (H100 NVL)** :
+- CSR: ~320 GFLOPS, 2575 GB/s
+- STENCIL5-OPT: ~480 GFLOPS, 3645 GB/s
+- Speedup: **1.49×**
+
+---
+
+## 2. Strong Scaling (Multi-GPU)
+
+**Script**: `benchmark_problem_sizes.sh`
+
+**Objectif**: Tester strong scaling (même problème, plus de GPUs = plus rapide)
+
+**Test**:
+- GPU counts: 1, 2, 4, 8
+- Tailles: 10k, 15k, 20k (fixe pour chaque GPU count)
+- Métrique: Speedup et parallel efficiency
+
+**Usage**:
+```bash
+./scripts/benchmarking/benchmark_problem_sizes.sh
+
+# Résultats dans: results_problem_size_scaling_[GPU]_[DATE]/
+cd results_problem_size_scaling_*/
+python3 analyze_scaling.py
+```
+
+**Output**:
+- `strong_scaling_analysis.png` : 4 panels (time, speedup, efficiency, time/iter)
+- JSON/CSV per configuration
+- Summary table avec speedup et efficiency
+
+**Résultats attendus (8× A100)** :
+- 10k×10k: 6.94× speedup, 86.8% efficiency
+- 15k×15k: 7.43× speedup, 92.9% efficiency
+- 20k×20k: **7.48× speedup, 93.5% efficiency**
+
+---
+
+## 3. Weak Scaling (Multi-GPU)
+
+**Script**: `benchmark_weak_scaling.sh`
+
+**Objectif**: Tester weak scaling (constant work per GPU, temps constant idéal)
+
+**Test**:
+- 1 GPU: 5k×5k (25M unknowns)
+- 2 GPUs: 7071×7071 (~50M unknowns)
+- 4 GPUs: 10k×10k (100M unknowns)
+- 8 GPUs: 14142×14142 (~200M unknowns)
+- Métrique: Efficiency (temps constant = 100%)
+
+**Usage**:
+```bash
+./scripts/benchmarking/benchmark_weak_scaling.sh
+
+# Résultats dans: results_weak_scaling_[GPU]_[DATE]/
+cd results_weak_scaling_*/
+python3 analyze_weak_scaling.py
+```
+
+**Output**:
+- `weak_scaling_analysis.png` : 2 panels (time vs GPUs, efficiency bars)
+- JSON/CSV per configuration
+- Summary table avec efficiency
+
+**Résultats attendus (8× A100)** :
+- Temps devrait rester ~constant (baseline 1 GPU)
+- Efficiency > 80% pour weak scaling correct
+- Montre si l'overhead communication domine
+
+---
+
+## 4. Multi-GPU SpMV Strong Scaling
+
+**Script**: `benchmark_mgpu_spmv_strong.sh`
+
+**Objectif**: Tester strong scaling du SpMV seul (pas CG complet)
+
+**Test**:
+- GPU counts: 1, 2, 4, 8
+- Tailles: 10k, 15k, 20k (fixe pour chaque GPU count)
+- Métrique: Temps SpMV par iteration (extrait du CG solver avec --timers)
+
+**Usage**:
+```bash
+./scripts/benchmarking/benchmark_mgpu_spmv_strong.sh
+
+# Résultats dans: results_mgpu_spmv_strong_[GPU]_[DATE]/
+cd results_mgpu_spmv_strong_*/
+python3 analyze_spmv_scaling.py
+```
+
+**Output**:
+- `mgpu_spmv_strong_scaling.png` : 4 panels (time/iter, speedup, efficiency, total)
+- JSON/CSV per configuration
+- Summary table avec speedup SpMV seul
+
+**Différence avec CG complet**:
+- CG inclut: SpMV + BLAS1 + réductions + communications
+- SpMV seul: Juste le kernel SpMV (25-30% du temps total CG)
+- Permet d'isoler performance SpMV pure
+
+---
+
+## 5. Multi-GPU SpMV Weak Scaling
+
+**Script**: `benchmark_mgpu_spmv_weak.sh`
+
+**Objectif**: Tester weak scaling du SpMV seul (constant work per GPU)
+
+**Test**:
+- 1 GPU: 5k×5k (25M unknowns)
+- 2 GPUs: 7071×7071 (~50M unknowns)
+- 4 GPUs: 10k×10k (100M unknowns)
+- 8 GPUs: 14142×14142 (~200M unknowns)
+- Métrique: Temps SpMV par iteration constant = 100% efficiency
+
+**Usage**:
+```bash
+./scripts/benchmarking/benchmark_mgpu_spmv_weak.sh
+
+# Résultats dans: results_mgpu_spmv_weak_[GPU]_[DATE]/
+cd results_mgpu_spmv_weak_*/
+python3 analyze_spmv_weak.py
+```
+
+**Output**:
+- `mgpu_spmv_weak_scaling.png` : 2 panels (time vs GPUs, efficiency bars)
+- JSON/CSV per configuration
+- Summary table avec efficiency SpMV
+
+**Note importante**:
+- SpMV temps extrait du CG solver via `--timers` flag
+- Temps per iteration rapporté (moyenne sur toutes les itérations CG)
+- Permet de mesurer overhead communication SpMV seul
+
+---
+
+## Comparaison Strong vs Weak Scaling
+
+| Type | Taille problème | Métrique | Idéal |
+|------|----------------|----------|-------|
+| **Strong** | Fixe (ex: 15k×15k) | Speedup = T₁/Tₙ | Speedup = N GPUs |
+| **Weak** | Proportionnelle (25M/GPU) | Efficiency = T₁/Tₙ × 100% | Efficiency = 100% |
+
+**Strong scaling** : "Plus de GPUs = plus rapide"
+- Test : Problème fixe sur 1, 2, 4, 8 GPUs
+- Idéal : 8 GPUs = 8× plus rapide
+- Reality : 7-7.5× typique (communication overhead)
+
+**Weak scaling** : "Plus de GPUs = problèmes plus gros en même temps"
+- Test : Work constant per GPU (25M unknowns/GPU)
+- Idéal : Temps constant quel que soit GPU count
+- Reality : Légère augmentation (overhead MPI AllReduce)
+
+---
+
+## Workflow Showcase Complet
 
 ```bash
-./scripts/benchmarking/benchmark_suite.sh <matrix.mtx> [output_dir]
+# ===== Single-GPU Benchmarks =====
+# 1. Format comparison CSR vs STENCIL5-OPT (pour README hero section)
+./scripts/benchmarking/benchmark_single_gpu_formats.sh
+cd results_single_gpu_formats_*/
+python3 analyze_formats.py
+cp format_comparison.png ../docs/figures/
+cd ..
+
+# ===== Multi-GPU CG Solver Benchmarks =====
+# 2. Strong scaling CG complet (showcase principal)
+./scripts/benchmarking/benchmark_problem_sizes.sh
+cd results_problem_size_scaling_*/
+python3 analyze_scaling.py
+cp strong_scaling_analysis.png ../docs/figures/
+cd ..
+
+# 3. Weak scaling CG complet (optionnel)
+./scripts/benchmarking/benchmark_weak_scaling.sh
+cd results_weak_scaling_*/
+python3 analyze_weak_scaling.py
+cp weak_scaling_analysis.png ../docs/figures/
+cd ..
+
+# ===== Multi-GPU SpMV Standalone Benchmarks =====
+# 4. Strong scaling SpMV seul (pour isoler performance SpMV)
+./scripts/benchmarking/benchmark_mgpu_spmv_strong.sh
+cd results_mgpu_spmv_strong_*/
+python3 analyze_spmv_scaling.py
+cp mgpu_spmv_strong_scaling.png ../docs/figures/
+cd ..
+
+# 5. Weak scaling SpMV seul (optionnel)
+./scripts/benchmarking/benchmark_mgpu_spmv_weak.sh
+cd results_mgpu_spmv_weak_*/
+python3 analyze_spmv_weak.py
+cp mgpu_spmv_weak_scaling.png ../docs/figures/
+cd ..
 ```
 
-**What it runs:**
-- SpMV single-GPU: all modes (csr, stencil5-*)
-- CG single-GPU: csr, stencil5-csr-direct (with/without --timers)
-- CG multi-GPU AllGather: 2, 4, 8 GPUs
-- CG multi-GPU Halo P2P: 2, 4, 8 GPUs
+---
 
-**Output:** Clean JSON + CSV files for analysis
+## Configuration
 
-**Example:**
+Tous les scripts utilisent les mêmes conventions :
+- **RUNS=10** : Nombre de runs per config (median reporté)
+- **BRANCH="main"** : Branche git à tester
+- **Auto-detection** : GPU name, date pour nommage résultats
+- **Matrix generation** : Automatique si fichier manquant
+
+---
+
+## Troubleshooting
+
+**Build fails** :
 ```bash
-./bin/generate_matrix 5000 matrix/stencil_5000x5000.mtx
-./scripts/benchmarking/benchmark_suite.sh matrix/stencil_5000x5000.mtx results/a100_run
+# Vérifier cibles Makefile
+make cg_solver_mgpu_stencil  # Multi-GPU
+make spmv_bench              # Single-GPU
+make generate_matrix         # Génération matrices
 ```
 
----
+**Out of memory** :
+- Réduire tailles matrices (MATRIX_SIZES)
+- Utiliser moins de GPUs
+- Vérifier `nvidia-smi` pour mémoire disponible
 
-### 2. `quick_bench.sh` ⭐ **[DEV/TEST]**
-**Fast local testing (single-GPU only)**
-
+**MPI errors** :
 ```bash
-./scripts/benchmarking/quick_bench.sh <matrix.mtx> [output_dir]
+# Vérifier GPU count disponible
+nvidia-smi --list-gpus
+
+# Test MPI simple
+mpirun -np 2 hostname
 ```
 
-**What it runs:**
-- SpMV: csr, stencil5-csr-direct
-- CG: csr, stencil5-csr-direct
-
-**Use for:** Quick validation before full benchmark suite
-
----
-
-## Legacy Scripts (VastAI-specific)
-
-These scripts are **VastAI-optimized** with auto-detection and setup. They remain useful for VastAI instances but are less general.
-
-### `multimode_benchmark.sh` 🔧 [VASTAI]
-- Auto-detects GPU and generates optimal matrix size
-- Tests all SpMV modes with single matrix load
-- VastAI-specific features (colors, emojis, auto-sizing)
-
-**Use when:** Running on VastAI rental GPUs with auto-setup
-
----
-
-### `benchmark_and_visualize.sh` 🔧 [OBSOLETE?]
-- Benchmarking + visualization generation
-- May be outdated (check dependencies)
-
-**Status:** Consider replacing with `benchmark_suite.sh` + separate analysis script
-
----
-
-### `benchmark_optimization.sh` 🔧 [SPECIFIC]
-- Compares optimization against baseline
-- Niche use case
-
-**Status:** Keep for comparing specific optimizations
-
----
-
-### `cg_comparison_setup.sh` 🔧 [KOKKOS]
-- VastAI setup for CG + Kokkos comparison
-- Clones repo, installs Kokkos, builds everything
-
-**Status:** Keep for Kokkos benchmarking (Phase 3.5)
-
----
-
-### `remote_benchmark.sh` 🔧 [VASTAI]
-- VastAI automated benchmark with auto-detection
-- Similar to `multimode_benchmark.sh`
-
-**Status:** Redundant with `multimode_benchmark.sh`?
-
----
-
-## Decision: Which Scripts to Keep?
-
-### ✅ Keep (Active)
-1. **benchmark_suite.sh** - Primary production benchmark
-2. **quick_bench.sh** - Dev/test
-3. **multimode_benchmark.sh** - VastAI auto-setup
-4. **cg_comparison_setup.sh** - Kokkos comparison
-
-### ⚠️ Review (Possibly Obsolete)
-5. **benchmark_and_visualize.sh** - Check if still used
-6. **remote_benchmark.sh** - Redundant with multimode_benchmark?
-7. **benchmark_optimization.sh** - Niche use case
-
----
-
-## Recommended Workflow
-
-### Local Development
+**Python errors** :
 ```bash
-./scripts/benchmarking/quick_bench.sh matrix/test.mtx
-```
+# Install matplotlib
+pip3 install matplotlib numpy
 
-### Full A100 Benchmark
-```bash
-./bin/generate_matrix 10000 matrix/stencil_10000x10000.mtx
-./scripts/benchmarking/benchmark_suite.sh matrix/stencil_10000x10000.mtx results/a100
-```
-
-### VastAI Quick Test
-```bash
-./scripts/benchmarking/multimode_benchmark.sh  # Auto-detects and runs
+# Test JSON parsing
+jq . results_*.json
 ```
 
 ---
 
-## Output Structure
+## Output Files
 
-**benchmark_suite.sh** produces:
-```
-results/a100_run/
-├── spmv_<matrix>_<mode>.csv/.json     # SpMV individual
-├── cg_<matrix>_single.csv             # CG single-GPU comparison
-├── cg_<matrix>_mgpu_allgather.csv     # Multi-GPU AllGather scaling
-└── cg_<matrix>_mgpu_halo.csv          # Multi-GPU Halo P2P scaling
-```
+Chaque script génère :
+- `results_[type]_[GPU]_[DATE]/` : Dossier résultats
+- `*.json` : Métriques détaillées per config
+- `*.csv` : Export CSV pour spreadsheet
+- `summary.txt` : Log complet de tous les runs
+- `analyze_*.py` : Script Python pour génération plots
+- `*_analysis.png` : Visualisation finale (300 DPI)
 
-**CSV:** Tabular comparison (Excel/pandas-ready)
-**JSON:** Full metadata (GPU specs, timing breakdown, convergence)
+---
+
+*Created: 2026-01-09*
+*Author: Stephane Bouhrour*

@@ -1,51 +1,42 @@
-# Benchmark Scripts
-
-Automated benchmarking scripts for SpMV and CG solvers.
+# Scripts
 
 ## Quick Start
 
 ```bash
-# Local testing (single-GPU)
-./scripts/quick_bench.sh matrix/stencil_512x512.mtx
+# Full setup (auto-detects GPU, installs dependencies)
+./scripts/setup/full_setup.sh
 
-# Full benchmark suite (8 GPUs A100)
-./scripts/benchmark_suite.sh matrix/stencil_5000x5000.mtx results/a100_run
+# With AmgX for comparison benchmarks
+./scripts/setup/full_setup.sh --amgx
 ```
 
-## Scripts Overview
-
-### 1. `benchmark_suite.sh` - Complete benchmark suite
-
-Full benchmarking pipeline for multi-GPU systems (designed for A100 8×GPU).
-
-**Usage:**
-```bash
-./scripts/benchmark_suite.sh <matrix.mtx> [output_dir]
-```
-
-**What it runs:**
-1. SpMV single-GPU - All modes (csr, stencil5-*)
-2. CG single-GPU - Modes: csr, stencil5-csr-direct
-3. CG multi-GPU AllGather - 2, 4, 8 GPUs
-4. CG multi-GPU Halo P2P - 2, 4, 8 GPUs
-
-### 2. `quick_bench.sh` - Fast local testing
-
-Lightweight benchmark for local development (single-GPU only).
-
-## Output Files
-
-- `*.csv` - Tabular comparison (append mode for multi-run)
-- `*.json` - Detailed run metadata (one per config)
-
-## Example
+## Run All Benchmarks
 
 ```bash
-# Generate matrix
-./bin/generate_matrix 5000 matrix/stencil_5000x5000.mtx
+# Full benchmarks (5000×5000 matrix, 10 runs)
+./scripts/run_all.sh
 
-# Run benchmark
-./scripts/benchmark_suite.sh matrix/stencil_5000x5000.mtx results/a100
+# Quick verification (~2 min, 512×512)
+./scripts/run_all.sh --quick
 
-# Results in: results/a100/
+# Custom matrix size
+./scripts/run_all.sh --size=10000
 ```
+
+## Directory Structure
+
+| Directory | Purpose |
+|-----------|---------|
+| `setup/` | Installation scripts (dependencies, AmgX) |
+| `benchmarking/` | Individual benchmark scripts ([README](benchmarking/README.md)) |
+| `plotting/` | Result visualization (matplotlib) |
+| `profiling/` | Nsight Systems/Compute profiling |
+| `visualizations/` | Figure generation for docs |
+
+## Individual Benchmarks
+
+See [benchmarking/README.md](benchmarking/README.md) for detailed documentation on:
+- `benchmark_single_gpu_formats.sh` - CSR vs STENCIL5 comparison
+- `benchmark_problem_sizes.sh` - Strong scaling (1→8 GPUs)
+- `benchmark_weak_scaling.sh` - Weak scaling
+- `benchmark_amgx.sh` - AmgX comparison

@@ -131,7 +131,7 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 
 ### Comparison with NVIDIA AmgX
 
-AmgX is NVIDIA's production-grade multi-GPU solver library, used here as reference implementation.
+AmgX is NVIDIA's production-grade multi-GPU solver library, used here as reference implementation. To run AmgX benchmarks: `./scripts/setup/full_setup.sh --amgx` (see [AmgX build instructions](external/benchmarks/amgx/README.md)).
 
 **Hardware**: 8× NVIDIA A100-SXM4-80GB · CUDA 12.8 · Driver 575.57 (same configuration for both solvers)
 
@@ -279,11 +279,17 @@ Results are saved to `results/raw/` (TXT) and `results/json/` (structured data).
 git clone https://github.com/1fni/cuda-spmv-benchmark.git
 cd cuda-spmv-benchmark
 
+# Setup (auto-detects GPU, installs dependencies)
+./scripts/setup/full_setup.sh
+
 # Run everything: build, benchmark, save results
 ./scripts/run_all.sh
 
 # Quick verification (~2 min)
 ./scripts/run_all.sh --quick
+
+# Custom matrix size
+./scripts/run_all.sh --size=10000
 ```
 
 ### Manual Build and Run
