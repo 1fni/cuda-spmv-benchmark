@@ -62,15 +62,11 @@ if command -v mpic++ &> /dev/null; then
     make cg_solver_mgpu_stencil
 fi
 
-# 3. Install AmgX (optional)
+# 3. Install AmgX (optional) - also builds our AmgX benchmarks
 if [ "$INSTALL_AMGX" = true ]; then
     echo ""
     echo "Step 3: Installing AmgX..."
     ./scripts/setup/install_amgx.sh
-
-    echo ""
-    echo "Building AmgX benchmarks..."
-    make -C external/benchmarks/amgx
 fi
 
 # Verification

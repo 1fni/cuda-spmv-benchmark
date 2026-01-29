@@ -205,24 +205,40 @@ build_amgx() {
     print_success "AmgX build completed successfully"
 }
 
-# Update AMGX benchmark Makefile
-update_makefile() {
-    local amgx_makefile="$PROJECT_ROOT/external/benchmarks/amgx/Makefile"
+# Update AMGX benchmark Makefile and build benchmarks
+build_amgx_benchmarks() {
+    local amgx_benchmark_dir="$PROJECT_ROOT/external/benchmarks/amgx"
+    local amgx_makefile="$amgx_benchmark_dir/Makefile"
 
-    if [[ -f "$amgx_makefile" ]]; then
-        print_status "Updating AMGX benchmark Makefile..."
-
-        # Create backup
-        cp "$amgx_makefile" "$amgx_makefile.backup"
-
-        # Update AMGX_DIR to point to installation
-        sed -i "s|^AMGX_DIR = .*|AMGX_DIR = $INSTALL_PREFIX|g" "$amgx_makefile"
-
-        print_success "Makefile updated with AmgX path: $INSTALL_PREFIX"
-        print_success "Backup saved as Makefile.backup"
-    else
+    if [[ ! -f "$amgx_makefile" ]]; then
         print_warning "AMGX benchmark Makefile not found at $amgx_makefile"
+        return
     fi
+
+    print_status "Configuring AmgX benchmarks..."
+
+    # Update AMGX_DIR in Makefile to point to installation
+    sed -i "s|^AMGX_DIR = .*|AMGX_DIR = $INSTALL_PREFIX|g" "$amgx_makefile"
+    print_success "Makefile configured with AmgX path: $INSTALL_PREFIX"
+
+    # Build AmgX benchmarks
+    print_status "Building AmgX benchmark binaries..."
+    cd "$amgx_benchmark_dir"
+
+    if make clean && make -j"$(nproc)"; then
+        print_success "AmgX benchmarks built successfully"
+        if [[ -f "amgx_cg_solver" ]]; then
+            print_success "  - amgx_cg_solver (single-GPU)"
+        fi
+        if [[ -f "amgx_cg_solver_mgpu" ]]; then
+            print_success "  - amgx_cg_solver_mgpu (multi-GPU)"
+        fi
+    else
+        print_warning "AmgX benchmark build failed - you can build manually later"
+        print_status "  cd external/benchmarks/amgx && make"
+    fi
+
+    cd "$PROJECT_ROOT"
 }
 
 # Verify installation
@@ -301,25 +317,22 @@ main() {
     
     # Check for existing installation
     if cleanup_previous; then
-        # Build AmgX
+        # Build AmgX library
         build_amgx
-
-        # Post-installation setup
-        update_makefile
 
         echo
         echo "=================================================="
-        print_success "AmgX installation completed successfully!"
+        print_success "AmgX library installed successfully!"
         echo "=================================================="
     else
-        # Use existing installation
-        update_makefile
-
         echo
         echo "=================================================="
         print_success "Using existing AmgX installation"
         echo "=================================================="
     fi
+
+    # Build our AmgX benchmark binaries
+    build_amgx_benchmarks
 
     # Verify installation works
     verify_installation
