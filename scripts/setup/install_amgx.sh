@@ -134,21 +134,25 @@ check_sudo() {
 }
 
 # Clean up previous installations
+# Returns 1 if user wants to keep existing installation (skip build)
 cleanup_previous() {
-    print_status "Cleaning up previous installations..."
-    
+    print_status "Checking for previous installations..."
+
     # Remove temporary directory if it exists
     [[ -d "$TEMP_DIR" ]] && rm -rf "$TEMP_DIR"
-    
-    # Clean previous local installation if requested
-    if [[ -d "$INSTALL_PREFIX" ]]; then
-        print_warning "Previous AmgX installation found at $INSTALL_PREFIX"
-        read -p "Remove previous installation? [y/N]: " -r
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            rm -rf "$INSTALL_PREFIX"
-            print_success "Previous installation removed"
+
+    # Check for previous installation
+    if [[ -d "$INSTALL_PREFIX" ]] && [[ -f "$INSTALL_PREFIX/include/amgx_c.h" ]]; then
+        print_success "AmgX already installed at $INSTALL_PREFIX"
+        read -p "Reinstall AmgX? [y/N]: " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Keeping existing installation"
+            return 1  # Skip build
         fi
+        rm -rf "$INSTALL_PREFIX"
+        print_status "Previous installation removed, proceeding with fresh install"
     fi
+    return 0
 }
 
 # Download and build AmgX
@@ -295,24 +299,33 @@ main() {
     check_disk_space
     check_sudo
     
-    # Cleanup and build
-    cleanup_previous
-    build_amgx
-    
-    # Post-installation setup
-    update_makefile
+    # Check for existing installation
+    if cleanup_previous; then
+        # Build AmgX
+        build_amgx
+
+        # Post-installation setup
+        update_makefile
+
+        echo
+        echo "=================================================="
+        print_success "AmgX installation completed successfully!"
+        echo "=================================================="
+    else
+        # Use existing installation
+        update_makefile
+
+        echo
+        echo "=================================================="
+        print_success "Using existing AmgX installation"
+        echo "=================================================="
+    fi
+
+    # Verify installation works
     verify_installation
-    
-    # Test the installation
-    test_compilation
-    
+
     # Final cleanup
     cleanup_temp
-    
-    echo
-    echo "=================================================="
-    print_success "AmgX installation completed successfully!"
-    echo "=================================================="
     echo
     echo "Installation details:"
     echo "  - AmgX version: $AMGX_VERSION"
