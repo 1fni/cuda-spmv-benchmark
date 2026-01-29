@@ -130,6 +130,8 @@ echo "=== Benchmark 1: SpMV (Single-GPU) ==="
 echo "Output: ${SPMV_OUT}"
 
 ./bin/spmv_bench "${MATRIX_FILE}" --mode=cusparse-csr,stencil5-csr 2>&1 | tee "${SPMV_OUT}"
+
+echo ""
 echo ""
 
 # =============================================================================
@@ -141,6 +143,8 @@ echo "=== Benchmark 2: CG Solver (Single-GPU) ==="
 echo "Output: ${CG_OUT}"
 
 ./bin/cg_solver "${MATRIX_FILE}" --json="${CG_JSON}" 2>&1 | tee "${CG_OUT}"
+
+echo ""
 echo ""
 
 # =============================================================================
@@ -154,11 +158,12 @@ if [ "$HAS_MPI" = "1" ] && [ "$NUM_GPUS" -ge 2 ]; then
 
     mpirun --allow-run-as-root -np ${NUM_GPUS} ./bin/cg_solver_mgpu_stencil "${MATRIX_FILE}" \
         --json="${CG_MGPU_JSON}" 2>&1 | tee "${CG_MGPU_OUT}"
-    echo ""
 else
     echo "=== Benchmark 3: Skipped (need MPI + ≥2 GPUs) ==="
-    echo ""
 fi
+
+echo ""
+echo ""
 
 # =============================================================================
 # Benchmark 4: AmgX (Single-GPU) - Reference
@@ -171,11 +176,12 @@ if [ "$HAS_AMGX" = "1" ] && [ -f "external/benchmarks/amgx/amgx_cg_solver" ]; th
 
     ./external/benchmarks/amgx/amgx_cg_solver "${MATRIX_FILE}" \
         --runs=${NUM_RUNS} --json="${AMGX_JSON}" 2>&1 | tee "${AMGX_OUT}"
-    echo ""
 else
     echo "=== Benchmark 4: Skipped (AmgX not available) ==="
-    echo ""
 fi
+
+echo ""
+echo ""
 
 # =============================================================================
 # Benchmark 5: AmgX (Multi-GPU) - Reference
@@ -189,11 +195,12 @@ if [ "$HAS_AMGX" = "1" ] && [ "$HAS_MPI" = "1" ] && [ "$NUM_GPUS" -ge 2 ] \
 
     mpirun --allow-run-as-root -np ${NUM_GPUS} ./external/benchmarks/amgx/amgx_cg_solver_mgpu \
         "${MATRIX_FILE}" --runs=${NUM_RUNS} --json="${AMGX_MGPU_JSON}" 2>&1 | tee "${AMGX_MGPU_OUT}"
-    echo ""
 else
     echo "=== Benchmark 5: Skipped (AmgX multi-GPU not available) ==="
-    echo ""
 fi
+
+echo ""
+echo ""
 
 # =============================================================================
 # Summary
