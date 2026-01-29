@@ -122,15 +122,15 @@ check_disk_space() {
     fi
 }
 
-# Test sudo access
+# Test sudo access (informational only, not fatal)
 check_sudo() {
     if sudo -n true 2>/dev/null; then
         print_success "Sudo access available"
-        return 0
     else
         print_warning "No sudo access - using local installation prefix"
-        return 1
     fi
+    # Always return success - no sudo is not fatal
+    return 0
 }
 
 # Clean up previous installations
