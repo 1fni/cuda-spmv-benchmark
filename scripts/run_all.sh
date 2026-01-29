@@ -126,10 +126,11 @@ echo ""
 # Benchmark 1: SpMV (Single-GPU)
 # =============================================================================
 SPMV_OUT="${RESULTS_RAW}/spmv_${MATRIX_SIZE}_${TIMESTAMP}.txt"
+SPMV_JSON="${RESULTS_JSON}/spmv_${MATRIX_SIZE}.json"
 echo "=== Benchmark 1: SpMV (Single-GPU) ==="
 echo "Output: ${SPMV_OUT}"
 
-./bin/spmv_bench "${MATRIX_FILE}" --mode=cusparse-csr,stencil5-csr 2>&1 | tee "${SPMV_OUT}"
+./bin/spmv_bench "${MATRIX_FILE}" --mode=cusparse-csr,stencil5-csr --json="${SPMV_JSON}" 2>&1 | tee "${SPMV_OUT}"
 
 echo ""
 echo ""
