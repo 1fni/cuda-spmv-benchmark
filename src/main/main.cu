@@ -196,27 +196,47 @@ int main(int argc, char* argv[]) {
         // Always print human-readable metrics to stdout
         print_benchmark_metrics(&metrics, stdout);
 
-        // Export to JSON if requested
+        // Export to JSON if requested (one file per mode)
         if (json_file != NULL) {
-            FILE* fp = fopen(json_file, "w");
+            char mode_json_file[512];
+            // Find extension position
+            const char* ext = strrchr(json_file, '.');
+            if (ext != NULL) {
+                size_t base_len = ext - json_file;
+                snprintf(mode_json_file, sizeof(mode_json_file), "%.*s_%s%s", (int)base_len,
+                         json_file, op->name, ext);
+            } else {
+                snprintf(mode_json_file, sizeof(mode_json_file), "%s_%s.json", json_file, op->name);
+            }
+            FILE* fp = fopen(mode_json_file, "w");
             if (fp == NULL) {
-                fprintf(stderr, "Error: Could not open JSON file '%s' for writing\n", json_file);
+                fprintf(stderr, "Error: Could not open JSON file '%s' for writing\n",
+                        mode_json_file);
             } else {
                 print_metrics_json(&metrics, fp);
                 fclose(fp);
-                printf("Metrics exported to JSON: %s\n", json_file);
+                printf("Metrics exported to JSON: %s\n", mode_json_file);
             }
         }
 
-        // Export to CSV if requested
+        // Export to CSV if requested (one file per mode)
         if (csv_file != NULL) {
-            FILE* fp = fopen(csv_file, "w");
+            char mode_csv_file[512];
+            const char* ext = strrchr(csv_file, '.');
+            if (ext != NULL) {
+                size_t base_len = ext - csv_file;
+                snprintf(mode_csv_file, sizeof(mode_csv_file), "%.*s_%s%s", (int)base_len, csv_file,
+                         op->name, ext);
+            } else {
+                snprintf(mode_csv_file, sizeof(mode_csv_file), "%s_%s.csv", csv_file, op->name);
+            }
+            FILE* fp = fopen(mode_csv_file, "w");
             if (fp == NULL) {
-                fprintf(stderr, "Error: Could not open CSV file '%s' for writing\n", csv_file);
+                fprintf(stderr, "Error: Could not open CSV file '%s' for writing\n", mode_csv_file);
             } else {
                 print_metrics_csv(&metrics, fp);
                 fclose(fp);
-                printf("Metrics exported to CSV: %s\n", csv_file);
+                printf("Metrics exported to CSV: %s\n", mode_csv_file);
             }
         }
 
