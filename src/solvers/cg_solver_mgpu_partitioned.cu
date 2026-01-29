@@ -831,8 +831,24 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
     CUDA_CHECK(
         cudaMemcpy(&x[row_offset], d_x_local, n_local * sizeof(double), cudaMemcpyDeviceToHost));
 
-    // Gather full solution to rank 0
-    MPI_Gather(&x[row_offset], n_local, MPI_DOUBLE, x, n_local, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    // Gather full solution to rank 0 (use Gatherv for uneven partitions)
+    int* recvcounts = NULL;
+    int* displs = NULL;
+    if (rank == 0) {
+        recvcounts = (int*)malloc(world_size * sizeof(int));
+        displs = (int*)malloc(world_size * sizeof(int));
+        int base_size = n / world_size;
+        for (int i = 0; i < world_size; i++) {
+            displs[i] = i * base_size;
+            recvcounts[i] = (i == world_size - 1) ? (n - displs[i]) : base_size;
+        }
+    }
+    MPI_Gatherv(&x[row_offset], n_local, MPI_DOUBLE, x, recvcounts, displs, MPI_DOUBLE, 0,
+                MPI_COMM_WORLD);
+    if (rank == 0) {
+        free(recvcounts);
+        free(displs);
+    }
 
     // Compute solution validation checksums (rank 0 has full solution)
     if (rank == 0) {
