@@ -280,16 +280,15 @@ git clone https://github.com/1fni/cuda-spmv-benchmark.git
 cd cuda-spmv-benchmark
 
 # Setup (auto-detects GPU, installs dependencies)
-./scripts/setup/full_setup.sh
+./scripts/setup/full_setup.sh            # Basic setup
+./scripts/setup/full_setup.sh --amgx     # With AmgX comparison (optional, ~15 min build)
 
-# Run everything: build, benchmark, save results
+# Run benchmarks (auto-detects AmgX if installed)
 ./scripts/run_all.sh
 
-# Quick verification (~2 min)
-./scripts/run_all.sh --quick
-
-# Custom matrix size
-./scripts/run_all.sh --size=10000
+# Options
+./scripts/run_all.sh --quick             # Quick verification (~2 min)
+./scripts/run_all.sh --size=10000        # Custom matrix size
 ```
 
 ### Manual Build and Run
