@@ -204,17 +204,91 @@ echo ""
 echo ""
 
 # =============================================================================
-# Summary
+# Summary Table
 # =============================================================================
 echo "=============================================="
-echo "Benchmark Complete"
+echo "PERFORMANCE SUMMARY"
+echo "=============================================="
+echo ""
+printf "%-35s %12s %12s\n" "Benchmark" "Time (ms)" "Speedup"
+printf "%-35s %12s %12s\n" "-----------------------------------" "------------" "------------"
+
+# Extract SpMV results
+CUSPARSE_TIME=""
+STENCIL_TIME=""
+if [ -f "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_cusparse-csr.json" ]; then
+    CUSPARSE_TIME=$(grep -o '"execution_time_ms": [0-9.]*' "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_cusparse-csr.json" | head -1 | cut -d' ' -f2)
+fi
+if [ -f "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_stencil5-csr.json" ]; then
+    STENCIL_TIME=$(grep -o '"execution_time_ms": [0-9.]*' "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_stencil5-csr.json" | head -1 | cut -d' ' -f2)
+fi
+if [ -n "$CUSPARSE_TIME" ]; then
+    printf "%-35s %12.3f %12s\n" "SpMV cuSPARSE CSR" "$CUSPARSE_TIME" "(baseline)"
+fi
+if [ -n "$STENCIL_TIME" ] && [ -n "$CUSPARSE_TIME" ]; then
+    SPMV_SPEEDUP=$(echo "scale=2; $CUSPARSE_TIME / $STENCIL_TIME" | bc)
+    printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "${SPMV_SPEEDUP}x"
+elif [ -n "$STENCIL_TIME" ]; then
+    printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "-"
+fi
+
+echo ""
+
+# Extract CG results
+CG_SINGLE_TIME=""
+CG_MGPU_TIME=""
+AMGX_SINGLE_TIME=""
+AMGX_MGPU_TIME=""
+
+for json in "${RESULTS_JSON}"/cg_single_${MATRIX_SIZE}*.json; do
+    if [ -f "$json" ]; then
+        CG_SINGLE_TIME=$(grep -o '"total_time_ms": [0-9.]*' "$json" | head -1 | cut -d' ' -f2)
+        break
+    fi
+done
+if [ -f "${RESULTS_JSON}/cg_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" ]; then
+    CG_MGPU_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/cg_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
+fi
+if [ -f "${RESULTS_JSON}/amgx_single_${MATRIX_SIZE}.json" ]; then
+    AMGX_SINGLE_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/amgx_single_${MATRIX_SIZE}.json" | head -1 | cut -d' ' -f2)
+fi
+if [ -f "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" ]; then
+    AMGX_MGPU_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
+fi
+
+if [ -n "$CG_SINGLE_TIME" ]; then
+    printf "%-35s %12.3f %12s\n" "CG Custom (1 GPU)" "$CG_SINGLE_TIME" "-"
+fi
+if [ -n "$AMGX_SINGLE_TIME" ] && [ -n "$CG_SINGLE_TIME" ]; then
+    CG_VS_AMGX=$(echo "scale=2; $AMGX_SINGLE_TIME / $CG_SINGLE_TIME" | bc)
+    printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "Custom ${CG_VS_AMGX}x faster"
+elif [ -n "$AMGX_SINGLE_TIME" ]; then
+    printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "-"
+fi
+
+echo ""
+
+if [ -n "$CG_MGPU_TIME" ]; then
+    if [ -n "$CG_SINGLE_TIME" ]; then
+        MGPU_SPEEDUP=$(echo "scale=2; $CG_SINGLE_TIME / $CG_MGPU_TIME" | bc)
+        printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "${MGPU_SPEEDUP}x vs 1 GPU"
+    else
+        printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "-"
+    fi
+fi
+if [ -n "$AMGX_MGPU_TIME" ] && [ -n "$CG_MGPU_TIME" ]; then
+    MGPU_VS_AMGX=$(echo "scale=2; $AMGX_MGPU_TIME / $CG_MGPU_TIME" | bc)
+    printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "Custom ${MGPU_VS_AMGX}x faster"
+elif [ -n "$AMGX_MGPU_TIME" ]; then
+    printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "-"
+fi
+
+echo ""
 echo "=============================================="
 echo "Finished: $(date)"
+echo "=============================================="
 echo ""
 echo "Results saved to:"
 echo "  Raw outputs: ${RESULTS_RAW}/"
 echo "  JSON data:   ${RESULTS_JSON}/"
-echo ""
-echo "To generate figures:"
-echo "  python scripts/plotting/plot_results.py"
 echo ""
