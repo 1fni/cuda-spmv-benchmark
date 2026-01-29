@@ -226,7 +226,7 @@ if [ -n "$CUSPARSE_TIME" ]; then
     printf "%-35s %12.3f %12s\n" "SpMV cuSPARSE CSR" "$CUSPARSE_TIME" "(baseline)"
 fi
 if [ -n "$STENCIL_TIME" ] && [ -n "$CUSPARSE_TIME" ]; then
-    SPMV_SPEEDUP=$(echo "scale=2; $CUSPARSE_TIME / $STENCIL_TIME" | bc)
+    SPMV_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CUSPARSE_TIME / $STENCIL_TIME}")
     printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "${SPMV_SPEEDUP}x"
 elif [ -n "$STENCIL_TIME" ]; then
     printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "-"
@@ -260,7 +260,7 @@ if [ -n "$CG_SINGLE_TIME" ]; then
     printf "%-35s %12.3f %12s\n" "CG Custom (1 GPU)" "$CG_SINGLE_TIME" "-"
 fi
 if [ -n "$AMGX_SINGLE_TIME" ] && [ -n "$CG_SINGLE_TIME" ]; then
-    CG_VS_AMGX=$(echo "scale=2; $AMGX_SINGLE_TIME / $CG_SINGLE_TIME" | bc)
+    CG_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_SINGLE_TIME / $CG_SINGLE_TIME}")
     printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "Custom ${CG_VS_AMGX}x faster"
 elif [ -n "$AMGX_SINGLE_TIME" ]; then
     printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "-"
@@ -270,14 +270,14 @@ echo ""
 
 if [ -n "$CG_MGPU_TIME" ]; then
     if [ -n "$CG_SINGLE_TIME" ]; then
-        MGPU_SPEEDUP=$(echo "scale=2; $CG_SINGLE_TIME / $CG_MGPU_TIME" | bc)
+        MGPU_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CG_SINGLE_TIME / $CG_MGPU_TIME}")
         printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "${MGPU_SPEEDUP}x vs 1 GPU"
     else
         printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "-"
     fi
 fi
 if [ -n "$AMGX_MGPU_TIME" ] && [ -n "$CG_MGPU_TIME" ]; then
-    MGPU_VS_AMGX=$(echo "scale=2; $AMGX_MGPU_TIME / $CG_MGPU_TIME" | bc)
+    MGPU_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_MGPU_TIME / $CG_MGPU_TIME}")
     printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "Custom ${MGPU_VS_AMGX}x faster"
 elif [ -n "$AMGX_MGPU_TIME" ]; then
     printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "-"
