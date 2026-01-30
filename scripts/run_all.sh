@@ -211,40 +211,21 @@ echo ""
 # =============================================================================
 # Summary Table
 # =============================================================================
-echo "=============================================="
-echo "PERFORMANCE SUMMARY"
-echo "=============================================="
-echo ""
-printf "%-35s %12s %12s\n" "Benchmark" "Time (ms)" "Speedup"
-printf "%-35s %12s %12s\n" "-----------------------------------" "------------" "------------"
 
-# Extract SpMV results
+# Extract all results first
 CUSPARSE_TIME=""
 STENCIL_TIME=""
+CG_SINGLE_TIME=""
+CG_MGPU_TIME=""
+AMGX_SINGLE_TIME=""
+AMGX_MGPU_TIME=""
+
 if [ -f "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_cusparse-csr.json" ]; then
     CUSPARSE_TIME=$(grep -o '"execution_time_ms": [0-9.]*' "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_cusparse-csr.json" | head -1 | cut -d' ' -f2)
 fi
 if [ -f "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_stencil5-csr.json" ]; then
     STENCIL_TIME=$(grep -o '"execution_time_ms": [0-9.]*' "${RESULTS_JSON}/spmv_${MATRIX_SIZE}_stencil5-csr.json" | head -1 | cut -d' ' -f2)
 fi
-if [ -n "$CUSPARSE_TIME" ]; then
-    printf "%-35s %12.3f %12s\n" "SpMV cuSPARSE CSR" "$CUSPARSE_TIME" "(baseline)"
-fi
-if [ -n "$STENCIL_TIME" ] && [ -n "$CUSPARSE_TIME" ]; then
-    SPMV_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CUSPARSE_TIME / $STENCIL_TIME}")
-    printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "${SPMV_SPEEDUP}x"
-elif [ -n "$STENCIL_TIME" ]; then
-    printf "%-35s %12.3f %12s\n" "SpMV Stencil CSR" "$STENCIL_TIME" "-"
-fi
-
-echo ""
-
-# Extract CG results
-CG_SINGLE_TIME=""
-CG_MGPU_TIME=""
-AMGX_SINGLE_TIME=""
-AMGX_MGPU_TIME=""
-
 for json in "${RESULTS_JSON}"/cg_single_${MATRIX_SIZE}*.json; do
     if [ -f "$json" ]; then
         CG_SINGLE_TIME=$(grep -o '"median_ms": [0-9.]*' "$json" | head -1 | cut -d' ' -f2)
@@ -261,31 +242,73 @@ if [ -f "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" ]; then
     AMGX_MGPU_TIME=$(grep -o '"median_ms": [0-9.]*' "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
 fi
 
-if [ -n "$CG_SINGLE_TIME" ]; then
-    printf "%-35s %12.3f %12s\n" "CG Custom (1 GPU)" "$CG_SINGLE_TIME" "-"
-fi
-if [ -n "$AMGX_SINGLE_TIME" ] && [ -n "$CG_SINGLE_TIME" ]; then
-    CG_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_SINGLE_TIME / $CG_SINGLE_TIME}")
-    printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "Custom ${CG_VS_AMGX}x faster"
-elif [ -n "$AMGX_SINGLE_TIME" ]; then
-    printf "%-35s %12.3f %12s\n" "CG AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "-"
-fi
+# Display summary
+echo "=============================================="
+echo "PERFORMANCE SUMMARY"
+echo "=============================================="
 
+# --- SpMV Section ---
 echo ""
-
-if [ -n "$CG_MGPU_TIME" ]; then
-    if [ -n "$CG_SINGLE_TIME" ]; then
-        MGPU_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CG_SINGLE_TIME / $CG_MGPU_TIME}")
-        printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "${MGPU_SPEEDUP}x vs 1 GPU"
+echo "--- SpMV (Single-GPU) ---"
+printf "%-32s %12s %16s\n" "Benchmark" "Time (ms)" "Speedup"
+printf "%-32s %12s %16s\n" "--------------------------------" "------------" "----------------"
+if [ -n "$STENCIL_TIME" ]; then
+    if [ -n "$CUSPARSE_TIME" ]; then
+        SPMV_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CUSPARSE_TIME / $STENCIL_TIME}")
+        printf "%-32s %12.3f %16s\n" "Custom Stencil" "$STENCIL_TIME" "${SPMV_SPEEDUP}x faster"
     else
-        printf "%-35s %12.3f %12s\n" "CG Custom (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "-"
+        printf "%-32s %12.3f %16s\n" "Custom Stencil" "$STENCIL_TIME" "-"
     fi
 fi
-if [ -n "$AMGX_MGPU_TIME" ] && [ -n "$CG_MGPU_TIME" ]; then
-    MGPU_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_MGPU_TIME / $CG_MGPU_TIME}")
-    printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "Custom ${MGPU_VS_AMGX}x faster"
-elif [ -n "$AMGX_MGPU_TIME" ]; then
-    printf "%-35s %12.3f %12s\n" "CG AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "-"
+if [ -n "$CUSPARSE_TIME" ]; then
+    printf "%-32s %12.3f %16s\n" "cuSPARSE CSR (NVIDIA)" "$CUSPARSE_TIME" "(reference)"
+fi
+
+# --- CG Custom vs AmgX Section ---
+echo ""
+echo "--- CG Solver: Custom vs AmgX ---"
+printf "%-32s %12s %16s\n" "Benchmark" "Time (ms)" "Speedup"
+printf "%-32s %12s %16s\n" "--------------------------------" "------------" "----------------"
+
+# Single-GPU comparison
+if [ -n "$CG_SINGLE_TIME" ]; then
+    if [ -n "$AMGX_SINGLE_TIME" ]; then
+        CG_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_SINGLE_TIME / $CG_SINGLE_TIME}")
+        printf "%-32s %12.3f %16s\n" "Custom CG (1 GPU)" "$CG_SINGLE_TIME" "${CG_VS_AMGX}x faster"
+    else
+        printf "%-32s %12.3f %16s\n" "Custom CG (1 GPU)" "$CG_SINGLE_TIME" "-"
+    fi
+fi
+if [ -n "$AMGX_SINGLE_TIME" ]; then
+    printf "%-32s %12.3f %16s\n" "AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "(reference)"
+fi
+
+# Multi-GPU comparison
+if [ -n "$CG_MGPU_TIME" ] || [ -n "$AMGX_MGPU_TIME" ]; then
+    echo ""
+    if [ -n "$CG_MGPU_TIME" ]; then
+        if [ -n "$AMGX_MGPU_TIME" ]; then
+            MGPU_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_MGPU_TIME / $CG_MGPU_TIME}")
+            printf "%-32s %12.3f %16s\n" "Custom CG (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "${MGPU_VS_AMGX}x faster"
+        else
+            printf "%-32s %12.3f %16s\n" "Custom CG (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "-"
+        fi
+    fi
+    if [ -n "$AMGX_MGPU_TIME" ]; then
+        printf "%-32s %12.3f %16s\n" "AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "(reference)"
+    fi
+fi
+
+# --- Scaling Section ---
+if [ -n "$CG_SINGLE_TIME" ] && [ -n "$CG_MGPU_TIME" ]; then
+    echo ""
+    echo "--- CG Solver: Multi-GPU Scaling ---"
+    printf "%-32s %12s %16s\n" "Configuration" "Time (ms)" "Scaling"
+    printf "%-32s %12s %16s\n" "--------------------------------" "------------" "----------------"
+    printf "%-32s %12.3f %16s\n" "Custom CG (1 GPU)" "$CG_SINGLE_TIME" "(baseline)"
+    SCALING=$(awk "BEGIN {printf \"%.2f\", $CG_SINGLE_TIME / $CG_MGPU_TIME}")
+    EFFICIENCY=$(awk "BEGIN {printf \"%.0f\", ($CG_SINGLE_TIME / $CG_MGPU_TIME) / $NUM_GPUS * 100}")
+    printf "%-32s %12.3f %16s\n" "Custom CG (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "${SCALING}x (${EFFICIENCY}% eff)"
 fi
 
 echo ""
