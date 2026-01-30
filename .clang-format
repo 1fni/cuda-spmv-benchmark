@@ -73,7 +73,7 @@ PenaltyReturnTypeOnItsOwnLine: 60
 
 # Language and standard
 Language: Cpp
-Standard: c++14
+Standard: c++11
 
 # CUDA-specific: Don't break __global__, __device__, __host__ attributes
 AttributeMacros:

@@ -294,7 +294,7 @@ Results are saved to `results/raw/` (TXT) and `results/json/` (structured data).
 
 ### Prerequisites
 - **Hardware**: NVIDIA GPUs with Compute Capability ≥ 7.0
-- **Software**: CUDA Toolkit ≥ 11.0, OpenMPI or MPICH, C++14 compiler
+- **Software**: CUDA Toolkit ≥ 11.0, OpenMPI or MPICH, C++11 compiler
 
 ### Reproduce All Results (One Command)
 
@@ -510,7 +510,7 @@ cmake .. && make && ./test_runner
 - **NVIDIA GPUs**: Compute Capability ≥ 7.0 (Volta, Turing, Ampere, Hopper)
 - **CUDA Toolkit**: ≥ 11.0 with cuSPARSE and cuBLAS libraries
 - **MPI Implementation**: OpenMPI ≥ 4.0 or MPICH ≥ 3.3
-- **C++ Compiler**: Supporting C++14 (nvcc, g++, clang++)
+- **C++ Compiler**: Supporting C++11 (nvcc, g++, clang++)
 - **Optional**: Nsight Systems/Compute for profiling
 
 **Tested configurations:**
