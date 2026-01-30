@@ -294,7 +294,7 @@ cd cuda-spmv-benchmark
 ### Manual Build and Run
 
 ```bash
-# Build all (spmv_bench, cg_solver, cg_solver_mgpu_stencil)
+# Build all (spmv_bench, cg_solver_mgpu_stencil) - requires MPI
 make
 
 # Build AmgX benchmarks (requires AmgX installed)
@@ -307,6 +307,9 @@ make -C external/benchmarks/amgx
 ```bash
 # SpMV benchmark (single-GPU)
 ./bin/spmv_bench matrix/stencil_5k.mtx --mode=cusparse-csr,stencil5-csr
+
+# CG solver (single-GPU)
+mpirun -np 1 ./bin/cg_solver_mgpu_stencil matrix/stencil_5k.mtx
 
 # CG solver (multi-GPU)
 mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_5k.mtx

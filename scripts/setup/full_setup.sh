@@ -77,8 +77,7 @@ echo "=========================================="
 echo "GPU: $GPU_NAME"
 echo ""
 echo "Built executables:"
-ls -lh bin/spmv_bench bin/cg_solver 2>/dev/null || true
-ls -lh bin/cg_solver_mgpu_stencil 2>/dev/null || true
+ls -lh bin/spmv_bench bin/cg_solver_mgpu_stencil 2>/dev/null || true
 
 if [ "$INSTALL_AMGX" = true ]; then
     ls -lh external/benchmarks/amgx/amgx_cg_solver 2>/dev/null || true

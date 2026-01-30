@@ -99,7 +99,7 @@ echo ""
 # Build
 # =============================================================================
 echo "=== Building ==="
-make -j$(nproc) spmv_bench generate_matrix cg_solver 2>&1 | tail -3
+make -j$(nproc) spmv_bench generate_matrix 2>&1 | tail -3
 
 if [ "$HAS_MPI" = "1" ]; then
     make -j$(nproc) cg_solver_mgpu_stencil 2>&1 | tail -2
@@ -139,11 +139,16 @@ echo ""
 # Benchmark 2: CG Solver (Single-GPU)
 # =============================================================================
 CG_OUT="${RESULTS_RAW}/cg_single_${MATRIX_SIZE}_${TIMESTAMP}.txt"
-CG_JSON="${RESULTS_JSON}/cg_single_${MATRIX_SIZE}"
+CG_JSON="${RESULTS_JSON}/cg_single_${MATRIX_SIZE}_1gpu.json"
 echo "=== Benchmark 2: CG Solver (Single-GPU) ==="
 echo "Output: ${CG_OUT}"
 
-./bin/cg_solver "${MATRIX_FILE}" --json="${CG_JSON}" 2>&1 | tee "${CG_OUT}"
+if [ "$HAS_MPI" = "1" ]; then
+    mpirun --allow-run-as-root -np 1 ./bin/cg_solver_mgpu_stencil "${MATRIX_FILE}" \
+        --json="${CG_JSON}" 2>&1 | tee "${CG_OUT}"
+else
+    echo "Skipped (MPI required)"
+fi
 
 echo ""
 echo ""

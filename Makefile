@@ -56,14 +56,14 @@ CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
 .PHONY: all clean help check-mpi-message
-.PHONY: spmv_bench generate_matrix cg_solver cg_solver_mgpu cg_solver_mgpu_stencil
-.PHONY: spmv gen cg cg_mgpu cg_mgpu_stencil
+.PHONY: spmv_bench generate_matrix cg_solver cg_solver_mgpu_stencil
+.PHONY: spmv gen cg
 
 # Main target - conditionally include MPI targets
 ifeq ($(HAS_MPI),1)
-    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_CG) $(BIN_MGPU_STENCIL)
+    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_MGPU_STENCIL)
 else
-    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_CG)
+    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN)
 endif
 
 all: $(ALL_TARGETS) check-mpi-message
@@ -72,28 +72,24 @@ check-mpi-message:
 ifeq ($(HAS_MPI),0)
 	@echo ""
 	@echo "NOTE: MPI not found (mpic++ not in PATH)"
-	@echo "      Skipped: cg_solver_mgpu_stencil"
-	@echo "      Install OpenMPI/MPICH to build multi-GPU solver"
+	@echo "      Skipped: CG solver (requires MPI even for single-GPU)"
+	@echo "      Install OpenMPI/MPICH: apt install openmpi-bin libopenmpi-dev"
 endif
 
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  make              - Build all binaries (multi-GPU if MPI available)"
+	@echo "  make              - Build all binaries (requires MPI for CG solver)"
 	@echo ""
-	@echo "Explicit targets (match binary names):"
-	@echo "  make spmv_bench              - Build bin/spmv_bench"
-	@echo "  make generate_matrix         - Build bin/generate_matrix"
-	@echo "  make cg_solver               - Build bin/cg_solver"
-	@echo "  make cg_solver_mgpu          - Build bin/cg_solver_mgpu (MPI)"
-	@echo "  make cg_solver_mgpu_stencil  - Build bin/cg_solver_mgpu_stencil (MPI)"
+	@echo "Explicit targets:"
+	@echo "  make spmv_bench              - SpMV benchmark (bin/spmv_bench)"
+	@echo "  make generate_matrix         - Matrix generator (bin/generate_matrix)"
+	@echo "  make cg_solver_mgpu_stencil  - CG solver (bin/cg_solver_mgpu_stencil, MPI)"
 	@echo ""
 	@echo "Short aliases:"
 	@echo "  make spmv         - Alias for spmv_bench"
 	@echo "  make gen          - Alias for generate_matrix"
-	@echo "  make cg           - Alias for cg_solver"
-	@echo "  make cg_mgpu      - Alias for cg_solver_mgpu"
-	@echo "  make cg_mgpu_stencil - Alias for cg_solver_mgpu_stencil"
+	@echo "  make cg           - Alias for cg_solver_mgpu_stencil"
 	@echo ""
 	@echo "Other targets:"
 	@echo "  make clean        - Remove all build artifacts"
@@ -184,8 +180,7 @@ cg_solver_mgpu_stencil: $(BIN_MGPU_STENCIL)
 
 spmv: spmv_bench
 gen: generate_matrix
-cg: cg_solver
-cg_mgpu_stencil: cg_solver_mgpu_stencil
+cg: cg_solver_mgpu_stencil
 
 # ============================================================================
 # Clean
