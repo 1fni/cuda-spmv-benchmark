@@ -144,6 +144,17 @@ cuSPARSE must handle arbitrary sparsity (1-1000+ nnz/row), so it uses warp-per-r
 
 > *Low per-row workload → registers beat shared memory.*
 
+**Format choice — CSR over diagonal formats:**
+
+The stencil optimization operates directly on CSR without converting to DIA/ELL/SELL formats. While diagonal formats can be efficient for regular matrices on single-GPU, they become impractical under multi-GPU domain decomposition:
+
+- **Preserved interoperability**: CSR is the standard format for PETSc, Trilinos, AmgX, cuSPARSE, SciPy
+- **No conversion overhead**: Direct integration with existing sparse workflows
+- **Partition-friendly**: Row-band decomposition maps naturally to CSR; diagonal offsets break across boundaries
+- **Drop-in integration**: Works with standard `.mtx` files and halo exchange patterns
+
+> *Optimized stencil SpMV without abandoning CSR or domain decomposition flexibility.*
+
 </details>
 
 ### Comparison with NVIDIA AmgX
