@@ -38,13 +38,11 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Detect cloud GPU environment (optional detection for optimizations)
+# Detect cloud/container GPU environment (for multi-arch builds)
 detect_cloud_environment() {
     if [[ -n "$VAST_CONTAINERNAME" ]] || [[ -n "$RUNPOD_POD_ID" ]] || [[ "$PWD" =~ "/workspace" ]] || [[ "$HOME" =~ "/root" ]]; then
-        print_status "Detected cloud GPU environment (VastAI/RunPod/similar)"
         return 0
     elif [[ -n "$COLAB_GPU" ]] || [[ -n "$KAGGLE_KERNEL_RUN_TYPE" ]]; then
-        print_status "Detected notebook environment (Colab/Kaggle)"
         return 0
     fi
     return 1
@@ -334,9 +332,6 @@ main() {
     echo "  AmgX Installation Script for Linux/CUDA        "  
     echo "=================================================="
     echo
-    
-    # Environment detection
-    detect_cloud_environment && print_status "Cloud GPU environment detected"
     
     # Pre-installation checks
     check_cuda

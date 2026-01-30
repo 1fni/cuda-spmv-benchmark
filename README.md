@@ -255,7 +255,7 @@ nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true
 
 **Reproducibility — One Command:**
 ```bash
-# Full benchmarks (5000×5000 matrix, ~10 min)
+# Full benchmarks (1000×1000 matrix)
 ./scripts/run_all.sh
 
 # Quick verification (512×512, ~2 min)
@@ -329,22 +329,22 @@ make
 make -C external/benchmarks/amgx
 
 # Generate 5-point stencil matrix
-./bin/generate_matrix 5000 matrix/stencil_5k.mtx
+./bin/generate_matrix 1000 matrix/stencil_1k.mtx
 ```
 
 ```bash
 # SpMV benchmark (single-GPU)
-./bin/spmv_bench matrix/stencil_5k.mtx --mode=cusparse-csr,stencil5-csr
+./bin/spmv_bench matrix/stencil_1k.mtx --mode=cusparse-csr,stencil5-csr
 
 # CG solver (single-GPU)
-mpirun -np 1 ./bin/cg_solver_mgpu_stencil matrix/stencil_5k.mtx
+mpirun -np 1 ./bin/cg_solver_mgpu_stencil matrix/stencil_1k.mtx
 
 # CG solver (multi-GPU)
-mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_5k.mtx
+mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_1k.mtx
 
 # AmgX comparison (if installed)
-./external/benchmarks/amgx/amgx_cg_solver matrix/stencil_5k.mtx
-mpirun -np 4 ./external/benchmarks/amgx/amgx_cg_solver_mgpu matrix/stencil_5k.mtx
+./external/benchmarks/amgx/amgx_cg_solver matrix/stencil_1k.mtx
+mpirun -np 2 ./external/benchmarks/amgx/amgx_cg_solver_mgpu matrix/stencil_1k.mtx
 ```
 
 ---
@@ -449,11 +449,10 @@ This builds all components, runs benchmarks, and saves results to:
 
 ```bash
 # Single configuration with JSON export
-mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_15k.mtx \
-  --json=results/json/custom.json
+mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_1k.mtx --json=custom.json
 
 # Extract timing from JSON
-jq '.timing.median_ms' results/json/custom.json
+jq '.timing.median_ms' custom.json
 ```
 
 ### Profiling with Nsight Systems
@@ -461,7 +460,7 @@ jq '.timing.median_ms' results/json/custom.json
 ```bash
 # Profile solver iterations only (excludes setup/teardown)
 nsys profile --trace=cuda,mpi,nvtx --capture-range=nvtx --nvtx-capture="solver_iteration" \
-  mpirun -np 4 ./bin/cg_solver_mgpu_stencil matrix/stencil_10k.mtx
+  mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_1k.mtx
 
 # View timeline in GUI
 nsys-ui report.nsys-rep
