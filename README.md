@@ -463,12 +463,16 @@ jq '.timing.median_ms' custom.json
 ### Profiling with Nsight Systems
 
 ```bash
-# Profile solver iterations only (excludes setup/teardown)
-nsys profile --trace=cuda,mpi,nvtx --capture-range=nvtx --nvtx-capture="solver_iteration" \
+# Generate timeline report
+nsys profile \
+  --trace=cuda,nvtx,osrt,mpi \
+  --stats=true \
+  --cuda-memory-usage=true \
+  --output=cg_profile \
   mpirun -np 2 ./bin/cg_solver_mgpu_stencil matrix/stencil_1k.mtx
 
-# View timeline in GUI
-nsys-ui report.nsys-rep
+# View in GUI
+nsys-ui cg_profile.nsys-rep
 ```
 
 ---
