@@ -242,18 +242,18 @@ AMGX_MGPU_TIME=""
 
 for json in "${RESULTS_JSON}"/cg_single_${MATRIX_SIZE}*.json; do
     if [ -f "$json" ]; then
-        CG_SINGLE_TIME=$(grep -o '"total_time_ms": [0-9.]*' "$json" | head -1 | cut -d' ' -f2)
+        CG_SINGLE_TIME=$(grep -o '"median_ms": [0-9.]*' "$json" | head -1 | cut -d' ' -f2)
         break
     fi
 done
 if [ -f "${RESULTS_JSON}/cg_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" ]; then
-    CG_MGPU_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/cg_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
+    CG_MGPU_TIME=$(grep -o '"median_ms": [0-9.]*' "${RESULTS_JSON}/cg_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
 fi
 if [ -f "${RESULTS_JSON}/amgx_single_${MATRIX_SIZE}.json" ]; then
-    AMGX_SINGLE_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/amgx_single_${MATRIX_SIZE}.json" | head -1 | cut -d' ' -f2)
+    AMGX_SINGLE_TIME=$(grep -o '"median_ms": [0-9.]*' "${RESULTS_JSON}/amgx_single_${MATRIX_SIZE}.json" | head -1 | cut -d' ' -f2)
 fi
 if [ -f "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" ]; then
-    AMGX_MGPU_TIME=$(grep -o '"total_time_ms": [0-9.]*' "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
+    AMGX_MGPU_TIME=$(grep -o '"median_ms": [0-9.]*' "${RESULTS_JSON}/amgx_mgpu_${MATRIX_SIZE}_${NUM_GPUS}gpu.json" | head -1 | cut -d' ' -f2)
 fi
 
 if [ -n "$CG_SINGLE_TIME" ]; then
