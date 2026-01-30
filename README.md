@@ -253,23 +253,18 @@ See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology an
 nvcc -O2 --ptxas-options=-O2 --ptxas-options=-allow-expensive-optimizations=true -std=c++11
 ```
 
-**Reproducibility — One Command:**
+**Run benchmarks on your hardware:**
 ```bash
-# Full benchmarks (1000×1000 matrix)
-./scripts/run_all.sh
-
-# Quick verification (512×512, ~2 min)
+# Quick test (512×512)
 ./scripts/run_all.sh --quick
 
-# Custom matrix size
-./scripts/run_all.sh --size=10000
-
-# Generate figures from results
-pip install -r scripts/plotting/requirements.txt
-python scripts/plotting/plot_results.py
+# Full benchmark suite
+./scripts/run_all.sh --size=1000
 ```
 
 Results are saved to `results/raw/` (TXT) and `results/json/` (structured data).
+
+> **Note**: Showcase results above were measured on 8× A100-SXM4-80GB with 10k-20k matrices. To reproduce those specific results, use `--size=10000` (or larger) on equivalent hardware.
 
 ---
 

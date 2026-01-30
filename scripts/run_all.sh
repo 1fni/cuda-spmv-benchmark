@@ -1,13 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# run_all.sh - Reproduce all benchmark results
+# run_all.sh - Run benchmark suite
 # =============================================================================
-# ONE COMMAND TO RULE THEM ALL
 #
 # Usage:
-#   ./scripts/run_all.sh              # Full benchmarks (default: 5000x5000)
-#   ./scripts/run_all.sh --quick      # Quick verification (512x512)
-#   ./scripts/run_all.sh --size=10000 # Custom matrix size
+#   ./scripts/run_all.sh              # Default benchmarks (1000x1000)
+#   ./scripts/run_all.sh --quick      # Quick test (512x512)
+#   ./scripts/run_all.sh --size=10000 # Custom matrix size (e.g., reproduce showcase)
 #
 # Output:
 #   results/raw/         - Raw benchmark outputs (TXT)
@@ -28,7 +27,7 @@ cd "${PROJECT_DIR}"
 # =============================================================================
 # Configuration
 # =============================================================================
-MATRIX_SIZE=5000
+MATRIX_SIZE=1000
 QUICK_MODE=0
 NUM_RUNS=10
 
