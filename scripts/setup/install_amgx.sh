@@ -206,16 +206,17 @@ build_amgx() {
 
     # Enable MPI support if available (required for multi-GPU distributed API)
     if command -v mpicc >/dev/null 2>&1; then
+        cmake_args+=(-DCMAKE_NO_MPI=0)
         print_status "MPI found - building AmgX with MPI support (required for multi-GPU)"
     else
+        cmake_args+=(-DCMAKE_NO_MPI=1)
         print_warning "MPI not found - building AmgX without MPI (multi-GPU will not work)"
-        cmake_args+=(-DCMAKE_NO_MPI=ON)
     fi
-    
-    # Add CUDA architecture flags for better compatibility
+
+    # Add CUDA architecture flags (use CMAKE_CUDA_ARCHITECTURES, standard CMake 3.18+)
     if detect_cloud_environment; then
         local cuda_archs=$(get_cuda_architectures)
-        cmake_args+=(-DCUDA_ARCH="$cuda_archs")
+        cmake_args+=(-DCMAKE_CUDA_ARCHITECTURES="$cuda_archs")
         print_status "Using CUDA architectures: $cuda_archs (CUDA $CUDA_VERSION)"
     fi
     
