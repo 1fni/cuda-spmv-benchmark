@@ -6,6 +6,8 @@
 
 High-performance multi-GPU Conjugate Gradient solver for large-scale sparse linear systems using CUDA and MPI. Optimized for structured stencil grids with excellent strong scaling efficiency.
 
+This project evaluates GPU sparse matrix–vector multiplication strategies and their impact on iterative solvers, with a focus on stencil-structured workloads common in scientific computing (PDE discretizations, CFD, FEM).
+
 ## TL;DR — Key Numbers
 
 | Metric | Result |
@@ -28,6 +30,8 @@ Exploiting stencil structure enables consistent performance gains over generic s
 | Single-GPU (20k×20k) |          531.4 ms |       746.7 ms | **1.40×** |
 | 8 GPUs (20k×20k)     |           71.0 ms |       102.3 ms | **1.44×** |
 
+<sub>*Median of 10 runs per configuration; 3 warmup runs discarded.*</sub>
+
 <p align="center">
   <img src="docs/figures/performance_summary_horizontal.png" alt="Performance Summary: All Gains" width="100%">
 </p>
@@ -49,6 +53,8 @@ Exploiting stencil structure enables consistent performance gains over generic s
 | **100M unknowns** (10k×10k stencil) | 133.9 ms | 19.3 ms | 6.94× | 86.8% |
 | **225M unknowns** (15k×15k stencil) | 300.1 ms | 40.4 ms | 7.43× | 92.9% |
 | **400M unknowns** (20k×20k stencil) | 531.4 ms | 71.0 ms | **7.48×** | **93.5%** |
+
+<sub>*Median of 10 runs; 3 warmup runs discarded.*</sub>
 
 **Key Results:**
 - **7.48× speedup** on 400M unknowns with 8 GPUs (93.5% parallel efficiency)
@@ -106,6 +112,8 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 | **10k×10k** (100M unknowns) | 6.77 ms | 3.25 ms | **2.08×** | 1.98× (1182 → 2339 GB/s) |
 | **15k×15k** (225M unknowns) | 15.00 ms | 7.29 ms | **2.06×** | 1.96× (1200 → 2346 GB/s) |
 | **20k×20k** (400M unknowns) | 26.77 ms | 12.86 ms | **2.08×** | 1.98× (1195 → 2364 GB/s) |
+
+<sub>*Median of 10 runs; 3 warmup runs discarded.*</sub>
 
 **Key Results:**
 - **2.07× average speedup** over cuSPARSE CSR implementation
@@ -247,6 +255,8 @@ See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology an
 | Timing scope | Solver only (excludes I/O, matrix setup) |
 | Convergence criterion | Relative residual < 1e-6 |
 | Profiling tools | Nsight Systems (timeline), Nsight Compute (roofline) |
+
+**Reproducibility conditions**: Identical test matrices, GPU clocks at default (no boost lock), cold start between configurations, same binary for all runs.
 
 **Compilation flags** (release build):
 ```
