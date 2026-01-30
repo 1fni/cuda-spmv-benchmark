@@ -126,6 +126,23 @@ See [detailed problem size analysis](docs/PROBLEM_SIZE_SCALING_RESULTS.md) for c
 1. Predictable access pattern → better L1/L2 cache utilization
 2. Reduced memory traffic (no column index lookups for interior points)
 3. Coalesced memory accesses for contiguous elements
+4. **Granularity-matched parallelism** (see below)
+
+**Kernel design choice — registers over shared memory:**
+
+With only 5 non-zeros per row, the kernel uses **one thread per row with register-only computation**:
+```
+5 global loads → registers → 5 FMAs → 1 global store
+```
+
+This avoids:
+- **Shared memory staging**: Copy overhead exceeds compute for 5 elements
+- **Warp-level reductions**: 27 of 32 lanes would be idle; shuffle latency adds no value
+- **Synchronization barriers**: No `__syncthreads()` needed
+
+cuSPARSE must handle arbitrary sparsity (1-1000+ nnz/row), so it uses warp-per-row with generic reductions. For fixed 5-point stencils, the simpler approach wins.
+
+> *Low per-row workload → registers beat shared memory.*
 
 </details>
 
