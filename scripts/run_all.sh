@@ -252,6 +252,9 @@ echo ""
 echo "--- SpMV (Single-GPU) ---"
 printf "%-32s %12s %16s\n" "Benchmark" "Time (ms)" "Speedup"
 printf "%-32s %12s %16s\n" "--------------------------------" "------------" "----------------"
+if [ -n "$CUSPARSE_TIME" ]; then
+    printf "%-32s %12.3f %16s\n" "cuSPARSE CSR (NVIDIA)" "$CUSPARSE_TIME" "(reference)"
+fi
 if [ -n "$STENCIL_TIME" ]; then
     if [ -n "$CUSPARSE_TIME" ]; then
         SPMV_SPEEDUP=$(awk "BEGIN {printf \"%.2f\", $CUSPARSE_TIME / $STENCIL_TIME}")
@@ -259,9 +262,6 @@ if [ -n "$STENCIL_TIME" ]; then
     else
         printf "%-32s %12.3f %16s\n" "Custom Stencil" "$STENCIL_TIME" "-"
     fi
-fi
-if [ -n "$CUSPARSE_TIME" ]; then
-    printf "%-32s %12.3f %16s\n" "cuSPARSE CSR (NVIDIA)" "$CUSPARSE_TIME" "(reference)"
 fi
 
 # --- CG Custom vs AmgX Section ---
@@ -271,6 +271,9 @@ printf "%-32s %12s %16s\n" "Benchmark" "Time (ms)" "Speedup"
 printf "%-32s %12s %16s\n" "--------------------------------" "------------" "----------------"
 
 # Single-GPU comparison
+if [ -n "$AMGX_SINGLE_TIME" ]; then
+    printf "%-32s %12.3f %16s\n" "AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "(reference)"
+fi
 if [ -n "$CG_SINGLE_TIME" ]; then
     if [ -n "$AMGX_SINGLE_TIME" ]; then
         CG_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_SINGLE_TIME / $CG_SINGLE_TIME}")
@@ -279,13 +282,13 @@ if [ -n "$CG_SINGLE_TIME" ]; then
         printf "%-32s %12.3f %16s\n" "Custom CG (1 GPU)" "$CG_SINGLE_TIME" "-"
     fi
 fi
-if [ -n "$AMGX_SINGLE_TIME" ]; then
-    printf "%-32s %12.3f %16s\n" "AmgX (1 GPU)" "$AMGX_SINGLE_TIME" "(reference)"
-fi
 
 # Multi-GPU comparison
 if [ -n "$CG_MGPU_TIME" ] || [ -n "$AMGX_MGPU_TIME" ]; then
     echo ""
+    if [ -n "$AMGX_MGPU_TIME" ]; then
+        printf "%-32s %12.3f %16s\n" "AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "(reference)"
+    fi
     if [ -n "$CG_MGPU_TIME" ]; then
         if [ -n "$AMGX_MGPU_TIME" ]; then
             MGPU_VS_AMGX=$(awk "BEGIN {printf \"%.2f\", $AMGX_MGPU_TIME / $CG_MGPU_TIME}")
@@ -293,9 +296,6 @@ if [ -n "$CG_MGPU_TIME" ] || [ -n "$AMGX_MGPU_TIME" ]; then
         else
             printf "%-32s %12.3f %16s\n" "Custom CG (${NUM_GPUS} GPUs)" "$CG_MGPU_TIME" "-"
         fi
-    fi
-    if [ -n "$AMGX_MGPU_TIME" ]; then
-        printf "%-32s %12.3f %16s\n" "AmgX (${NUM_GPUS} GPUs)" "$AMGX_MGPU_TIME" "(reference)"
     fi
 fi
 
