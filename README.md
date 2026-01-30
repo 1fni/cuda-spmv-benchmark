@@ -256,7 +256,7 @@ See [Profiling Analysis](docs/PROFILING_ANALYSIS.md) for complete methodology an
 | Convergence criterion | Relative residual < 1e-6 |
 | Profiling tools | Nsight Systems (timeline), Nsight Compute (roofline) |
 
-**Reproducibility conditions**: Identical test matrices, GPU clocks at default (no boost lock), cold start between configurations, same binary for all runs.
+**Reproducibility conditions**: Identical test matrices, GPU clocks at default (no boost lock), 3 warmup runs before measurement, separate process per configuration, same binary for all runs.
 
 **Compilation flags** (release build):
 ```
