@@ -463,9 +463,10 @@ jq '.timing.median_ms' custom.json
 ### Profiling with Nsight Systems
 
 ```bash
-# Generate timeline report
+# Generate timeline report (multi-rank MPI)
 nsys profile \
   --trace=cuda,nvtx,osrt,mpi \
+  --trace-fork-before-exec=true \
   --stats=true \
   --cuda-memory-usage=true \
   --output=cg_profile \
