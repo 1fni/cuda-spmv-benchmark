@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.18)
 
 # Set CUDA architecture BEFORE project() for CI compatibility
+# Auto-detect from environment or use native (requires CMake 3.24+)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES 70)
+    # Default to common architectures, excluding deprecated ones for CUDA 13+
+    set(CMAKE_CUDA_ARCHITECTURES 80 86 89 90)
 endif()
 
 project(SpMVTests LANGUAGES CXX CUDA)
@@ -53,19 +55,27 @@ include_directories(
     ${GTEST_INCLUDE_DIR}
 )
 
-# Collect C/CUDA source files from main project (exclude main.cu)
-file(GLOB_RECURSE PROJECT_SOURCES 
+# Collect C/CUDA source files from main project (exclude main files and MPI sources)
+file(GLOB_RECURSE PROJECT_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/*.cu"
 )
-# Remove main.cu since we have our own main
+# Remove main files since we have our own main
 list(FILTER PROJECT_SOURCES EXCLUDE REGEX "main.cu$")
 list(FILTER PROJECT_SOURCES EXCLUDE REGEX "generate_matrix.cu$")
+# Remove files with main() functions
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "src/main/cg_solver.cu$")
+# Remove MPI-dependent sources (require mpi.h)
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "cg_solver_mgpu_stencil.cu$")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "cg_solver_mgpu_partitioned.cu$")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "spmv_stencil_partitioned_halo_kernel.cu$")
+list(FILTER PROJECT_SOURCES EXCLUDE REGEX "benchmark_stats_mgpu_partitioned.cu$")
 
 # Add the test executable
 add_executable(spmv_tests
     test_main.cpp
     test_wrapper_basic.cpp
     test_helpers_demo.cpp
+    test_cg_solver.cpp
     wrappers/spmv_wrapper.cpp
     helpers/cuda_test_utils.cpp
     helpers/matrix_fixtures.cpp

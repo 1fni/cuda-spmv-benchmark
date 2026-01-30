@@ -7,15 +7,15 @@
  * @brief Test fixture for SpMV wrapper basic functionality
  */
 class SpMVWrapperTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         // Test matrices are available in ../../matrix/ directory (from build/)
-        test_matrix_3x3_ = "../../matrix/example3x3.mtx";
-        test_matrix_5x5_ = "../../matrix/example5x5.mtx";
+        // example81x81.mtx is a 9x9 stencil grid (81 unknowns)
+        test_matrix_81x81_ = "../../matrix/example81x81.mtx";
     }
-    
+
     /**
-     * @brief Compute checksum of a vector  
+     * @brief Compute checksum of a vector
      * @param vec Input vector
      * @return Sum of all elements
      */
@@ -26,9 +26,23 @@ protected:
         }
         return sum;
     }
-    
-    std::string test_matrix_3x3_;
-    std::string test_matrix_5x5_;
+
+    /**
+     * @brief Compute expected checksum for 5-point stencil with vector of ones
+     * For a grid_size x grid_size stencil:
+     * - Corner points (4): diagonal -4, 2 neighbors -> sum = -6
+     * - Edge points (4*(grid_size-2)): diagonal -4, 3 neighbors -> sum = -7
+     * - Interior points ((grid_size-2)^2): diagonal -4, 4 neighbors -> sum = -8
+     */
+    double expected_stencil_checksum(int grid_size) {
+        int corners = 4;
+        int edges = 4 * (grid_size - 2);
+        int interior = (grid_size - 2) * (grid_size - 2);
+        return corners * (-6.0) + edges * (-7.0) + interior * (-8.0);
+    }
+
+    std::string test_matrix_81x81_;
+    static constexpr int GRID_SIZE_81 = 9;  // 9x9 grid = 81 unknowns
 };
 
 /**
@@ -41,13 +55,13 @@ TEST_F(SpMVWrapperTest, ConstructorWithValidOperators) {
         EXPECT_EQ(csr_wrapper.get_name(), "csr");
         EXPECT_FALSE(csr_wrapper.is_initialized());
     });
-    
+
     EXPECT_NO_THROW({
         SpMVWrapper stencil_wrapper("stencil5");
         EXPECT_EQ(stencil_wrapper.get_name(), "stencil5");
         EXPECT_FALSE(stencil_wrapper.is_initialized());
     });
-    
+
     EXPECT_NO_THROW({
         SpMVWrapper ellpack_wrapper("ellpack");
         EXPECT_EQ(ellpack_wrapper.get_name(), "ellpack");
@@ -59,9 +73,7 @@ TEST_F(SpMVWrapperTest, ConstructorWithValidOperators) {
  * @brief Test wrapper construction with invalid operator
  */
 TEST_F(SpMVWrapperTest, ConstructorWithInvalidOperator) {
-    EXPECT_THROW({
-        SpMVWrapper invalid_wrapper("INVALID_OPERATOR");
-    }, std::invalid_argument);
+    EXPECT_THROW({ SpMVWrapper invalid_wrapper("INVALID_OPERATOR"); }, std::invalid_argument);
 }
 
 /**
@@ -69,16 +81,16 @@ TEST_F(SpMVWrapperTest, ConstructorWithInvalidOperator) {
  */
 TEST_F(SpMVWrapperTest, MatrixDataWrapperLoad) {
     EXPECT_NO_THROW({
-        MatrixDataWrapper matrix(test_matrix_3x3_);
-        
-        // Verify matrix was loaded
-        EXPECT_GT(matrix->rows, 0);
-        EXPECT_GT(matrix->cols, 0);
+        MatrixDataWrapper matrix(test_matrix_81x81_);
+
+        // Verify matrix was loaded (9x9 grid = 81 unknowns)
+        EXPECT_EQ(matrix->rows, 81);
+        EXPECT_EQ(matrix->cols, 81);
         EXPECT_GT(matrix->nnz, 0);
         EXPECT_NE(matrix->entries, nullptr);
-        
-        std::cout << "Loaded matrix: " << matrix->rows << "x" << matrix->cols 
-                  << " with " << matrix->nnz << " non-zeros" << std::endl;
+
+        std::cout << "Loaded matrix: " << matrix->rows << "x" << matrix->cols << " with "
+                  << matrix->nnz << " non-zeros" << std::endl;
     });
 }
 
@@ -87,9 +99,9 @@ TEST_F(SpMVWrapperTest, MatrixDataWrapperLoad) {
  */
 TEST_F(SpMVWrapperTest, CSRInitialization) {
     EXPECT_NO_THROW({
-        MatrixDataWrapper matrix(test_matrix_3x3_);
+        MatrixDataWrapper matrix(test_matrix_81x81_);
         SpMVWrapper csr_wrapper("csr");
-        
+
         EXPECT_TRUE(csr_wrapper.init(matrix.get()));
         EXPECT_TRUE(csr_wrapper.is_initialized());
         EXPECT_EQ(csr_wrapper.get_matrix_rows(), matrix->rows);
@@ -97,99 +109,90 @@ TEST_F(SpMVWrapperTest, CSRInitialization) {
 }
 
 /**
- * @brief Test CSR correctness with 3x3 stencil matrix using checksum
+ * @brief Test CSR correctness with 9x9 stencil matrix using checksum
  */
-TEST_F(SpMVWrapperTest, CSRCorrectnessStencil3x3) {
-    MatrixDataWrapper matrix(test_matrix_3x3_);
+TEST_F(SpMVWrapperTest, CSRCorrectnessStencil9x9) {
+    MatrixDataWrapper matrix(test_matrix_81x81_);
     SpMVWrapper csr_wrapper("csr");
-    
+
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
-    
+
     // Test vector: all ones
     std::vector<double> x(matrix->rows, 1.0);
     std::vector<double> y = csr_wrapper.multiply(x);
-    
+
     // Compute checksum
     double checksum = compute_checksum(y);
-    
-    // Expected checksum for 3x3 5-point stencil with vector of ones:
-    // Each row sums to: -4 + (number of neighbors * -1)
-    // Corner points (4 total): -4 + (-1*2) = -6
-    // Edge points (4 total): -4 + (-1*3) = -7  
-    // Center point (1 total): -4 + (-1*4) = -8
-    // Total: 4*(-6) + 4*(-7) + 1*(-8) = -24 + -28 + -8 = -60
-    double expected_checksum = -60.0;
-    
-    EXPECT_NEAR(checksum, expected_checksum, 1e-10) 
-        << "CSR checksum mismatch. Got: " << checksum 
-        << ", expected: " << expected_checksum;
-    
-    std::cout << "CSR 3x3 checksum test passed: " << checksum << std::endl;
+
+    // Expected checksum for 9x9 5-point stencil with vector of ones
+    double expected_checksum = expected_stencil_checksum(GRID_SIZE_81);
+
+    EXPECT_NEAR(checksum, expected_checksum, 1e-10)
+        << "CSR checksum mismatch. Got: " << checksum << ", expected: " << expected_checksum;
+
+    std::cout << "CSR 9x9 checksum test passed: " << checksum << std::endl;
 }
 
 /**
- * @brief Test STENCIL5 correctness with 3x3 matrix (should match CSR)
+ * @brief Test STENCIL5 correctness with 9x9 matrix (should match CSR)
  */
-TEST_F(SpMVWrapperTest, StencilCorrectnessStencil3x3) {
-    MatrixDataWrapper matrix(test_matrix_3x3_);
+TEST_F(SpMVWrapperTest, StencilCorrectnessStencil9x9) {
+    MatrixDataWrapper matrix(test_matrix_81x81_);
     SpMVWrapper stencil_wrapper("stencil5");
-    
+
     ASSERT_TRUE(stencil_wrapper.init(matrix.get()));
-    
+
     // Test vector: all ones
     std::vector<double> x(matrix->rows, 1.0);
     std::vector<double> y = stencil_wrapper.multiply(x);
-    
+
     // Compute checksum
     double checksum = compute_checksum(y);
-    
+
     // Should match CSR result exactly
-    double expected_checksum = -60.0;
-    
+    double expected_checksum = expected_stencil_checksum(GRID_SIZE_81);
+
     EXPECT_NEAR(checksum, expected_checksum, 1e-10)
-        << "STENCIL5 checksum mismatch. Got: " << checksum 
-        << ", expected: " << expected_checksum;
-    
-    std::cout << "STENCIL5 3x3 checksum test passed: " << checksum << std::endl;
+        << "STENCIL5 checksum mismatch. Got: " << checksum << ", expected: " << expected_checksum;
+
+    std::cout << "STENCIL5 9x9 checksum test passed: " << checksum << std::endl;
 }
 
 /**
  * @brief Cross-validation test: CSR vs STENCIL5 should give identical results
  */
 TEST_F(SpMVWrapperTest, CrossValidationCSRvsStencil) {
-    MatrixDataWrapper matrix(test_matrix_3x3_);
-    
+    MatrixDataWrapper matrix(test_matrix_81x81_);
+
     // Initialize both operators
     SpMVWrapper csr_wrapper("csr");
     SpMVWrapper stencil_wrapper("stencil5");
-    
+
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
     ASSERT_TRUE(stencil_wrapper.init(matrix.get()));
-    
+
     // Test with same input vector
     std::vector<double> x(matrix->rows, 1.0);
-    
+
     std::vector<double> y_csr = csr_wrapper.multiply(x);
     std::vector<double> y_stencil = stencil_wrapper.multiply(x);
-    
+
     // Compare checksums
     double checksum_csr = compute_checksum(y_csr);
     double checksum_stencil = compute_checksum(y_stencil);
-    
+
     EXPECT_NEAR(checksum_csr, checksum_stencil, 1e-12)
         << "Cross-validation failed. CSR checksum: " << checksum_csr
         << ", STENCIL5 checksum: " << checksum_stencil;
-    
+
     // Also compare element-wise for more rigorous validation
     ASSERT_EQ(y_csr.size(), y_stencil.size());
     for (size_t i = 0; i < y_csr.size(); ++i) {
         EXPECT_NEAR(y_csr[i], y_stencil[i], 1e-12)
-            << "Element " << i << " differs: CSR=" << y_csr[i] 
-            << ", STENCIL5=" << y_stencil[i];
+            << "Element " << i << " differs: CSR=" << y_csr[i] << ", STENCIL5=" << y_stencil[i];
     }
-    
-    std::cout << "Cross-validation CSR vs STENCIL5 passed. Checksum: " 
-              << checksum_csr << std::endl;
+
+    std::cout << "Cross-validation CSR vs STENCIL5 passed. Checksum: " << checksum_csr << std::endl;
 }
 
 /**
@@ -197,27 +200,23 @@ TEST_F(SpMVWrapperTest, CrossValidationCSRvsStencil) {
  */
 TEST_F(SpMVWrapperTest, ErrorHandlingUninitialized) {
     SpMVWrapper csr_wrapper("csr");
-    std::vector<double> x(3, 1.0);
-    
+    std::vector<double> x(81, 1.0);
+
     // Should throw when not initialized
-    EXPECT_THROW({
-        csr_wrapper.multiply(x);
-    }, std::runtime_error);
+    EXPECT_THROW({ csr_wrapper.multiply(x); }, std::runtime_error);
 }
 
 /**
  * @brief Test error handling for wrong vector size
  */
 TEST_F(SpMVWrapperTest, ErrorHandlingWrongVectorSize) {
-    MatrixDataWrapper matrix(test_matrix_3x3_);
+    MatrixDataWrapper matrix(test_matrix_81x81_);
     SpMVWrapper csr_wrapper("csr");
-    
+
     ASSERT_TRUE(csr_wrapper.init(matrix.get()));
-    
+
     // Wrong size vector
     std::vector<double> x_wrong_size(matrix->rows + 1, 1.0);
-    
-    EXPECT_THROW({
-        csr_wrapper.multiply(x_wrong_size);
-    }, std::runtime_error);
+
+    EXPECT_THROW({ csr_wrapper.multiply(x_wrong_size); }, std::runtime_error);
 }
