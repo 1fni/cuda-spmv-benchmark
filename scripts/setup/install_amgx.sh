@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-AMGX_VERSION="main"  # Latest version compatible with CUDA 12.x
+AMGX_VERSION="main"  # Latest version compatible with CUDA 12.x/13.x
 
 # Determine project root and install location
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -69,6 +69,27 @@ check_cuda() {
         print_warning "cuSOLVER library not found in standard locations"
         print_status "AmgX may fail to link. Continuing anyway..."
     fi
+}
+
+# Get supported CUDA architectures based on CUDA version
+get_cuda_architectures() {
+    local cuda_major=$(echo "$CUDA_VERSION" | cut -d. -f1)
+
+    case "$cuda_major" in
+        11)
+            # CUDA 11.x: Volta (70) through Ampere (86)
+            echo "70;75;80;86"
+            ;;
+        12)
+            # CUDA 12.x: Volta (70) through Hopper (90)
+            echo "70;75;80;86;89;90"
+            ;;
+        13|*)
+            # CUDA 13+: Ampere (80) through Blackwell (100)
+            # Volta (70) and Turing (75) deprecated
+            echo "80;86;89;90;100"
+            ;;
+    esac
 }
 
 # Check system dependencies
@@ -186,9 +207,9 @@ build_amgx() {
     
     # Add CUDA architecture flags for better compatibility
     if detect_cloud_environment; then
-        # Common cloud GPU architectures
-        cmake_args+=(-DCUDA_ARCH="70;75;80;86;89;90")
-        print_status "Using multi-architecture CUDA build for cloud GPU compatibility"
+        local cuda_archs=$(get_cuda_architectures)
+        cmake_args+=(-DCUDA_ARCH="$cuda_archs")
+        print_status "Using CUDA architectures: $cuda_archs (CUDA $CUDA_VERSION)"
     fi
     
     cmake "${cmake_args[@]}" ..
