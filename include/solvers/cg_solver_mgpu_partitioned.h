@@ -50,4 +50,22 @@
 int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
                               CGConfigMultiGPU config, CGStatsMultiGPU* stats);
 
+/**
+ * @brief Multi-GPU CG solver with compute-communication overlap
+ *
+ * Overlaps interior SpMV with MPI halo exchange using two CUDA streams.
+ * Boundary SpMV executes after halo data arrives.
+ * Results are identical to the synchronous partitioned solver.
+ *
+ * @param spmv_op SpMV operator (unused, uses internal stencil kernel)
+ * @param mat Matrix data (for partitioning)
+ * @param b Right-hand side vector
+ * @param x Solution vector (output)
+ * @param config Multi-GPU CG configuration (enable_overlap ignored here)
+ * @param stats Output statistics (includes overlap metrics when detailed timers enabled)
+ * @return 0 on success
+ */
+int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, const double* b,
+                                      double* x, CGConfigMultiGPU config, CGStatsMultiGPU* stats);
+
 #endif  // CG_SOLVER_MGPU_PARTITIONED_H
