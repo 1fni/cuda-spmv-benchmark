@@ -301,6 +301,10 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
     CUDA_CHECK(cudaStreamCreateWithFlags(&stream_compute, cudaStreamNonBlocking));
     CUDA_CHECK(cudaStreamCreateWithFlags(&stream_comm, cudaStreamNonBlocking));
 
+    // Event to synchronize p updates (stream_compute) before D2H reads (stream_comm)
+    cudaEvent_t p_updated_event;
+    CUDA_CHECK(cudaEventCreate(&p_updated_event));
+
     cublasHandle_t cublas_handle;
     cublasStatus_t cublas_status = cublasCreate(&cublas_handle);
     if (cublas_status != CUBLAS_STATUS_SUCCESS) {
@@ -455,6 +459,8 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
     // p = r (local only; halo will be exchanged at start of first iteration)
     CUDA_CHECK(cudaMemcpyAsync(d_p_local, d_r_local, n_local * sizeof(double),
                                cudaMemcpyDeviceToDevice, stream_compute));
+    // Signal initial p is ready for first iteration's D2H on stream_comm
+    CUDA_CHECK(cudaEventRecord(p_updated_event, stream_compute));
     CUDA_CHECK(cudaStreamSynchronize(stream_compute));
 
     // rs_old = dot(r, r) + AllReduce
@@ -494,6 +500,9 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_phase_start, stream_comm));
         }
+
+        // Ensure p update (axpby on stream_compute) is done before D2H reads
+        CUDA_CHECK(cudaStreamWaitEvent(stream_comm, p_updated_event, 0));
 
         // Step a: D2H boundary p on stream_comm
         if (rank > 0) {
@@ -740,7 +749,8 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
         }
         nvtxRangePop();
 
-        // No halo exchange here - next iteration's overlap phase handles it
+        // Signal that p update is done (stream_comm must wait before D2H reads)
+        CUDA_CHECK(cudaEventRecord(p_updated_event, stream_compute));
 
         rs_old = rs_new;
         nvtxRangePop();  // CG_Iteration_Overlap
@@ -902,6 +912,7 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
         cudaFreeHost(h_recv_next);
 
     cublasDestroy(cublas_handle);
+    cudaEventDestroy(p_updated_event);
     cudaStreamDestroy(stream_compute);
     cudaStreamDestroy(stream_comm);
     cudaEventDestroy(start);
