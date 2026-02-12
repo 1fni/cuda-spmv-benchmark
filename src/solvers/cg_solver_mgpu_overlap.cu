@@ -199,6 +199,11 @@ extern __global__ void stencil5_csr_partitioned_halo_kernel(
     const double* __restrict__ values, const double* __restrict__ x_local,
     const double* __restrict__ x_halo_prev, const double* __restrict__ x_halo_next,
     double* __restrict__ y, int n_local, int row_offset, int N, int grid_size);
+extern __global__ void stencil7_csr_partitioned_halo_kernel_3d(
+    const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+    const double* __restrict__ values, const double* __restrict__ x_local,
+    const double* __restrict__ x_halo_prev, const double* __restrict__ x_halo_next,
+    double* __restrict__ y, int n_local, int row_offset, int N_total, int grid_size);
 
 /* ================================================================
  * Local helpers
