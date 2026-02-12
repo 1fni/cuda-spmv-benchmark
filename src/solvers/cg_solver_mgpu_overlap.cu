@@ -854,8 +854,8 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
 
     // Copy result back (sync stream_compute first to ensure all work is done)
     CUDA_CHECK(cudaStreamSynchronize(stream_compute));
-    CUDA_CHECK(
-        cudaMemcpy(&x[row_offset], d_x_local, n_local * sizeof(double), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpyAsync(&x[row_offset], d_x_local, n_local * sizeof(double),
+                               cudaMemcpyDeviceToHost, stream_compute));
 
     // Gather full solution to rank 0
     int* recvcounts = NULL;
