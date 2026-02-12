@@ -40,13 +40,18 @@ CU_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SRCS))
 CU_SPMV_SRCS := $(filter-out $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/main/cg_solver.cu $(SRC_DIR)/main/cg_solver_mgpu_stencil.cu $(SRC_DIR)/solvers/cg_solver_mgpu_partitioned.cu $(SRC_DIR)/solvers/cg_solver_mgpu_overlap.cu $(SRC_DIR)/spmv/spmv_stencil_partitioned_halo_kernel.cu $(SRC_DIR)/spmv/benchmark_stats_mgpu_partitioned.cu, $(CU_SRCS))
 CU_SPMV_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_SPMV_SRCS))
 
-# Matrix generator
+# Matrix generator (2D 5-point stencil)
 CU_GEN_SRCS := $(SRC_DIR)/matrix/generate_matrix.cu $(SRC_DIR)/io/io.cu
 CU_GEN_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_GEN_SRCS))
+
+# Matrix generator 3D (3D 7-point stencil)
+CU_GEN3D_SRCS := $(SRC_DIR)/main/generate_matrix_3d.cu $(SRC_DIR)/io/io.cu
+CU_GEN3D_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_GEN3D_SRCS))
 
 # Binaries
 BIN_SPMV := $(BIN_DIR)/spmv_bench
 BIN_GEN  := $(BIN_DIR)/generate_matrix
+BIN_GEN3D := $(BIN_DIR)/generate_matrix_3d
 BIN_CG   := $(BIN_DIR)/cg_solver
 BIN_MGPU_STENCIL := $(BIN_DIR)/cg_solver_mgpu_stencil
 
@@ -56,12 +61,12 @@ CU_CG_OBJS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(CU_CG_SRCS))
 
 # PHONY targets
 .PHONY: all clean help check-mpi-message
-.PHONY: spmv_bench generate_matrix cg_solver cg_solver_mgpu_stencil
-.PHONY: spmv gen cg
+.PHONY: spmv_bench generate_matrix generate_matrix_3d cg_solver cg_solver_mgpu_stencil
+.PHONY: spmv gen gen3d cg
 
 # Main target - conditionally include MPI targets
 ifeq ($(HAS_MPI),1)
-    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_MGPU_STENCIL)
+    ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN) $(BIN_GEN3D) $(BIN_MGPU_STENCIL)
 else
     ALL_TARGETS := $(BIN_SPMV) $(BIN_GEN)
 endif
@@ -83,12 +88,14 @@ help:
 	@echo ""
 	@echo "Explicit targets:"
 	@echo "  make spmv_bench              - SpMV benchmark (bin/spmv_bench)"
-	@echo "  make generate_matrix         - Matrix generator (bin/generate_matrix)"
+	@echo "  make generate_matrix         - 2D matrix generator (bin/generate_matrix)"
+	@echo "  make generate_matrix_3d      - 3D matrix generator (bin/generate_matrix_3d)"
 	@echo "  make cg_solver_mgpu_stencil  - CG solver (bin/cg_solver_mgpu_stencil, MPI)"
 	@echo ""
 	@echo "Short aliases:"
 	@echo "  make spmv         - Alias for spmv_bench"
 	@echo "  make gen          - Alias for generate_matrix"
+	@echo "  make gen3d        - Alias for generate_matrix_3d"
 	@echo "  make cg           - Alias for cg_solver_mgpu_stencil"
 	@echo ""
 	@echo "Other targets:"
@@ -102,6 +109,11 @@ $(BIN_SPMV): $(CU_SPMV_OBJS)
 
 # Matrix generator binary
 $(BIN_GEN): $(CU_GEN_OBJS)
+	@mkdir -p $(BIN_DIR)
+	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $^ -o $@
+
+# 3D Matrix generator binary
+$(BIN_GEN3D): $(CU_GEN3D_OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) $^ -o $@
 
@@ -172,6 +184,7 @@ $(BIN_MGPU_STENCIL): $(OBJ_MGPU_STENCIL_MAIN) $(OBJ_MGPU_STENCIL_SOLVER) $(OBJ_M
 
 spmv_bench: $(BIN_SPMV)
 generate_matrix: $(BIN_GEN)
+generate_matrix_3d: $(BIN_GEN3D)
 cg_solver: $(BIN_CG)
 cg_solver_mgpu_stencil: $(BIN_MGPU_STENCIL)
 
@@ -181,6 +194,7 @@ cg_solver_mgpu_stencil: $(BIN_MGPU_STENCIL)
 
 spmv: spmv_bench
 gen: generate_matrix
+gen3d: generate_matrix_3d
 cg: cg_solver_mgpu_stencil
 
 # ============================================================================

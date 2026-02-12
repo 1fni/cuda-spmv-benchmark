@@ -397,3 +397,114 @@ int write_matrix_market_stencil5(int n, const char* filename) {
     printf("Matrix generated: %s (%dx%d, %d nnz)\n", filename, grid_size, grid_size, nnz);
     return 0;
 }
+
+/**
+ * Generate 3D 7-point stencil matrix in Matrix Market format
+ * Grid: NxNxN, row-major ordering: global_idx = i*N*N + j*N + k
+ */
+int write_matrix_market_stencil7(int N, const char* filename) {
+    long long matrix_size = (long long)N * N * N;
+
+    // Calculate the exact number of non-zeros
+    long long nnz = 0;
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                nnz++;  // Center
+                if (i > 0)
+                    nnz++;  // -x neighbor
+                if (i < N - 1)
+                    nnz++;  // +x neighbor
+                if (j > 0)
+                    nnz++;  // -y neighbor
+                if (j < N - 1)
+                    nnz++;  // +y neighbor
+                if (k > 0)
+                    nnz++;  // -z neighbor
+                if (k < N - 1)
+                    nnz++;  // +z neighbor
+            }
+        }
+    }
+
+    FILE* f = fopen(filename, "w");
+    if (!f) {
+        perror("fopen");
+        exit(1);
+    }
+
+    // Write Matrix Market header
+    fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
+    fprintf(f, "%% STENCIL_GRID_SIZE %d\n", N);
+    fprintf(f, "%lld %lld %lld\n", matrix_size, matrix_size, nnz);
+
+    // Write values with progress indication
+    long long total_points = matrix_size;
+    long long progress_step = total_points / 100;
+    if (progress_step == 0)
+        progress_step = 1;
+
+    printf("Writing 3D matrix entries: 0%%");
+    fflush(stdout);
+
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                long long global_idx = (long long)i * N * N + j * N + k;
+                long long row_1based = global_idx + 1;
+
+                // Progress indicator
+                if (global_idx % progress_step == 0 || global_idx % 10000 == 0) {
+                    int percent = (int)((global_idx * 100) / total_points);
+                    printf("\rWriting 3D matrix entries: %d%%", percent);
+                    fflush(stdout);
+                }
+
+                // Center (Laplacian with mass term: 6.0)
+                fprintf(f, "%lld %lld 6.0\n", row_1based, row_1based);
+
+                // -x neighbor (i-1, j, k)
+                if (i > 0) {
+                    long long neighbor_idx = (long long)(i - 1) * N * N + j * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+
+                // +x neighbor (i+1, j, k)
+                if (i < N - 1) {
+                    long long neighbor_idx = (long long)(i + 1) * N * N + j * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+
+                // -y neighbor (i, j-1, k)
+                if (j > 0) {
+                    long long neighbor_idx = (long long)i * N * N + (j - 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+
+                // +y neighbor (i, j+1, k)
+                if (j < N - 1) {
+                    long long neighbor_idx = (long long)i * N * N + (j + 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+
+                // -z neighbor (i, j, k-1)
+                if (k > 0) {
+                    long long neighbor_idx = (long long)i * N * N + j * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+
+                // +z neighbor (i, j, k+1)
+                if (k < N - 1) {
+                    long long neighbor_idx = (long long)i * N * N + j * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, neighbor_idx);
+                }
+            }
+        }
+    }
+
+    printf("\rWriting 3D matrix entries: 100%%\n");
+    fclose(f);
+    printf("3D Matrix generated: %s (%lld×%lld, %lld nnz)\n", filename, matrix_size, matrix_size,
+           nnz);
+    return 0;
+}
