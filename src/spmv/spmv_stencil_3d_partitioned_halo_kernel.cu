@@ -46,16 +46,15 @@ __global__ void stencil7_csr_partitioned_halo_kernel_3d(
     // Decompose local row to Z-plane information
     int local_nz = n_local / (N * N);  // Number of local Z-planes
     int local_z = local_row / (N * N);
-    int local_index_in_plane = local_row % (N * N);
 
     int row_start = row_ptr[local_row];
     int row_end = row_ptr[local_row + 1];
     double sum = 0.0;
 
     // Interior stencil path (all 6 neighbors are accessible)
-    // Interior check: interior in X, Y, Z
-    if (i > 0 && i < N - 1 && j > 0 && j < N - 1 && local_z > 0 && local_z < local_nz - 1 &&
-        (row_end - row_start) == 7) {
+    // Interior check: interior in X, Y, Z and within local partition
+    if (i > 0 && i < N - 1 && j > 0 && j < N - 1 && k > 0 && k < N - 1 && local_z > 0 &&
+        local_z < local_nz - 1 && (row_end - row_start) == 7) {
 
         // Compute global indices of the 7-point stencil
         int idx_center = global_row;
@@ -80,8 +79,8 @@ __global__ void stencil7_csr_partitioned_halo_kernel_3d(
     }
     // Boundary/corner: CSR traversal with halo mapping
     else {
-        for (int k = row_start; k < row_end; k++) {
-            int global_col = col_idx[k];
+        for (int jj = row_start; jj < row_end; jj++) {
+            int global_col = col_idx[jj];
             double val;
 
             // Check if column is in local partition
@@ -108,7 +107,7 @@ __global__ void stencil7_csr_partitioned_halo_kernel_3d(
                 val = 0.0;
             }
 
-            sum += values[k] * val;
+            sum += values[jj] * val;
         }
     }
 

@@ -68,4 +68,23 @@ int cg_solve_mgpu_partitioned(SpmvOperator* spmv_op, MatrixData* mat, const doub
 int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, const double* b,
                                       double* x, CGConfigMultiGPU config, CGStatsMultiGPU* stats);
 
+/**
+ * @brief Multi-GPU CG solver for 3D 7-point stencil with Z-slab partitioning
+ *
+ * Synchronous version: halo exchange completes before SpMV.
+ * Halo = one XY-plane (grid_size² elements) per neighbor direction.
+ */
+int cg_solve_mgpu_partitioned_3d(SpmvOperator* spmv_op, MatrixData* mat, const double* b, double* x,
+                                 CGConfigMultiGPU config, CGStatsMultiGPU* stats);
+
+/**
+ * @brief Multi-GPU CG solver for 3D stencil with compute-communication overlap
+ *
+ * Overlaps interior SpMV with MPI halo exchange.
+ * Results are identical to the synchronous 3D solver.
+ */
+int cg_solve_mgpu_partitioned_overlap_3d(SpmvOperator* spmv_op, MatrixData* mat, const double* b,
+                                         double* x, CGConfigMultiGPU config,
+                                         CGStatsMultiGPU* stats);
+
 #endif  // CG_SOLVER_MGPU_PARTITIONED_H
