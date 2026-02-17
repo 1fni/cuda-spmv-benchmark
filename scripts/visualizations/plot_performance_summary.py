@@ -75,7 +75,8 @@ ax.set_title('Custom Implementations: Performance Gains Summary\n' +
              fontweight='bold', fontsize=15, pad=20)
 ax.set_xticks(x)
 ax.set_xticklabels(categories, fontsize=12, fontweight='bold')
-ax.legend(loc='upper right', framealpha=0.95, fontsize=11)
+ax.legend(loc='upper center', framealpha=0.95, fontsize=11, ncol=4,
+          bbox_to_anchor=(0.5, -0.08))
 ax.grid(axis='y', alpha=0.3, linestyle='--', color='#E8E8E8')
 ax.set_axisbelow(True)
 ax.set_ylim(0, 2.5)
@@ -94,19 +95,11 @@ ax.axhspan(1.0, 2.5, alpha=0.1, color='green', zorder=0)
 ax.text(0.02, 1.1, 'Custom Faster →', transform=ax.transData,
         fontsize=10, style='italic', color='green', alpha=0.7)
 
-# Add annotations with key findings
-findings_text = """
-KEY FINDINGS:
-• SpMV: 2.07× faster (cuSPARSE)
-• CG Single-GPU: 1.40× faster (AmgX)
-• CG Multi-GPU: 1.42× faster (AmgX)
-• Gains maintained across scales
-"""
-
-ax.text(0.98, 0.97, findings_text, transform=ax.transAxes,
-        fontsize=10, verticalalignment='top', horizontalalignment='right',
-        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.4, pad=1),
-        family='monospace')
+# Key findings as subtitle annotation (no overlap with legend)
+ax.text(0.98, 0.97, 'All custom implementations outperform industry references',
+        transform=ax.transAxes, fontsize=10, fontstyle='italic',
+        verticalalignment='top', horizontalalignment='right',
+        color='#555555')
 
 plt.tight_layout()
 plt.savefig('docs/figures/performance_summary.png', dpi=300, bbox_inches='tight')
