@@ -508,3 +508,230 @@ int write_matrix_market_stencil7(int N, const char* filename) {
            nnz);
     return 0;
 }
+
+/**
+ * Generate 3D 27-point stencil matrix in Matrix Market format
+ * Grid: NxNxN, row-major ordering: global_idx = i*N*N + j*N + k
+ * Stencil: center = 26.0, all 26 neighbors = -1.0
+ * 26 neighbors = 6 face + 12 edge + 8 corner adjacent
+ */
+int write_matrix_market_stencil27(int N, const char* filename) {
+    long long matrix_size = (long long)N * N * N;
+
+    // Calculate exact number of non-zeros
+    long long nnz = 0;
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                nnz++;  // Center
+                // 6 face neighbors
+                if (i > 0)
+                    nnz++;
+                if (i < N - 1)
+                    nnz++;
+                if (j > 0)
+                    nnz++;
+                if (j < N - 1)
+                    nnz++;
+                if (k > 0)
+                    nnz++;
+                if (k < N - 1)
+                    nnz++;
+                // 12 edge neighbors
+                if (i > 0 && j > 0)
+                    nnz++;
+                if (i > 0 && j < N - 1)
+                    nnz++;
+                if (i < N - 1 && j > 0)
+                    nnz++;
+                if (i < N - 1 && j < N - 1)
+                    nnz++;
+                if (i > 0 && k > 0)
+                    nnz++;
+                if (i > 0 && k < N - 1)
+                    nnz++;
+                if (i < N - 1 && k > 0)
+                    nnz++;
+                if (i < N - 1 && k < N - 1)
+                    nnz++;
+                if (j > 0 && k > 0)
+                    nnz++;
+                if (j > 0 && k < N - 1)
+                    nnz++;
+                if (j < N - 1 && k > 0)
+                    nnz++;
+                if (j < N - 1 && k < N - 1)
+                    nnz++;
+                // 8 corner neighbors
+                if (i > 0 && j > 0 && k > 0)
+                    nnz++;
+                if (i > 0 && j > 0 && k < N - 1)
+                    nnz++;
+                if (i > 0 && j < N - 1 && k > 0)
+                    nnz++;
+                if (i > 0 && j < N - 1 && k < N - 1)
+                    nnz++;
+                if (i < N - 1 && j > 0 && k > 0)
+                    nnz++;
+                if (i < N - 1 && j > 0 && k < N - 1)
+                    nnz++;
+                if (i < N - 1 && j < N - 1 && k > 0)
+                    nnz++;
+                if (i < N - 1 && j < N - 1 && k < N - 1)
+                    nnz++;
+            }
+        }
+    }
+
+    FILE* f = fopen(filename, "w");
+    if (!f) {
+        perror("fopen");
+        exit(1);
+    }
+
+    fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
+    fprintf(f, "%% STENCIL_GRID_SIZE %d\n", N);
+    fprintf(f, "%lld %lld %lld\n", matrix_size, matrix_size, nnz);
+
+    long long total_points = matrix_size;
+    long long progress_step = total_points / 100;
+    if (progress_step == 0)
+        progress_step = 1;
+
+    printf("Writing 3D 27-point matrix entries: 0%%");
+    fflush(stdout);
+
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            for (int k = 0; k < N; k++) {
+                long long global_idx = (long long)i * N * N + j * N + k;
+                long long row_1based = global_idx + 1;
+
+                if (global_idx % progress_step == 0 || global_idx % 10000 == 0) {
+                    int percent = (int)((global_idx * 100) / total_points);
+                    printf("\rWriting 3D 27-point matrix entries: %d%%", percent);
+                    fflush(stdout);
+                }
+
+                // Center (26.0)
+                fprintf(f, "%lld %lld 26.0\n", row_1based, row_1based);
+
+                // 6 face neighbors (-1.0 each)
+                if (i > 0) {
+                    long long ni = (long long)(i - 1) * N * N + j * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1) {
+                    long long ni = (long long)(i + 1) * N * N + j * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j > 0) {
+                    long long ni = (long long)i * N * N + (j - 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j < N - 1) {
+                    long long ni = (long long)i * N * N + (j + 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (k > 0) {
+                    long long ni = (long long)i * N * N + j * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (k < N - 1) {
+                    long long ni = (long long)i * N * N + j * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+
+                // 12 edge neighbors (-1.0 each)
+                if (i > 0 && j > 0) {
+                    long long ni = (long long)(i - 1) * N * N + (j - 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && j < N - 1) {
+                    long long ni = (long long)(i - 1) * N * N + (j + 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j > 0) {
+                    long long ni = (long long)(i + 1) * N * N + (j - 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j < N - 1) {
+                    long long ni = (long long)(i + 1) * N * N + (j + 1) * N + k + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && k > 0) {
+                    long long ni = (long long)(i - 1) * N * N + j * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && k < N - 1) {
+                    long long ni = (long long)(i - 1) * N * N + j * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && k > 0) {
+                    long long ni = (long long)(i + 1) * N * N + j * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && k < N - 1) {
+                    long long ni = (long long)(i + 1) * N * N + j * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j > 0 && k > 0) {
+                    long long ni = (long long)i * N * N + (j - 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j > 0 && k < N - 1) {
+                    long long ni = (long long)i * N * N + (j - 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j < N - 1 && k > 0) {
+                    long long ni = (long long)i * N * N + (j + 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (j < N - 1 && k < N - 1) {
+                    long long ni = (long long)i * N * N + (j + 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+
+                // 8 corner neighbors (-1.0 each)
+                if (i > 0 && j > 0 && k > 0) {
+                    long long ni = (long long)(i - 1) * N * N + (j - 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && j > 0 && k < N - 1) {
+                    long long ni = (long long)(i - 1) * N * N + (j - 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && j < N - 1 && k > 0) {
+                    long long ni = (long long)(i - 1) * N * N + (j + 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i > 0 && j < N - 1 && k < N - 1) {
+                    long long ni = (long long)(i - 1) * N * N + (j + 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j > 0 && k > 0) {
+                    long long ni = (long long)(i + 1) * N * N + (j - 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j > 0 && k < N - 1) {
+                    long long ni = (long long)(i + 1) * N * N + (j - 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j < N - 1 && k > 0) {
+                    long long ni = (long long)(i + 1) * N * N + (j + 1) * N + (k - 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+                if (i < N - 1 && j < N - 1 && k < N - 1) {
+                    long long ni = (long long)(i + 1) * N * N + (j + 1) * N + (k + 1) + 1;
+                    fprintf(f, "%lld %lld -1.0\n", row_1based, ni);
+                }
+            }
+        }
+    }
+
+    printf("\rWriting 3D 27-point matrix entries: 100%%\n");
+    fclose(f);
+    printf("3D 27-point Matrix generated: %s (%lld×%lld, %lld nnz)\n", filename, matrix_size,
+           matrix_size, nnz);
+    return 0;
+}

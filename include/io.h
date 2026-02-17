@@ -146,6 +146,19 @@ int write_matrix_market_stencil5(int n, const char* filename);
  */
 int write_matrix_market_stencil7(int n, const char* filename);
 
+/**
+ * @brief Generate a 3D 27-point stencil matrix in Matrix Market format
+ *
+ * Creates an NxNxN 3D Laplacian on an N³×N³ matrix. Each point is connected to
+ * itself (26.0) and its 26 neighbors (face, edge, corner adjacent) (-1.0 each).
+ * Boundary conditions: Dirichlet (skip neighbors outside domain).
+ *
+ * @param n Grid dimension (matrix size will be n*n*n)
+ * @param filename Output file name
+ * @return int 0 if successful, non-zero otherwise
+ */
+int write_matrix_market_stencil27(int n, const char* filename);
+
 #ifdef __cplusplus
 }
 #endif
