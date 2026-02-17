@@ -3,7 +3,7 @@
  * @brief Single-GPU CG solver for 3D 7-point stencil validation
  *
  * Minimal single-GPU test for 3D stencil correctness.
- * Usage: ./bin/cg_solver_single_gpu_3d matrix/stencil3d_64.mtx [--timers]
+ * Usage: ./bin/cg_solver_single_gpu_3d matrix/stencil3d_64.mtx [--verify] [--max-iters=N]
  *
  * Author: Bouhrour Stephane
  */
@@ -59,13 +59,25 @@ __global__ void axpby_kernel_impl(double alpha, const double* x, double beta, do
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("Usage: %s <matrix.mtx> [--timers]\n", argv[0]);
-        printf("Example: %s matrix/stencil3d_64.mtx\n", argv[0]);
+        printf("Usage: %s <matrix.mtx> [--verify] [--max-iters=N]\n", argv[0]);
+        printf("Example: %s matrix/stencil3d_64.mtx --verify\n", argv[0]);
+        printf("Options:\n");
+        printf("  --verify         Use known solution (x=1) to verify correctness\n");
+        printf("  --max-iters=N    Set maximum CG iterations (default: 1000)\n");
         return 1;
     }
 
     const char* matrix_file = argv[1];
-    int enable_timers = (argc > 2 && strcmp(argv[2], "--timers") == 0) ? 1 : 0;
+    int verify_mode = 0;
+    int max_iters = 1000;
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--verify") == 0) {
+            verify_mode = 1;
+        } else if (strncmp(argv[i], "--max-iters=", 12) == 0) {
+            max_iters = atoi(argv[i] + 12);
+        }
+    }
 
     printf("Loading matrix: %s\n", matrix_file);
     MatrixData mat;
@@ -116,30 +128,54 @@ int main(int argc, char** argv) {
         cudaMemcpy(d_col_idx, csr_mat.col_indices, nnz * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_values, csr_mat.values, nnz * sizeof(double), cudaMemcpyHostToDevice));
 
-    // Initialize b=ones, x=zeros
+    // Initialize vectors
     double* b = (double*)malloc(mat.rows * sizeof(double));
     double* x = (double*)calloc(mat.rows, sizeof(double));
-    for (int i = 0; i < mat.rows; i++) {
-        b[i] = 1.0;
-    }
-    CUDA_CHECK(cudaMemcpy(d_b, b, mat.rows * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_x, x, mat.rows * sizeof(double), cudaMemcpyHostToDevice));
 
-    // Initial residual: r = b - A*x0 (x0=0 so r=b)
     int threads = 256, blocks = (mat.rows + threads - 1) / threads;
 
+    if (verify_mode) {
+        // Verify mode: x_exact = ones, compute b = A * x_exact
+        printf("Verify mode: x_exact = ones, computing b = A * x_exact...\n");
+        double* x_exact = (double*)malloc(mat.rows * sizeof(double));
+        for (int i = 0; i < mat.rows; i++) {
+            x_exact[i] = 1.0;
+        }
+        CUDA_CHECK(cudaMemcpy(d_x, x_exact, mat.rows * sizeof(double), cudaMemcpyHostToDevice));
+
+        // b = A * x_exact
+        stencil7_csr_partitioned_halo_kernel_3d<<<blocks, threads>>>(d_row_ptr, d_col_idx, d_values,
+                                                                     d_x, NULL, NULL, d_b, mat.rows,
+                                                                     0, mat.rows, mat.grid_size);
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+        // Copy b back to host for reference
+        CUDA_CHECK(cudaMemcpy(b, d_b, mat.rows * sizeof(double), cudaMemcpyDeviceToHost));
+        free(x_exact);
+
+        // Reset x to zero for the solve
+        CUDA_CHECK(cudaMemset(d_x, 0, mat.rows * sizeof(double)));
+    } else {
+        // Standard mode: b = ones
+        for (int i = 0; i < mat.rows; i++) {
+            b[i] = 1.0;
+        }
+        CUDA_CHECK(cudaMemcpy(d_b, b, mat.rows * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpy(d_x, x, mat.rows * sizeof(double), cudaMemcpyHostToDevice));
+    }
+
+    // Initial residual: r = b - A*x0 (x0=0 so r=b)
     CUDA_CHECK(cudaMemcpy(d_r, d_b, mat.rows * sizeof(double), cudaMemcpyDeviceToDevice));
     CUDA_CHECK(cudaMemcpy(d_p, d_r, mat.rows * sizeof(double), cudaMemcpyDeviceToDevice));
 
     double rs_old = compute_dot(cublas_handle, d_r, d_r, mat.rows);
     double b_norm = sqrt(rs_old);
 
-    printf("Initial residual: %.6e\n", sqrt(rs_old));
-    printf("\nStarting CG iterations (single-GPU, 3D stencil)...\n");
-
-    // CG loop
-    int max_iters = 1000;
     double tolerance = 1e-6;
+
+    printf("Initial residual: %.6e\n", sqrt(rs_old));
+    printf("Max iterations: %d, tolerance: %.1e\n", max_iters, tolerance);
+    printf("\nStarting CG iterations (single-GPU, 3D stencil)...\n");
     int iter;
 
     cudaEvent_t start, stop;
@@ -207,6 +243,25 @@ int main(int argc, char** argv) {
     printf("Solution checksum:\n");
     printf("  Sum(x):   %.6e\n", sum_x);
     printf("  Norm2(x): %.6e\n", sqrt(norm2_x));
+
+    // Verify mode: compare with x_exact = ones
+    if (verify_mode) {
+        double err_sq = 0.0, exact_sq = 0.0;
+        for (int i = 0; i < mat.rows; i++) {
+            double diff = x[i] - 1.0;
+            err_sq += diff * diff;
+            exact_sq += 1.0;
+        }
+        double rel_error = sqrt(err_sq) / sqrt(exact_sq);
+        printf("\n=== Verification ===\n");
+        printf("x_exact:        ones (%d elements)\n", mat.rows);
+        printf("||x - x_exact||:     %.6e\n", sqrt(err_sq));
+        printf("||x_exact||:         %.6e\n", sqrt(exact_sq));
+        printf("Relative error:      %.6e\n", rel_error);
+        printf("Tolerance:           %.1e\n", tolerance);
+        printf("VERIFY: %s\n", rel_error < tolerance * 10.0 ? "PASS" : "FAIL");
+    }
+
     printf("========================================\n");
 
     // Cleanup

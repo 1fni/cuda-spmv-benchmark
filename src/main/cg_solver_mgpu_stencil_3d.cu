@@ -35,13 +35,14 @@ int main(int argc, char** argv) {
 
     if (argc < 2) {
         if (rank == 0) {
-            printf("Usage: mpirun -np <N> %s <matrix.mtx> [--timers] [--overlap] [--json=<file>]\n",
-                   argv[0]);
+            printf("Usage: mpirun -np <N> %s <matrix.mtx> [options]\n", argv[0]);
             printf("Example: mpirun -np 2 %s matrix/stencil3d_64.mtx --overlap\n", argv[0]);
             printf("Options:\n");
-            printf("  --timers      Enable detailed timing breakdown\n");
-            printf("  --overlap     Use compute-communication overlap solver\n");
-            printf("  --json=<file> Export results to JSON file\n");
+            printf("  --timers        Enable detailed timing breakdown\n");
+            printf("  --overlap       Use compute-communication overlap solver\n");
+            printf("  --verify        Use known solution (x=1) to verify correctness\n");
+            printf("  --max-iters=N   Set maximum CG iterations (default: 1000)\n");
+            printf("  --json=<file>   Export results to JSON file\n");
         }
         MPI_Finalize();
         return 1;
@@ -49,6 +50,45 @@ int main(int argc, char** argv) {
 
     const char* matrix_file = argv[1];
     const char* json_file = NULL;
+    int verify_mode = 0;
+    int custom_max_iters = 0;
+    int max_iters_value = 1000;
+
+    // Configuration
+    CGConfigMultiGPU config;
+    config.max_iters = 1000;
+    config.tolerance = 1e-6;
+    config.verbose = 1;
+    config.enable_detailed_timers = 0;
+    config.enable_overlap = 0;
+
+    // Parse arguments before using them
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--timers") == 0) {
+            config.enable_detailed_timers = 1;
+            if (rank == 0)
+                printf("Detailed timers enabled\n");
+        } else if (strcmp(argv[i], "--overlap") == 0) {
+            config.enable_overlap = 1;
+            if (rank == 0)
+                printf("Overlap solver enabled\n");
+        } else if (strcmp(argv[i], "--verify") == 0) {
+            verify_mode = 1;
+            if (rank == 0)
+                printf("Verify mode: using known solution x=1\n");
+        } else if (strncmp(argv[i], "--max-iters=", 12) == 0) {
+            custom_max_iters = 1;
+            max_iters_value = atoi(argv[i] + 12);
+        } else if (strncmp(argv[i], "--json=", 7) == 0) {
+            json_file = argv[i] + 7;
+        }
+    }
+
+    if (custom_max_iters) {
+        config.max_iters = max_iters_value;
+        if (rank == 0)
+            printf("Max iterations: %d\n", config.max_iters);
+    }
 
     MatrixData mat;
 
@@ -66,32 +106,24 @@ int main(int argc, char** argv) {
                mat.nnz, mat.grid_size);
     }
 
-    // RHS: b = ones
-    double* b = (double*)malloc(mat.rows * sizeof(double));
+    // RHS
+    double* b = (double*)calloc(mat.rows, sizeof(double));
     double* x = (double*)calloc(mat.rows, sizeof(double));
-    for (int i = 0; i < mat.rows; i++) {
-        b[i] = 1.0;
-    }
 
-    // Configuration
-    CGConfigMultiGPU config;
-    config.max_iters = 1000;
-    config.tolerance = 1e-6;
-    config.verbose = 1;
-    config.enable_detailed_timers = 0;
-    config.enable_overlap = 0;
-
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--timers") == 0) {
-            config.enable_detailed_timers = 1;
-            if (rank == 0)
-                printf("Detailed timers enabled\n");
-        } else if (strcmp(argv[i], "--overlap") == 0) {
-            config.enable_overlap = 1;
-            if (rank == 0)
-                printf("Overlap solver enabled\n");
-        } else if (strncmp(argv[i], "--json=", 7) == 0) {
-            json_file = argv[i] + 7;
+    if (verify_mode) {
+        // b = A * x_exact where x_exact = ones (use COO entries)
+        for (int k = 0; k < mat.nnz; k++) {
+            b[mat.entries[k].row] += mat.entries[k].value;
+        }
+        if (rank == 0) {
+            double b_sum = 0.0;
+            for (int i = 0; i < mat.rows; i++)
+                b_sum += b[i];
+            printf("Verify: b = A * ones, sum(b) = %.6e\n", b_sum);
+        }
+    } else {
+        for (int i = 0; i < mat.rows; i++) {
+            b[i] = 1.0;
         }
     }
 
@@ -232,6 +264,23 @@ int main(int argc, char** argv) {
         printf("\n=== Output Checksum ===\n");
         printf("Sum(x):    %.16e\n", sum_x);
         printf("Norm2(x):  %.16e\n", sqrt(norm2_x));
+
+        if (verify_mode) {
+            double err_sq = 0.0, exact_sq = 0.0;
+            for (int i = 0; i < mat.rows; i++) {
+                double diff = x[i] - 1.0;
+                err_sq += diff * diff;
+                exact_sq += 1.0;
+            }
+            double rel_error = sqrt(err_sq) / sqrt(exact_sq);
+            printf("\n=== Verification ===\n");
+            printf("x_exact:         ones (%d elements)\n", mat.rows);
+            printf("||x - x_exact||: %.6e\n", sqrt(err_sq));
+            printf("||x_exact||:     %.6e\n", sqrt(exact_sq));
+            printf("Relative error:  %.6e\n", rel_error);
+            printf("VERIFY: %s\n", rel_error < config.tolerance * 10.0 ? "PASS" : "FAIL");
+        }
+
         printf("========================================\n");
 
         if (json_file) {

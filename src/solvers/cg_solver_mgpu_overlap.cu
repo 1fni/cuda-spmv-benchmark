@@ -9,11 +9,11 @@
  * - All other CG operations (dot, axpy, etc.) are identical to the synchronous solver
  *
  * Overlap sequence per iteration:
- *   1. D2H boundary p on stream_comm
- *   2. cudaStreamSynchronize(stream_comm) - host needs buffers for MPI
- *   3. MPI_Isend/Irecv (non-blocking)
- *   4. Interior SpMV on stream_compute (overlaps with MPI)
- *   5. MPI_Waitall
+ *   1. D2H boundary p on stream_comm (async, returns immediately)
+ *   2. Interior SpMV on stream_compute (overlaps with D2H + MPI)
+ *   3. cudaStreamSynchronize(stream_comm) - D2H complete, host buffers ready
+ *   4. MPI_Isend/Irecv (non-blocking)
+ *   5. MPI_Waitall (interior kernel continues on GPU during MPI)
  *   6. H2D halo on stream_comm
  *   7. cudaStreamSynchronize(stream_comm) - halo data on device
  *   8. cudaStreamSynchronize(stream_compute) - interior done
@@ -352,41 +352,36 @@ static void exchange_halo_sync(const double* d_send_prev, const double* d_send_n
 }
 
 /**
- * @brief Start async halo exchange: D2H + MPI_Isend/Irecv
+ * @brief Launch async D2H copies for halo boundary data
  *
- * @param[in] d_local Device local vector
- * @param[in] n_local Number of local rows
- * @param[out] h_send_prev Pinned host buffer for prev neighbor
- * @param[out] h_send_next Pinned host buffer for next neighbor
- * @param[out] h_recv_prev Pinned host buffer to receive from prev
- * @param[out] h_recv_next Pinned host buffer to receive from next
- * @param[in] halo_elems Number of elements per halo (grid_size for 2D, grid_size^2 for 3D)
- * @param[in] rank MPI rank
- * @param[in] world_size MPI world size
- * @param[in] stream CUDA stream for D2H operations
- * @param[out] requests MPI request array (size >= 4, will hold active requests)
- * @param[out] req_count Number of active MPI requests
+ * Returns immediately. The D2H transfers run on the given stream.
+ * Caller must sync the stream before reading h_send buffers.
  */
-static void exchange_halo_async_start(const double* d_local, int n_local, double* h_send_prev,
-                                      double* h_send_next, double* h_recv_prev, double* h_recv_next,
-                                      int halo_elems, int rank, int world_size, cudaStream_t stream,
-                                      MPI_Request* requests, int* req_count) {
-    *req_count = 0;
-
-    // D2H on stream (boundary regions from d_local)
+static void exchange_halo_d2h_start(const double* d_local, int n_local, double* h_send_prev,
+                                    double* h_send_next, int halo_elems, int rank, int world_size,
+                                    cudaStream_t stream) {
     if (rank > 0) {
-        // First halo_elems elements from d_local
         CUDA_CHECK(cudaMemcpyAsync(h_send_prev, d_local, halo_elems * sizeof(double),
                                    cudaMemcpyDeviceToHost, stream));
     }
     if (rank < world_size - 1) {
-        // Last halo_elems elements from d_local
         CUDA_CHECK(cudaMemcpyAsync(h_send_next, d_local + (n_local - halo_elems),
                                    halo_elems * sizeof(double), cudaMemcpyDeviceToHost, stream));
     }
+}
+
+/**
+ * @brief Sync D2H stream and start MPI non-blocking sends/receives
+ *
+ * Must be called after exchange_halo_d2h_start. Synchronizes the stream
+ * to ensure D2H is complete, then issues MPI_Isend/Irecv.
+ */
+static void exchange_halo_mpi_start(double* h_send_prev, double* h_send_next, double* h_recv_prev,
+                                    double* h_recv_next, int halo_elems, int rank, int world_size,
+                                    cudaStream_t stream, MPI_Request* requests, int* req_count) {
+    *req_count = 0;
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
-    // MPI non-blocking
     if (rank > 0) {
         MPI_Isend(h_send_prev, halo_elems, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD,
                   &requests[(*req_count)++]);
@@ -700,14 +695,11 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
         // Ensure p update (axpby on stream_compute) is done before D2H reads
         CUDA_CHECK(cudaStreamWaitEvent(stream_comm, p_updated_event, 0));
 
-        // Start async halo exchange: D2H + MPI_Isend/Irecv
-        MPI_Request requests[4];
-        int req_count = 0;
-        exchange_halo_async_start(d_p_local, n_local, h_send_prev, h_send_next, h_recv_prev,
-                                  h_recv_next, partition.halo_elems, rank, world_size, stream_comm,
-                                  requests, &req_count);
+        // D2H halo copies (async on stream_comm, returns immediately)
+        exchange_halo_d2h_start(d_p_local, n_local, h_send_prev, h_send_next, partition.halo_elems,
+                                rank, world_size, stream_comm);
 
-        // Interior SpMV on stream_compute (overlaps with MPI)
+        // Interior SpMV on stream_compute (overlaps with D2H + MPI)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream_compute));
         }
@@ -722,8 +714,14 @@ int cg_solve_mgpu_partitioned_overlap(SpmvOperator* spmv_op, MatrixData* mat, co
             CUDA_CHECK(cudaEventRecord(timer_stop, stream_compute));
         }
 
-        // Finish async halo exchange: MPI_Waitall + H2D (includes
-        // cudaStreamSynchronize(stream_comm))
+        // Sync D2H + MPI non-blocking sends/receives
+        MPI_Request requests[4];
+        int req_count = 0;
+        exchange_halo_mpi_start(h_send_prev, h_send_next, h_recv_prev, h_recv_next,
+                                partition.halo_elems, rank, world_size, stream_comm, requests,
+                                &req_count);
+
+        // Finish halo exchange: MPI_Waitall + H2D
         exchange_halo_async_finish(d_p_halo_prev, d_p_halo_next, h_recv_prev, h_recv_next,
                                    partition.halo_elems, rank, world_size, stream_comm, requests,
                                    req_count);
@@ -1338,14 +1336,11 @@ int cg_solve_mgpu_partitioned_overlap_3d(SpmvOperator* spmv_op, MatrixData* mat,
 
         CUDA_CHECK(cudaStreamWaitEvent(stream_comm, p_updated_event, 0));
 
-        // Start async halo exchange
-        MPI_Request requests[4];
-        int req_count = 0;
-        exchange_halo_async_start(d_p_local, n_local, h_send_prev, h_send_next, h_recv_prev,
-                                  h_recv_next, partition.halo_elems, rank, world_size, stream_comm,
-                                  requests, &req_count);
+        // D2H halo copies (async on stream_comm, returns immediately)
+        exchange_halo_d2h_start(d_p_local, n_local, h_send_prev, h_send_next, partition.halo_elems,
+                                rank, world_size, stream_comm);
 
-        // Interior SpMV (overlaps with MPI)
+        // Interior SpMV on stream_compute (overlaps with D2H + MPI)
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream_compute));
         }
@@ -1360,7 +1355,14 @@ int cg_solve_mgpu_partitioned_overlap_3d(SpmvOperator* spmv_op, MatrixData* mat,
             CUDA_CHECK(cudaEventRecord(timer_stop, stream_compute));
         }
 
-        // Finish halo exchange
+        // Sync D2H + MPI non-blocking sends/receives
+        MPI_Request requests[4];
+        int req_count = 0;
+        exchange_halo_mpi_start(h_send_prev, h_send_next, h_recv_prev, h_recv_next,
+                                partition.halo_elems, rank, world_size, stream_comm, requests,
+                                &req_count);
+
+        // Finish halo exchange: MPI_Waitall + H2D
         exchange_halo_async_finish(d_p_halo_prev, d_p_halo_next, h_recv_prev, h_recv_next,
                                    partition.halo_elems, rank, world_size, stream_comm, requests,
                                    req_count);
