@@ -53,54 +53,67 @@ color_ideal = '#888888'
 # ============================================================================
 fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(16, 5))
 
-# Panel 1: Total Time
-ax1.plot(gpus, times_10k, 'o--', color=color_10k, linewidth=2, markersize=7,
-         label='10k×10k (100M unknowns)')
-ax1.plot(gpus, times_15k, 's-', color=color_15k, linewidth=2, markersize=7,
-         label='15k×15k (225M unknowns)')
-ax1.plot(gpus, times_20k, '^-', color=color_20k, linewidth=2, markersize=7,
-         label='20k×20k (400M unknowns)')
+x_cat = np.arange(len(gpus))
+gpu_labels = ['1', '2', '4', '8']
+width_bar = 0.25
+offsets = [-width_bar, 0, width_bar]
+size_labels = ['10k×10k', '15k×15k', '20k×20k']
+
+# Panel 1: Total Time (grouped bars - categorical x)
+for i, (times, color, label) in enumerate([
+    (times_10k, color_10k, '10k×10k (100M)'),
+    (times_15k, color_15k, '15k×15k (225M)'),
+    (times_20k, color_20k, '20k×20k (400M)'),
+]):
+    ax1.bar(x_cat + offsets[i], times, width=width_bar, color=color,
+            edgecolor='black', linewidth=0.5, label=label)
 ax1.set_xlabel('Number of GPUs', fontweight='bold')
 ax1.set_ylabel('Total Time (ms)', fontweight='bold')
 ax1.set_title('Strong Scaling: Total Time', fontweight='bold')
-ax1.set_xticks(gpus)
-ax1.set_xlim(0, 9)
+ax1.set_xticks(x_cat)
+ax1.set_xticklabels(gpu_labels)
 ax1.legend(loc='upper right', fontsize=9)
-ax1.grid(True, alpha=0.3, linestyle='--')
+ax1.grid(axis='y', alpha=0.3, linestyle='--')
+ax1.set_axisbelow(True)
 
-# Panel 2: Speedup
-ax2.plot(gpus, gpus, '--', color=color_ideal, linewidth=2, label='Ideal (100%)')
-ax2.plot(gpus, speedups_10k, 'o--', color=color_10k, linewidth=2, markersize=7,
-         label='10k×10k (100M unknowns)')
-ax2.plot(gpus, speedups_15k, 's-', color=color_15k, linewidth=2, markersize=7,
-         label='15k×15k (225M unknowns)')
-ax2.plot(gpus, speedups_20k, '^-', color=color_20k, linewidth=2, markersize=7,
-         label='20k×20k (400M unknowns)')
+# Panel 2: Speedup (grouped bars - categorical x)
+for i, (spd, color, label) in enumerate([
+    (speedups_10k, color_10k, '10k×10k (100M)'),
+    (speedups_15k, color_15k, '15k×15k (225M)'),
+    (speedups_20k, color_20k, '20k×20k (400M)'),
+]):
+    ax2.bar(x_cat + offsets[i], spd, width=width_bar, color=color,
+            edgecolor='black', linewidth=0.5, label=label)
+ax2.axhline(y=8, color='red', linestyle='--', linewidth=1.5, alpha=0.7,
+            label='Perfect (8×)')
 ax2.set_xlabel('Number of GPUs', fontweight='bold')
 ax2.set_ylabel('Speedup', fontweight='bold')
 ax2.set_title('Strong Scaling: Speedup', fontweight='bold')
-ax2.set_xticks(gpus)
-ax2.set_xlim(0, 9)
+ax2.set_xticks(x_cat)
+ax2.set_xticklabels(gpu_labels)
 ax2.set_ylim(0, 9)
 ax2.legend(loc='upper left', fontsize=9)
-ax2.grid(True, alpha=0.3, linestyle='--')
+ax2.grid(axis='y', alpha=0.3, linestyle='--')
+ax2.set_axisbelow(True)
 
-# Panel 3: Efficiency
-ax3.plot(gpus, efficiency_10k, 'o--', color=color_10k, linewidth=2, markersize=7,
-         label='10k×10k (100M unknowns)')
-ax3.plot(gpus, efficiency_15k, 's-', color=color_15k, linewidth=2, markersize=7,
-         label='15k×15k (225M unknowns)')
-ax3.plot(gpus, efficiency_20k, '^-', color=color_20k, linewidth=2, markersize=7,
-         label='20k×20k (400M unknowns)')
-ax3.axhline(y=100, color=color_ideal, linestyle='--', linewidth=2, label='Ideal')
+# Panel 3: Efficiency (grouped bars - categorical x)
+for i, (eff, color, label) in enumerate([
+    (efficiency_10k, color_10k, '10k×10k (100M)'),
+    (efficiency_15k, color_15k, '15k×15k (225M)'),
+    (efficiency_20k, color_20k, '20k×20k (400M)'),
+]):
+    ax3.bar(x_cat + offsets[i], eff, width=width_bar, color=color,
+            edgecolor='black', linewidth=0.5, label=label)
+ax3.axhline(y=100, color=color_ideal, linestyle='--', linewidth=1.5, label='Ideal')
 ax3.set_xlabel('Number of GPUs', fontweight='bold')
 ax3.set_ylabel('Parallel Efficiency (%)', fontweight='bold')
 ax3.set_title('Strong Scaling: Efficiency', fontweight='bold')
-ax3.set_xticks(gpus)
-ax3.set_xlim(0, 9)
+ax3.set_xticks(x_cat)
+ax3.set_xticklabels(gpu_labels)
 ax3.set_ylim(80, 105)
 ax3.legend(loc='lower left', fontsize=9)
-ax3.grid(True, alpha=0.3, linestyle='--')
+ax3.grid(axis='y', alpha=0.3, linestyle='--')
+ax3.set_axisbelow(True)
 
 plt.tight_layout()
 plt.savefig('docs/figures/problem_size_scaling_overview.png', dpi=300,
@@ -131,22 +144,27 @@ ax1.set_xticklabels(gpu_labels)
 ax1.grid(axis='y', alpha=0.3, linestyle='--')
 ax1.set_axisbelow(True)
 
-# Panel 2: Speedup Comparison (all 3 sizes, line plot - linear x)
-ax2.plot(gpus, gpus, '--', color=color_ideal, linewidth=2, label='Ideal')
-ax2.plot(gpus, speedups_10k, 'o-', color=color_10k, linewidth=2, markersize=7,
-         label='10k×10k (100M unknowns)')
-ax2.plot(gpus, speedups_15k, 's-', color=color_15k, linewidth=2, markersize=7,
-         label='15k×15k (225M unknowns)')
-ax2.plot(gpus, speedups_20k, '^-', color=color_20k, linewidth=2, markersize=7,
-         label='20k×20k (400M unknowns)')
+# Panel 2: Speedup Comparison (grouped bars - categorical x)
+width_bar2 = 0.2
+offsets2 = [-width_bar2, 0, width_bar2]
+for i, (spd, color, label) in enumerate([
+    (speedups_10k, color_10k, '10k×10k (100M)'),
+    (speedups_15k, color_15k, '15k×15k (225M)'),
+    (speedups_20k, color_20k, '20k×20k (400M)'),
+]):
+    ax2.bar(x_cat + offsets2[i], spd, width=width_bar2, color=color,
+            edgecolor='black', linewidth=0.5, label=label)
+ax2.axhline(y=8, color='red', linestyle='--', linewidth=1.5, alpha=0.7,
+            label='Perfect (8×)')
 ax2.set_xlabel('Number of GPUs', fontweight='bold')
 ax2.set_ylabel('Speedup', fontweight='bold')
 ax2.set_title('Speedup Comparison', fontweight='bold')
-ax2.set_xticks(gpus)
-ax2.set_xlim(0, 9)
+ax2.set_xticks(x_cat)
+ax2.set_xticklabels(gpu_labels)
 ax2.set_ylim(0, 9)
 ax2.legend(loc='upper left', fontsize=9)
-ax2.grid(True, alpha=0.3, linestyle='--')
+ax2.grid(axis='y', alpha=0.3, linestyle='--')
+ax2.set_axisbelow(True)
 
 # Panel 3: Parallel Efficiency (grouped bar chart - categorical x)
 width_bar = 0.2
@@ -171,20 +189,24 @@ ax3.legend(loc='lower left', fontsize=9)
 ax3.grid(axis='y', alpha=0.3, linestyle='--')
 ax3.set_axisbelow(True)
 
-# Panel 4: Iteration Cost vs GPU Count (line plot - linear x)
-ax4.plot(gpus, iter_10k, 'o-', color=color_10k, linewidth=2, markersize=7,
-         label='10k×10k (100M unknowns)')
-ax4.plot(gpus, iter_15k, 's-', color=color_15k, linewidth=2, markersize=7,
-         label='15k×15k (225M unknowns)')
-ax4.plot(gpus, iter_20k, '^-', color=color_20k, linewidth=2, markersize=7,
-         label='20k×20k (400M unknowns)')
+# Panel 4: Iteration Cost vs GPU Count (grouped bars - categorical x)
+width_bar4 = 0.2
+offsets4 = [-width_bar4, 0, width_bar4]
+for i, (ic, color, label) in enumerate([
+    (iter_10k, color_10k, '10k×10k (100M)'),
+    (iter_15k, color_15k, '15k×15k (225M)'),
+    (iter_20k, color_20k, '20k×20k (400M)'),
+]):
+    ax4.bar(x_cat + offsets4[i], ic, width=width_bar4, color=color,
+            edgecolor='black', linewidth=0.5, label=label)
 ax4.set_xlabel('Number of GPUs', fontweight='bold')
 ax4.set_ylabel('Time per Iteration (ms)', fontweight='bold')
 ax4.set_title('Iteration Cost vs GPU Count', fontweight='bold')
-ax4.set_xticks(gpus)
-ax4.set_xlim(0, 9)
+ax4.set_xticks(x_cat)
+ax4.set_xticklabels(gpu_labels)
 ax4.legend(loc='upper right', fontsize=9)
-ax4.grid(True, alpha=0.3, linestyle='--')
+ax4.grid(axis='y', alpha=0.3, linestyle='--')
+ax4.set_axisbelow(True)
 
 plt.tight_layout()
 plt.savefig('docs/figures/problem_size_scaling_detailed.png', dpi=300,
