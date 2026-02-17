@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
             printf("  --verify        Use known solution (x=1) to verify correctness\n");
             printf("  --max-iters=N   Set maximum CG iterations (default: 1000)\n");
             printf("  --json=<file>   Export results to JSON file\n");
+            printf("  --stencil=N     Stencil type: 7 (default) or 27\n");
         }
         MPI_Finalize();
         return 1;
@@ -53,6 +54,7 @@ int main(int argc, char** argv) {
     int verify_mode = 0;
     int custom_max_iters = 0;
     int max_iters_value = 1000;
+    int stencil_points = 7;  // default: 7-point stencil
 
     // Configuration
     CGConfigMultiGPU config;
@@ -81,6 +83,16 @@ int main(int argc, char** argv) {
             max_iters_value = atoi(argv[i] + 12);
         } else if (strncmp(argv[i], "--json=", 7) == 0) {
             json_file = argv[i] + 7;
+        } else if (strncmp(argv[i], "--stencil=", 10) == 0) {
+            stencil_points = atoi(argv[i] + 10);
+            if (stencil_points != 7 && stencil_points != 27) {
+                if (rank == 0)
+                    fprintf(stderr, "Error: --stencil must be 7 or 27\n");
+                MPI_Finalize();
+                return 1;
+            }
+            if (rank == 0)
+                printf("Stencil: %d-point\n", stencil_points);
         }
     }
 
@@ -127,10 +139,21 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Select solver
+    // Select solver based on stencil type and overlap mode
     int (*solver_fn)(SpmvOperator*, MatrixData*, const double*, double*, CGConfigMultiGPU,
-                     CGStatsMultiGPU*) =
-        config.enable_overlap ? cg_solve_mgpu_partitioned_overlap_3d : cg_solve_mgpu_partitioned_3d;
+                     CGStatsMultiGPU*);
+    int (*warmup_fn)(SpmvOperator*, MatrixData*, const double*, double*, CGConfigMultiGPU,
+                     CGStatsMultiGPU*);
+
+    if (stencil_points == 27) {
+        solver_fn = config.enable_overlap ? cg_solve_mgpu_partitioned_overlap_27pt_3d
+                                          : cg_solve_mgpu_partitioned_27pt_3d;
+        warmup_fn = cg_solve_mgpu_partitioned_27pt_3d;
+    } else {
+        solver_fn = config.enable_overlap ? cg_solve_mgpu_partitioned_overlap_3d
+                                          : cg_solve_mgpu_partitioned_3d;
+        warmup_fn = cg_solve_mgpu_partitioned_3d;
+    }
 
     // Warmup: 3 runs with synchronous solver
     if (rank == 0)
@@ -140,7 +163,7 @@ int main(int argc, char** argv) {
     CGStatsMultiGPU warmup_stats;
     for (int w = 0; w < 3; w++) {
         memset(x, 0, mat.rows * sizeof(double));
-        cg_solve_mgpu_partitioned_3d(NULL, &mat, b, x, warmup_config, &warmup_stats);
+        warmup_fn(NULL, &mat, b, x, warmup_config, &warmup_stats);
     }
 
     // Profiled run
@@ -243,7 +266,7 @@ int main(int argc, char** argv) {
     // Display results
     if (rank == 0) {
         printf("\n========================================\n");
-        printf("3D CG Solver Results:\n");
+        printf("3D CG Solver Results (%d-point stencil):\n", stencil_points);
         printf("========================================\n");
         printf("Converged: %s in %d iterations\n", stats.converged ? "YES" : "NO",
                stats.iterations);
@@ -284,7 +307,8 @@ int main(int argc, char** argv) {
         printf("========================================\n");
 
         if (json_file) {
-            export_cg_mgpu_json(json_file, "3d-stencil", &mat, &bench_stats, &stats, world_size);
+            const char* mode_str = (stencil_points == 27) ? "3d-stencil-27pt" : "3d-stencil";
+            export_cg_mgpu_json(json_file, mode_str, &mat, &bench_stats, &stats, world_size);
             printf("\nResults exported to JSON: %s\n", json_file);
         }
     }
