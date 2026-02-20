@@ -47,38 +47,28 @@ __global__ void stencil7_csr_partitioned_halo_kernel_3d(
     int local_nz = n_local / (N * N);  // Number of local Z-planes
     int local_z = local_row / (N * N);
 
-    int row_start = row_ptr[local_row];
-    int row_end = row_ptr[local_row + 1];
     double sum = 0.0;
 
-    // Interior stencil path (all 6 neighbors are accessible)
-    // Interior check: interior in X, Y, Z and within local partition
-    if (i > 0 && i < N - 1 && j > 0 && j < N - 1 && k > 0 && k < N - 1 && local_z > 0 &&
-        local_z < local_nz - 1 && (row_end - row_start) == 7) {
+    // Geometric interior check — no row_ptr reads needed
+    bool is_interior = (i > 0 && i < N - 1 && j > 0 && j < N - 1 && k > 0 && k < N - 1 &&
+                        local_z > 0 && local_z < local_nz - 1);
 
-        // Compute global indices of the 7-point stencil
-        int idx_center = global_row;
-        int idx_west = global_row - 1;        // (i, j, k-1) in terms of linear index within plane
-        int idx_east = global_row + 1;        // (i, j, k+1)
-        int idx_north = global_row - N;       // (i-1, j, k) in terms of Y direction
-        int idx_south = global_row + N;       // (i+1, j, k)
-        int idx_up = global_row - (N * N);    // (i, j-1, k) in terms of Z direction
-        int idx_down = global_row + (N * N);  // (i, j+1, k)
+    if (is_interior) {
+        int csr_offset = row_ptr[local_row];
 
-        // All neighbors are within local partition (interior check ensures this)
-        double val_center = x_local[idx_center - row_offset];
-        double val_west = x_local[idx_west - row_offset];
-        double val_east = x_local[idx_east - row_offset];
-        double val_north = x_local[idx_north - row_offset];
-        double val_south = x_local[idx_south - row_offset];
-        double val_up = x_local[idx_up - row_offset];
-        double val_down = x_local[idx_down - row_offset];
-
-        // Stencil pattern: center=6.0, neighbors=-1.0
-        sum = 6.0 * val_center - val_west - val_east - val_north - val_south - val_up - val_down;
+        // 7 coefficients from CSR values (sorted by ascending global column index)
+        sum = values[csr_offset + 0] * x_local[local_row - N * N];   // (i-1,j,k)
+        sum += values[csr_offset + 1] * x_local[local_row - N];      // (i,j-1,k)
+        sum += values[csr_offset + 2] * x_local[local_row - 1];      // (i,j,k-1)
+        sum += values[csr_offset + 3] * x_local[local_row];          // (i,j,k) center
+        sum += values[csr_offset + 4] * x_local[local_row + 1];      // (i,j,k+1)
+        sum += values[csr_offset + 5] * x_local[local_row + N];      // (i,j+1,k)
+        sum += values[csr_offset + 6] * x_local[local_row + N * N];  // (i+1,j,k)
     }
     // Boundary/corner: CSR traversal with halo mapping
     else {
+        int row_start = row_ptr[local_row];
+        int row_end = row_ptr[local_row + 1];
         for (int jj = row_start; jj < row_end; jj++) {
             int global_col = col_idx[jj];
             double val;
