@@ -47,57 +47,52 @@ __global__ void stencil27_csr_partitioned_halo_kernel_3d(
     int local_nz = n_local / (N * N);
     int local_z = local_row / (N * N);
 
-    int row_start = row_ptr[local_row];
-    int row_end = row_ptr[local_row + 1];
     double sum = 0.0;
 
-    // Interior stencil path (all 26 neighbors are within local partition)
-    if (i > 0 && i < N - 1 && j > 0 && j < N - 1 && k > 0 && k < N - 1 && local_z > 0 &&
-        local_z < local_nz - 1 && (row_end - row_start) == 27) {
+    // Geometric interior check — no row_ptr reads needed
+    bool is_interior = (i > 0 && i < N - 1 && j > 0 && j < N - 1 && k > 0 && k < N - 1 &&
+                        local_z > 0 && local_z < local_nz - 1);
 
-        double val_center = x_local[local_row];
+    if (is_interior) {
+        // Read CSR offset once for coefficient access
+        int csr_offset = row_ptr[local_row];
 
-        // 6 face neighbors
-        double val_xm = x_local[local_row - N * N];  // (i-1, j, k)
-        double val_xp = x_local[local_row + N * N];  // (i+1, j, k)
-        double val_ym = x_local[local_row - N];      // (i, j-1, k)
-        double val_yp = x_local[local_row + N];      // (i, j+1, k)
-        double val_zm = x_local[local_row - 1];      // (i, j, k-1)
-        double val_zp = x_local[local_row + 1];      // (i, j, k+1)
-
-        // 12 edge neighbors
-        double val_xm_ym = x_local[local_row - N * N - N];  // (i-1, j-1, k)
-        double val_xm_yp = x_local[local_row - N * N + N];  // (i-1, j+1, k)
-        double val_xp_ym = x_local[local_row + N * N - N];  // (i+1, j-1, k)
-        double val_xp_yp = x_local[local_row + N * N + N];  // (i+1, j+1, k)
-        double val_xm_zm = x_local[local_row - N * N - 1];  // (i-1, j, k-1)
-        double val_xm_zp = x_local[local_row - N * N + 1];  // (i-1, j, k+1)
-        double val_xp_zm = x_local[local_row + N * N - 1];  // (i+1, j, k-1)
-        double val_xp_zp = x_local[local_row + N * N + 1];  // (i+1, j, k+1)
-        double val_ym_zm = x_local[local_row - N - 1];      // (i, j-1, k-1)
-        double val_ym_zp = x_local[local_row - N + 1];      // (i, j-1, k+1)
-        double val_yp_zm = x_local[local_row + N - 1];      // (i, j+1, k-1)
-        double val_yp_zp = x_local[local_row + N + 1];      // (i, j+1, k+1)
-
-        // 8 corner neighbors
-        double val_xm_ym_zm = x_local[local_row - N * N - N - 1];  // (i-1, j-1, k-1)
-        double val_xm_ym_zp = x_local[local_row - N * N - N + 1];  // (i-1, j-1, k+1)
-        double val_xm_yp_zm = x_local[local_row - N * N + N - 1];  // (i-1, j+1, k-1)
-        double val_xm_yp_zp = x_local[local_row - N * N + N + 1];  // (i-1, j+1, k+1)
-        double val_xp_ym_zm = x_local[local_row + N * N - N - 1];  // (i+1, j-1, k-1)
-        double val_xp_ym_zp = x_local[local_row + N * N - N + 1];  // (i+1, j-1, k+1)
-        double val_xp_yp_zm = x_local[local_row + N * N + N - 1];  // (i+1, j+1, k-1)
-        double val_xp_yp_zp = x_local[local_row + N * N + N + 1];  // (i+1, j+1, k+1)
-
-        // Stencil: center=26.0, all 26 neighbors=-1.0
-        sum = 26.0 * val_center - val_xm - val_xp - val_ym - val_yp - val_zm - val_zp - val_xm_ym -
-              val_xm_yp - val_xp_ym - val_xp_yp - val_xm_zm - val_xm_zp - val_xp_zm - val_xp_zp -
-              val_ym_zm - val_ym_zp - val_yp_zm - val_yp_zp - val_xm_ym_zm - val_xm_ym_zp -
-              val_xm_yp_zm - val_xm_yp_zp - val_xp_ym_zm - val_xp_ym_zp - val_xp_yp_zm -
-              val_xp_yp_zp;
+        // 27 coefficients from CSR values (contiguous, sorted by ascending global column index)
+        // Z-plane i-1 (9 neighbors)
+        sum = values[csr_offset + 0] * x_local[local_row - N * N - N - 1];   // (i-1,j-1,k-1)
+        sum += values[csr_offset + 1] * x_local[local_row - N * N - N];      // (i-1,j-1,k)
+        sum += values[csr_offset + 2] * x_local[local_row - N * N - N + 1];  // (i-1,j-1,k+1)
+        sum += values[csr_offset + 3] * x_local[local_row - N * N - 1];      // (i-1,j,k-1)
+        sum += values[csr_offset + 4] * x_local[local_row - N * N];          // (i-1,j,k)
+        sum += values[csr_offset + 5] * x_local[local_row - N * N + 1];      // (i-1,j,k+1)
+        sum += values[csr_offset + 6] * x_local[local_row - N * N + N - 1];  // (i-1,j+1,k-1)
+        sum += values[csr_offset + 7] * x_local[local_row - N * N + N];      // (i-1,j+1,k)
+        sum += values[csr_offset + 8] * x_local[local_row - N * N + N + 1];  // (i-1,j+1,k+1)
+        // Z-plane i (9 neighbors including center)
+        sum += values[csr_offset + 9] * x_local[local_row - N - 1];   // (i,j-1,k-1)
+        sum += values[csr_offset + 10] * x_local[local_row - N];      // (i,j-1,k)
+        sum += values[csr_offset + 11] * x_local[local_row - N + 1];  // (i,j-1,k+1)
+        sum += values[csr_offset + 12] * x_local[local_row - 1];      // (i,j,k-1)
+        sum += values[csr_offset + 13] * x_local[local_row];          // (i,j,k) center
+        sum += values[csr_offset + 14] * x_local[local_row + 1];      // (i,j,k+1)
+        sum += values[csr_offset + 15] * x_local[local_row + N - 1];  // (i,j+1,k-1)
+        sum += values[csr_offset + 16] * x_local[local_row + N];      // (i,j+1,k)
+        sum += values[csr_offset + 17] * x_local[local_row + N + 1];  // (i,j+1,k+1)
+        // Z-plane i+1 (9 neighbors)
+        sum += values[csr_offset + 18] * x_local[local_row + N * N - N - 1];  // (i+1,j-1,k-1)
+        sum += values[csr_offset + 19] * x_local[local_row + N * N - N];      // (i+1,j-1,k)
+        sum += values[csr_offset + 20] * x_local[local_row + N * N - N + 1];  // (i+1,j-1,k+1)
+        sum += values[csr_offset + 21] * x_local[local_row + N * N - 1];      // (i+1,j,k-1)
+        sum += values[csr_offset + 22] * x_local[local_row + N * N];          // (i+1,j,k)
+        sum += values[csr_offset + 23] * x_local[local_row + N * N + 1];      // (i+1,j,k+1)
+        sum += values[csr_offset + 24] * x_local[local_row + N * N + N - 1];  // (i+1,j+1,k-1)
+        sum += values[csr_offset + 25] * x_local[local_row + N * N + N];      // (i+1,j+1,k)
+        sum += values[csr_offset + 26] * x_local[local_row + N * N + N + 1];  // (i+1,j+1,k+1)
     }
     // Boundary/corner: CSR traversal with halo mapping
     else {
+        int row_start = row_ptr[local_row];
+        int row_end = row_ptr[local_row + 1];
         for (int jj = row_start; jj < row_end; jj++) {
             int global_col = col_idx[jj];
             double val;
