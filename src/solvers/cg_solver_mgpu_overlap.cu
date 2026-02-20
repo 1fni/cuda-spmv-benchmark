@@ -386,6 +386,25 @@ extern __global__ void stencil27_csr_partitioned_halo_kernel_3d(
     const double* __restrict__ x_halo_prev, const double* __restrict__ x_halo_next,
     double* __restrict__ y, int n_local, int row_offset, int N_total, int grid_size);
 
+// Thread-coarsened kernels (defined in separate .cu files)
+template <int ITEMS_PER_THREAD>
+extern __global__ void
+stencil27_coarsened_kernel_3d(const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+                              const double* __restrict__ values, const double* __restrict__ x_local,
+                              const double* __restrict__ x_halo_prev,
+                              const double* __restrict__ x_halo_next, double* __restrict__ y,
+                              int n_local, int row_offset, int N_total, int grid_size,
+                              int subrange_start, int subrange_count);
+
+template <int ITEMS_PER_THREAD>
+extern __global__ void
+stencil7_coarsened_kernel_3d(const int* __restrict__ row_ptr, const int* __restrict__ col_idx,
+                             const double* __restrict__ values, const double* __restrict__ x_local,
+                             const double* __restrict__ x_halo_prev,
+                             const double* __restrict__ x_halo_next, double* __restrict__ y,
+                             int n_local, int row_offset, int N_total, int grid_size,
+                             int subrange_start, int subrange_count);
+
 /* ================================================================
  * Local helpers
  * ================================================================ */
@@ -1441,15 +1460,31 @@ int cg_solve_mgpu_partitioned_overlap_3d(SpmvOperator* spmv_op, MatrixData* mat,
                                 rank, world_size, stream_comm);
 
         // Interior SpMV on stream_compute (overlaps with D2H + MPI)
+        // Uses thread-coarsened kernel (ITEMS=4) for k-direction data reuse
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream_compute));
         }
         if (partition.interior_count > 0) {
-            int blocks_interior = (partition.interior_count + threads - 1) / threads;
-            stencil7_overlap_subrange_kernel_3d<<<blocks_interior, threads, 0, stream_compute>>>(
-                d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next, d_Ap,
-                n_local, row_offset, n, grid_size, partition.interior_start,
-                partition.interior_count);
+            const int ITEMS = 4;
+            int coarsened_count = (partition.interior_count / ITEMS) * ITEMS;
+            int remainder = partition.interior_count - coarsened_count;
+
+            if (coarsened_count > 0) {
+                int coarsened_threads = coarsened_count / ITEMS;
+                int blocks_coarsened = (coarsened_threads + threads - 1) / threads;
+                stencil7_coarsened_kernel_3d<ITEMS>
+                    <<<blocks_coarsened, threads, 0, stream_compute>>>(
+                        d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next,
+                        d_Ap, n_local, row_offset, n, grid_size, partition.interior_start,
+                        coarsened_count);
+            }
+            if (remainder > 0) {
+                int rem_start = partition.interior_start + coarsened_count;
+                int blocks_rem = (remainder + threads - 1) / threads;
+                stencil7_overlap_subrange_kernel_3d<<<blocks_rem, threads, 0, stream_compute>>>(
+                    d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next, d_Ap,
+                    n_local, row_offset, n, grid_size, rem_start, remainder);
+            }
         }
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream_compute));
@@ -2054,15 +2089,31 @@ int cg_solve_mgpu_partitioned_overlap_27pt_3d(SpmvOperator* spmv_op, MatrixData*
         exchange_halo_d2h_start(d_p_local, n_local, h_send_prev, h_send_next, partition.halo_elems,
                                 rank, world_size, stream_comm);
 
+        // Interior SpMV: thread-coarsened kernel (ITEMS=4) for k-direction data reuse
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_start, stream_compute));
         }
         if (partition.interior_count > 0) {
-            int blocks_interior = (partition.interior_count + threads - 1) / threads;
-            stencil27_overlap_subrange_kernel_3d<<<blocks_interior, threads, 0, stream_compute>>>(
-                d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next, d_Ap,
-                n_local, row_offset, n, grid_size, partition.interior_start,
-                partition.interior_count);
+            const int ITEMS = 4;
+            int coarsened_count = (partition.interior_count / ITEMS) * ITEMS;
+            int remainder = partition.interior_count - coarsened_count;
+
+            if (coarsened_count > 0) {
+                int coarsened_threads = coarsened_count / ITEMS;
+                int blocks_coarsened = (coarsened_threads + threads - 1) / threads;
+                stencil27_coarsened_kernel_3d<ITEMS>
+                    <<<blocks_coarsened, threads, 0, stream_compute>>>(
+                        d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next,
+                        d_Ap, n_local, row_offset, n, grid_size, partition.interior_start,
+                        coarsened_count);
+            }
+            if (remainder > 0) {
+                int rem_start = partition.interior_start + coarsened_count;
+                int blocks_rem = (remainder + threads - 1) / threads;
+                stencil27_overlap_subrange_kernel_3d<<<blocks_rem, threads, 0, stream_compute>>>(
+                    d_row_ptr, d_col_idx, d_values, d_p_local, d_p_halo_prev, d_p_halo_next, d_Ap,
+                    n_local, row_offset, n, grid_size, rem_start, remainder);
+            }
         }
         if (config.enable_detailed_timers) {
             CUDA_CHECK(cudaEventRecord(timer_stop, stream_compute));
